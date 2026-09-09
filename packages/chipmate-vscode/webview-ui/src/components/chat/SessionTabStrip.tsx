@@ -12,6 +12,7 @@ import { useVSCode } from "../../context/vscode"
 import { SessionTab } from "./SessionTab"
 import { SessionTabMenu } from "./SessionTabMenu"
 import { SessionTabSwitcher } from "./SessionTabSwitcher"
+import { Button } from "@chipmate/chipmate-ui/button"
 import { ConstrainDragYAxis, SortableTabContainer } from "./TabDnd"
 
 export const SessionTabStrip: Component = () => {
@@ -177,6 +178,17 @@ export const SessionTabStrip: Component = () => {
             onRestore={focusPrompt}
             onClose={(id) => close(id, false)}
           />
+        </div>
+        <div class="night-city-tab-add">
+          <Button
+            variant="ghost"
+            size="small"
+            aria-label="新建会话标签"
+            title="新建会话标签"
+            onClick={() => tabs.add()}
+          >
+            <span class="codicon codicon-add" aria-hidden="true" />
+          </Button>
         </div>
       </div>
       <div class="sr-only" aria-live="polite">

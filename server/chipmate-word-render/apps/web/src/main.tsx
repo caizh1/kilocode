@@ -21,6 +21,7 @@ import {
   UserCircle,
   X,
   Wrench,
+  Key,
 } from "@phosphor-icons/react"
 import type { MarketCapabilities, MarketUser, SkillSummary } from "@chipmate/market-contracts"
 import {
@@ -38,6 +39,7 @@ import { createRoot, type Root } from "react-dom/client"
 import { compact, icon, InlineError, mutate, request, Skeleton, useApi } from "./shared"
 import { image, repair } from "./icons"
 import { track } from "./analytics"
+import { adminChanged, useAdminAccess } from "./admin-access"
 import { RiskBadge } from "./risk"
 import { next, previous, query, type Theme } from "./state"
 import "./styles.css"
@@ -81,6 +83,11 @@ const ExtensionAnalyticsPage = lazy(() =>
 const ExtensionUnavailable = lazy(() =>
   import("./routes/extensions").then((module) => ({ default: module.ExtensionUnavailable })),
 )
+const AuthSettingsPage = lazy(() => import("./routes/auth").then((module) => ({ default: module.AuthSettingsPage })))
+const AdminLogin = lazy(() => import("./routes/admins").then((module) => ({ default: module.AdminLogin })))
+const DeviceApprovalPage = lazy(() =>
+  import("./routes/auth").then((module) => ({ default: module.DeviceApprovalPage })),
+)
 
 collectVitals()
 
@@ -92,6 +99,7 @@ function App() {
   const [path, setPath] = useState(() => `${location.pathname}${location.search}`)
   const [user, setUser] = useState<MarketUser>()
   const [csrf, setCsrf] = useState(() => sessionStorage.getItem("chipmate-market-csrf") ?? "")
+  const admin = useAdminAccess(user?.id, csrf, path)
   const [login, setLogin] = useState(() => location.pathname === "/login")
   const [catalogSync, setCatalogSync] = useState(0)
   const [detailSync, setDetailSync] = useState(0)
@@ -181,6 +189,8 @@ function App() {
     sessionStorage.removeItem("chipmate-market-session-active")
     setCsrf("")
     setUser(undefined)
+    admin.clear()
+    adminChanged()
   }
 
   const navigate = (next: string) => {
@@ -246,7 +256,19 @@ function App() {
   ) : (
     <ExtensionHome navigate={navigate} />
   )
-  const page = extensionPage ? (
+  const page = url.pathname === "/admin/login" ? (
+    <AdminLogin navigate={navigate} requestLogin={() => requestLogin("/admin/auth")} />
+  ) : url.pathname === "/admin/auth" ? (
+    admin.loading ? <section className="page-width"><Skeleton label="正在验证管理员权限" /></section> :
+      admin.access ? <AuthSettingsPage key={`${admin.access.mode}:${admin.access.subject ?? ""}:${admin.access.expiresAt ?? ""}`} {...(user ? { user } : {})} csrf={csrf} access={admin.access} requestLogin={() => requestLogin("/admin/auth")} /> :
+        <section className="page-width"><div className="glass-panel account-empty"><h1>需要管理员权限</h1><p>此页面仅对 Server 管理员开放。</p><button className="primary-button" onClick={() => requestLogin("/admin/auth")}>使用管理员账号登录</button></div></section>
+  ) : url.pathname === "/device" ? (
+    <DeviceApprovalPage
+      {...(user ? { user } : {})}
+      csrf={csrf}
+      requestLogin={() => requestLogin(`${url.pathname}${url.search}`)}
+    />
+  ) : extensionPage ? (
     plugin
   ) : detail ? (
     <Detail
@@ -282,6 +304,7 @@ function App() {
   return (
     <div className="app-shell">
       <Header
+        admin={Boolean(admin.access)}
         path={url.pathname}
         extensions={enabled}
         navigate={navigate}
@@ -312,6 +335,7 @@ function App() {
 }
 
 function Header(props: {
+  admin: boolean
   path: string
   extensions: boolean
   navigate(path: string): void
@@ -351,6 +375,9 @@ function Header(props: {
         <NavButton active={props.path === "/status"} onClick={() => props.navigate("/status")} icon={<ShieldCheck />}>
           服务状态
         </NavButton>
+        {props.admin && <NavButton active={props.path === "/admin/auth"} onClick={() => props.navigate("/admin/auth")} icon={<Key />}>
+          认证设置
+        </NavButton>}
         {props.user && !props.path.startsWith("/extensions") && (
           <NavButton
             active={props.path === "/analytics"}
@@ -386,9 +413,10 @@ function Header(props: {
         )}
         <button
           className="glass-button"
+          aria-label={props.path.startsWith("/extensions") ? "发布插件" : "发布技能"}
           onClick={() => props.navigate(props.path.startsWith("/extensions") ? "/extensions/publish" : "/publish")}
         >
-          <UploadSimple /> {props.path.startsWith("/extensions") ? "发布插件" : "发布技能"}
+          <UploadSimple /> <span>{props.path.startsWith("/extensions") ? "发布插件" : "发布技能"}</span>
         </button>
       </nav>
     </header>
@@ -397,7 +425,8 @@ function Header(props: {
 
 function LoginDialog(props: { open: boolean; close(): void; signedIn(user: MarketUser, csrf: string): void }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  const [key, setKey] = useState("")
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
@@ -408,8 +437,8 @@ function LoginDialog(props: { open: boolean; close(): void; signedIn(user: Marke
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    const value = key
-    setKey("")
+    const secret = password
+    setPassword("")
     setBusy(true)
     setError("")
     try {
@@ -417,12 +446,13 @@ function LoginDialog(props: { open: boolean; close(): void; signedIn(user: Marke
         method: "POST",
         credentials: "same-origin",
         headers: { accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify({ apiKey: value }),
+        body: JSON.stringify({ username, password: secret }),
       })
       const payload = (await response.json()) as MarketUser & { message?: string }
       if (!response.ok) throw new Error(payload.message ?? `登录失败（HTTP ${response.status}）`)
       const csrf = response.headers.get("x-csrf-token")
       if (!csrf) throw new Error("服务器未返回 CSRF 会话凭据。")
+      setUsername("")
       props.signedIn(payload, csrf)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -447,15 +477,24 @@ function LoginDialog(props: { open: boolean; close(): void; signedIn(user: Marke
           <h2>登录 ChipMate Market</h2>
         </div>
         <p>
-          使用现有 New API key 完成一次身份解析。原始 key 会在本次请求后立即从输入框清除，浏览器仅保留服务端随机会话。
+          使用公司 Microsoft AD 账号登录。密码只发送到 ChipMate Server，并在本次 LDAP 验证完成后立即释放。
         </p>
         <label>
-          New API key
+          用户名
+          <input
+            autoComplete="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          密码
           <input
             type="password"
-            autoComplete="off"
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
             required
           />
         </label>

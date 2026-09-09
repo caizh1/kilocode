@@ -28,6 +28,16 @@ import {
   TuiConfigQuery,
 } from "../groups/config-console"
 
+function indexingOnly(patch: Config.Info): boolean {
+  const keys = Object.keys(patch)
+  return keys.length === 1 && keys[0] === "indexing"
+}
+
+function globalHot(patch: Config.Info): boolean {
+  const keys = Object.keys(patch)
+  return keys.length === 1 && (keys[0] === "console" || keys[0] === "indexing")
+}
+
 export const configConsoleHandlers = HttpApiBuilder.group(InstanceHttpApi, "config-console", (handlers) =>
   Effect.gen(function* () {
     const config = yield* Config.Service
@@ -105,34 +115,29 @@ export const configConsoleHandlers = HttpApiBuilder.group(InstanceHttpApi, "conf
         )
       }
       const patch = ChipMateConfigOverlay.patch(body)
-      const hot = body.scope === "global" && Object.keys(patch).every((key) => key === "console")
+      const indexing = indexingOnly(patch)
+      const hot = body.scope === "global" ? globalHot(patch) : indexing
       if (body.scope === "global") {
-        yield* config.invalidate()
         if (result.changed) {
+          yield* config.invalidate()
           yield* Effect.sync(() =>
             GlobalBus.emit("event", {
               directory: "global",
               payload: {
                 type: Event.ConfigUpdated.type,
-                properties: { sandbox: result.sandboxChanged },
+                properties: {
+                  sandbox: result.sandboxChanged,
+                  ...(Object.hasOwn(patch, "indexing") && hot ? { indexing: true as const } : {}),
+                },
               },
             }),
           ).pipe(Effect.catchCause(() => Effect.void))
         }
       } else {
-        yield* config.update({})
-        if (result.sandboxChanged) {
-          yield* Effect.sync(() =>
-            GlobalBus.emit("event", {
-              directory: instance.directory,
-              payload: {
-                type: Event.ConfigUpdated.type,
-                properties: { sandbox: true },
-              },
-            }),
-          ).pipe(Effect.catchCause(() => Effect.void))
+        if (result.changed) {
+          yield* config.update({}, { sandbox: result.sandboxChanged, indexing: hot })
+          if (!hot) yield* markInstanceForDisposal(instance)
         }
-        yield* markInstanceForDisposal(instance)
       }
       const all = yield* auth.all().pipe(Effect.orElseSucceed(() => ({})))
       const active = yield* account.active().pipe(

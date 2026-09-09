@@ -298,7 +298,7 @@ describe("ChipMate product prompts", () => {
       output.ultraCustom.indexOf("Custom agent keeps ChipMate as user-authored text"),
     )
     expect(output.ultraRaw).toContain("For every user turn")
-    expect(output.ultraRaw).toContain("call `ultra_verify` exactly once")
+    expect(output.ultraRaw).toContain("runtime starts `ultra_verify` locally exactly once")
     expect(output.ultraRaw).toContain("three independent, read-only Explore verifiers in one parallel wave")
     expect(output.ultraRaw).toContain("hidden, read-only Code author")
     expect(output.ultraRaw).toContain("exactly three independent, read-only Explore verifiers")

@@ -14,13 +14,25 @@ import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { ensureRipgrepForTarget } from "./ripgrep-helper"
 import { copyLanceDBRuntime } from "./lancedb-helper"
 import { ensurePopplerForTarget } from "./poppler-helper"
-import { verifyLegacyUpdatePackageSize } from "./package-size"
+import { verifyLinuxPopplerVsix } from "./poppler-linux-helper"
+import { LEGACY_UPDATE_MAX_BYTES, verifyLegacyUpdatePackageSize } from "./package-size"
+import { verifyDeepSeekHarnessReleaseGate } from "./deepseek-harness-release-gate"
+import {
+  DEEPSEEK_HARNESS_RUNTIME_TARGETS,
+  parseDeepSeekHarnessRuntimeCatalog,
+} from "../src/shared/deepseek-harness-runtime"
+import {
+  DEEPSEEK_HARNESS_OFFICIAL_PROJECTION_READY,
+  DEEPSEEK_HARNESS_RELEASE_VALIDATED,
+} from "../src/shared/deepseek-harness"
 import {
   applyPackagedChipmateServer,
   resolvePackagedChipmateServer,
   restorePackagedManifest,
   type PackagedChipmateServerDefaults,
 } from "./chipmate-server-defaults"
+import { buildFreshReleaseCli, releaseCliPackages, verifyReleaseCliReceipt } from "./release-cli-build"
+import { verifyWebviewMotionContract } from "./webview-motion-contract"
 
 type Target = {
   target: string
@@ -45,7 +57,18 @@ const version = process.env.CHIPMATE_VERSION ? process.env.CHIPMATE_VERSION : pa
 const prerelease = process.env.CHIPMATE_PRE_RELEASE === "true"
 const internal = process.argv.includes("--internal-offline") || process.env.CHIPMATE_INTERNAL_OFFLINE === "1"
 const x64only = process.argv.includes("--windows-x64-only") || process.env.CHIPMATE_WINDOWS_X64_ONLY === "1"
+const manualOnlyOversized =
+  process.argv.includes("--manual-only-oversized") || process.env.CHIPMATE_MANUAL_ONLY_OVERSIZED === "1"
+const manualValidationCandidate =
+  process.argv.includes("--manual-validation-candidate") || process.env.CHIPMATE_MANUAL_VALIDATION_CANDIDATE === "1"
+if (manualOnlyOversized && !internal) {
+  throw new Error("--manual-only-oversized 只允许与 --internal-offline 同时使用。")
+}
+if (manualValidationCandidate && !internal) {
+  throw new Error("--manual-validation-candidate 只允许与 --internal-offline 同时使用。")
+}
 const targetsArg = process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length)
+const dshRuntimeCatalogPath = process.env.CHIPMATE_DSH_RUNTIME_CATALOG?.trim()
 const requested = targetsArg
   ? new Set(
       targetsArg
@@ -81,6 +104,12 @@ if (changelogBody !== releaseNotesBody) {
 
 console.log(`Building VSCode extension version: ${version}${prerelease ? " (pre-release)" : ""}`)
 if (internal) console.log("Using internal offline baseline build mode")
+if (manualOnlyOversized) {
+  console.warn("⚠️ 允许生成超过旧客户端自动更新上限的仅手动安装包；禁止发布到 /packages/manifest.json。")
+}
+if (manualValidationCandidate) {
+  console.warn("⚠️ 正在生成 x64 真实机验证候选包；该通道不代表正式发布验收通过，禁止进入自动更新清单。")
+}
 
 if (packageJson.version !== version) {
   console.log(`Updating package.json version from ${packageJson.version} to ${version}`)
@@ -100,10 +129,6 @@ if (internal && (!provider.apiBaseUrl || !provider.chatModel)) {
 
 const cliDistDir = process.env.CLI_DIST_DIR || join(import.meta.dir, "..", "..", "opencode", "dist")
 console.log(`Using CLI dist directory: ${cliDistDir}`)
-
-if (!existsSync(cliDistDir)) {
-  throw new Error(`CLI dist directory not found: ${cliDistDir}`)
-}
 
 const publicTargets: Target[] = [
   { target: "linux-x64", cliDir: "@chipmate/cli-linux-x64", binary: "chipmate" },
@@ -155,6 +180,31 @@ if (requested && targets.length === 0) throw new Error(`No VSIX targets matched 
 if (x64only && !targets.some((item) => item.target === "win32-x64-baseline")) {
   throw new Error("--windows-x64-only requires the win32-x64-baseline internal target.")
 }
+const manualCandidateTarget = targets.length === 1 ? targets[0]?.target : undefined
+if (
+  manualOnlyOversized &&
+  manualCandidateTarget !== "win32-x64-baseline" &&
+  manualCandidateTarget !== "linux-x64-baseline"
+) {
+  throw new Error("--manual-only-oversized 只允许单独构建 Windows/Linux x64 baseline。")
+}
+if (
+  manualValidationCandidate &&
+  manualCandidateTarget !== "win32-x64-baseline" &&
+  manualCandidateTarget !== "linux-x64-baseline"
+) {
+  throw new Error("--manual-validation-candidate 只允许单独构建 Windows/Linux x64 baseline。")
+}
+
+const releasePackages = releaseCliPackages(targets, x64only)
+await buildFreshReleaseCli({
+  opencodeDir: join(rootDir, "packages", "opencode"),
+  distDir: cliDistDir,
+  version,
+  prerelease,
+  targets,
+  windowsX64Only: x64only,
+})
 
 const binDir = join(import.meta.dir, "..", "bin")
 const distDir = join(import.meta.dir, "..", "dist")
@@ -205,6 +255,11 @@ try {
     await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
     console.log("Using local defaults for packaged VSIX manifest.")
   }
+  if (internal) {
+    applyProviderDefaults(packageJson, provider)
+    await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
+    console.log("Using the packaged provider model as the VS Code default fallback.")
+  }
 
   for (const config of targets) {
     console.log(`\n🎯 Processing target: ${config.target}`)
@@ -215,11 +270,35 @@ try {
       rmSync(binDir, { recursive: true, force: true })
     }
     mkdirSync(binDir, { recursive: true })
+    const supportsDeepSeekHarness = (DEEPSEEK_HARNESS_RUNTIME_TARGETS as readonly string[]).includes(config.target)
+    if (supportsDeepSeekHarness) {
+      if (!DEEPSEEK_HARNESS_OFFICIAL_PROJECTION_READY)
+        throw new Error("官方 DSH ConversationSnapshot 投影尚未接通，禁止打包或发布当前 ChipMate 版本")
+      verifyDeepSeekHarnessReleaseGate({
+        releaseValidated: DEEPSEEK_HARNESS_RELEASE_VALIDATED,
+        manualValidationCandidate,
+        manualOnly: manualOnlyOversized,
+        internal,
+        windowsX64Only: x64only,
+        targets: targets.map((target) => target.target),
+      })
+      if (!dshRuntimeCatalogPath) throw new Error(`${config.target} 打包需要 CHIPMATE_DSH_RUNTIME_CATALOG`)
+      const catalog = parseDeepSeekHarnessRuntimeCatalog(JSON.parse(await Bun.file(dshRuntimeCatalogPath).text()))
+      const artifact = catalog.artifacts[config.target as keyof typeof catalog.artifacts]
+      if (!artifact) throw new Error(`DeepSeek Harness 运行时清单缺少 ${config.target}`)
+      const targetCatalog = { ...catalog, artifacts: { [config.target]: artifact } }
+      await Bun.write(join(binDir, "dsh-runtime-lock.json"), `${JSON.stringify(targetCatalog, null, 2)}\n`)
+      console.log("  📦 已写入固定的 DeepSeek Harness 远程运行时锁。")
+    } else {
+      console.warn(`  ⚠️ ${config.target} 没有官方 Node 24 运行时，当前目标不包含 DeepSeek Harness Agent。`)
+    }
 
     const sourceBinary = join(cliDistDir, config.cliDir, "bin", config.binary)
     const targetBinary = join(binDir, config.binary)
     const sourceSnapshot = join(cliDistDir, config.cliDir, "bin", "models-snapshot.json")
     const targetSnapshot = join(binDir, "models-snapshot.json")
+
+    await verifyReleaseCliReceipt({ distDir: cliDistDir, version, packages: releasePackages })
 
     if (!existsSync(sourceBinary)) {
       throw new Error(`CLI binary not found at ${sourceBinary}`)
@@ -276,7 +355,9 @@ try {
         config.vsceTarget ?? config.target,
         config.target === "win32-x64-baseline" && !x64only ? ["win32-arm64"] : [],
       )
-      console.log("Adding bundled Poppler pdftotext helper...")
+    }
+    if (config.internal || (config.vsceTarget ?? config.target) === "linux-x64") {
+      console.log("正在加入内置 Poppler PDF 提取组件及运行依赖……")
       await ensurePopplerForTarget(config.vsceTarget ?? config.target, binDir)
     }
 
@@ -289,14 +370,22 @@ try {
       npm_config_ignore_scripts: "true",
     })
     await verifyPackageTarget(vsixPath, config.target)
+    if ((config.vsceTarget ?? config.target) === "linux-x64") await verifyLinuxPopplerVsix(vsixPath)
+    await verifyWebviewMotionVsix(vsixPath)
+    if (supportsDeepSeekHarness) await verifyDeepSeekHarnessVsix(vsixPath, config)
     await verifyReleaseNotes(vsixPath, version, releaseNotes, chipmateChangelog)
     if (chipmate.baseUrl) await verifyChipmateServer(vsixPath, chipmate)
     if (config.internal) {
       await verifyInternalVsix(vsixPath, config)
       await verifyInternalModelsSnapshot(vsixPath)
       await verifyInternalMarketplaceManifest(vsixPath)
+      await verifyInternalProviderDefaults(vsixPath, provider)
     }
-    verifyLegacyUpdatePackageSize(config.target, statSync(vsixPath).size)
+    const size = statSync(vsixPath).size
+    verifyLegacyUpdatePackageSize(config.target, size, manualOnlyOversized)
+    if (manualOnlyOversized && config.target === "win32-x64-baseline" && size > LEGACY_UPDATE_MAX_BYTES) {
+      console.warn(`  ⚠️ ${vsixPath} 为 ${size} 字节，只允许手动下载和安装。`)
+    }
     console.log(`  ✅ Created ${vsixPath}`)
   }
 } finally {
@@ -472,6 +561,14 @@ function applyMarketplaceDefaults(pkg: typeof packageJson, marketplace: Marketpl
   }
 }
 
+function applyProviderDefaults(pkg: typeof packageJson, provider: ProviderDefaults): void {
+  const props = pkg.contributes?.configuration?.properties
+  if (!props) throw new Error("Cannot inject provider defaults: package.json configuration properties are missing.")
+  if (!provider.chatModel) throw new Error("Cannot inject provider defaults without provider.chatModel.")
+  props["chipmate.v2.model.providerID"].default = "chipmate"
+  props["chipmate.v2.model.modelID"].default = provider.chatModel
+}
+
 function route(base: string | undefined, name: "word" | "mermaid"): string | undefined {
   if (!base) return undefined
   const root = base.replace(/\/+$/, "")
@@ -529,7 +626,11 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/bin/lancedb/node_modules/flatbuffers/js/flatbuffers.js",
     "extension/bin/lancedb/node_modules/reflect-metadata/Reflect.js",
     "extension/bin/lancedb/node_modules/tslib/tslib.js",
-    "extension/assets/agent-console/powershell.ps1",
+    "extension/assets/appearance/night-city-neon-frame.png",
+    "extension/assets/appearance/future-page-frame.png",
+    "extension/assets/appearance/future-composer-frame.png",
+    "extension/assets/appearance/future-tab-frame.png",
+
     "extension/assets/loading-motion/dark/liquid.png",
     "extension/assets/loading-motion/dark/liquid.webp",
     "extension/assets/loading-motion/dark/orbital.png",
@@ -558,9 +659,10 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
     "extension/dist/tree-sitter.wasm",
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
-    "extension/dist/agent-console.js",
     "extension/dist/design-doc.js",
     "extension/dist/design-doc.css",
+    "extension/dist/patent-radar.js",
+    "extension/dist/patent-radar.css",
     "extension/dist/diff-viewer.js",
     "extension/dist/diff-virtual.js",
   ]
@@ -587,6 +689,10 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
   if ((config.vsceTarget ?? config.target) === "linux-x64") {
     required.push(
       "extension/bin/rg",
+      "extension/bin/poppler/pdftotext",
+      "extension/bin/poppler/pdftotext.bin",
+      "extension/bin/poppler/lib/ld-musl-x86_64.so.1",
+      "extension/bin/poppler/manifest.json",
       "extension/bin/lancedb/node_modules/@lancedb/lancedb-linux-x64-gnu/lancedb.linux-x64-gnu.node",
     )
   }
@@ -612,7 +718,10 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
       file === "extension/bin/ffmpeg" ||
       file === "extension/bin/ffmpeg.exe" ||
       file.endsWith(".map") ||
-      file.startsWith("extension/qa/"),
+      file.startsWith("extension/qa/") ||
+      file.startsWith("extension/chipmate-low-end-webview-") ||
+      file.startsWith("extension/tests/") ||
+      file.endsWith(".vscode-test.mjs"),
   )
   if (x64only && (config.vsceTarget ?? config.target) === "win32-x64") {
     forbidden.push(
@@ -626,6 +735,31 @@ async function verifyInternalVsix(vsix: string, config: Target): Promise<void> {
   if (forbidden.length > 0) {
     throw new Error(`Internal VSIX contains forbidden files:\n${forbidden.join("\n")}`)
   }
+}
+
+async function verifyDeepSeekHarnessVsix(vsix: string, config: Target): Promise<void> {
+  const files = await listVsix(vsix)
+  if (!files) throw new Error("无法列出 VSIX，不能验证 DeepSeek Harness 远程运行时锁")
+  if (!files.includes("extension/bin/dsh-runtime-lock.json")) throw new Error("VSIX 缺少 DeepSeek Harness 远程运行时锁")
+  if (!files.includes("extension/supervisor/deepseek-harness-supervisor.cjs"))
+    throw new Error("VSIX 缺少 ChipMate DeepSeek Harness 生命周期 Supervisor")
+  const bundled = files.filter((file) => file.startsWith("extension/bin/dsh-runtime/"))
+  if (bundled.length > 0) throw new Error(`瘦身 VSIX 不得包含 DSH 运行时：\n${bundled.join("\n")}`)
+  const catalog = parseDeepSeekHarnessRuntimeCatalog(
+    JSON.parse((await $`unzip -p ${vsix} extension/bin/dsh-runtime-lock.json`.quiet()).text()),
+  )
+  if (!catalog.artifacts[config.target as keyof typeof catalog.artifacts])
+    throw new Error(`VSIX 的 DeepSeek Harness 锁缺少目标 ${config.target}`)
+  const lockedTargets = Object.keys(catalog.artifacts)
+  if (lockedTargets.length !== 1 || lockedTargets[0] !== config.target)
+    throw new Error(`VSIX 只能包含当前目标的 DeepSeek Harness 锁：${lockedTargets.join(", ")}`)
+}
+
+async function verifyWebviewMotionVsix(vsix: string): Promise<void> {
+  const unzip = Bun.which("unzip")
+  if (!unzip) throw new Error("无法读取 VSIX，不能验证 Webview 动画契约。")
+  const out = await $`${unzip} -p ${vsix} extension/dist/webview.css`.quiet()
+  verifyWebviewMotionContract(out.text())
 }
 
 async function verifyInternalModelsSnapshot(vsix: string): Promise<void> {
@@ -666,6 +800,26 @@ async function verifyInternalMarketplaceManifest(vsix: string): Promise<void> {
   }
   if (skillsOnly !== true) {
     throw new Error("Internal VSIX marketplace manifest must set chipmate.v2.marketplace.skillsOnly.default to true.")
+  }
+}
+
+async function verifyInternalProviderDefaults(vsix: string, expected: ProviderDefaults): Promise<void> {
+  const unzip = Bun.which("unzip")
+  if (!unzip) throw new Error("Cannot verify internal provider defaults because unzip is not available.")
+  const out = await $`${unzip} -p ${vsix} extension/package.json`.quiet()
+  const manifest = JSON.parse(out.text()) as {
+    contributes?: {
+      configuration?:
+        | { properties?: Record<string, { default?: unknown }> }
+        | Array<{ properties?: Record<string, { default?: unknown }> }>
+    }
+  }
+  const props = manifestConfigurationProperties(manifest)
+  if (props["chipmate.v2.model.providerID"]?.default !== "chipmate") {
+    throw new Error("Internal VSIX must use chipmate as the packaged provider fallback.")
+  }
+  if (props["chipmate.v2.model.modelID"]?.default !== expected.chatModel) {
+    throw new Error("Internal VSIX packaged model fallback does not match provider.chatModel.")
   }
 }
 

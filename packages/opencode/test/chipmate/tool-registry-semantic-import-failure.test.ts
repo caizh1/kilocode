@@ -5,10 +5,15 @@ import { ChipMateToolRegistry } from "../../src/chipmate/tool/registry"
 import { Agent } from "../../src/agent/agent"
 import * as Truncate from "../../src/tool/truncate"
 import type * as Tool from "../../src/tool/tool"
+import { Parameters as TaskParameters } from "../../src/tool/task"
 import { provideTestInstance, tmpdir } from "../fixture/fixture"
 
 const logger = Log.create({ service: "chipmate-tool-registry" })
-const deps = { agent: {} as Agent.Interface, truncate: {} as Truncate.Interface }
+const deps = {
+  agent: {} as Agent.Interface,
+  truncate: {} as Truncate.Interface,
+  task: {} as Tool.Def<typeof TaskParameters>,
+}
 
 describe("chipmate tool registry semantic tool import failure", () => {
   test("omits semantic_search when the semantic search tool cannot load", async () => {

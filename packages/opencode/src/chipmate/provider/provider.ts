@@ -99,13 +99,77 @@ export function patchConfigModel(cfg: any, existing: any) {
 
 const CUSTOM_PROVIDER_PACKAGES = new Set(["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"])
 const FALLBACK_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"]
+const OPENAI_COMPATIBLE_REASONING_PROFILES = [
+  {
+    pattern: /(?:^|\/)qwen3\.8-27b(?:-fp8)?$/i,
+    variants: {
+      xhigh: { reasoningEffort: "xhigh", chat_template_kwargs: { enable_thinking: true } },
+      medium: { reasoningEffort: "medium", chat_template_kwargs: { enable_thinking: true } },
+      low: { reasoningEffort: "low", chat_template_kwargs: { enable_thinking: true } },
+      none: { chat_template_kwargs: { enable_thinking: false } },
+    },
+  },
+  {
+    pattern: /(?:^|\/)glm-5\.2$/i,
+    variants: {
+      max: { reasoningEffort: "max" },
+      high: { reasoningEffort: "high" },
+    },
+  },
+  {
+    pattern: /(?:^|\/)deepseek-v4-(?:flash|pro)$/i,
+    variants: {
+      max: { reasoningEffort: "max" },
+      high: { reasoningEffort: "high" },
+      thinking: { thinking: { type: "enabled" } },
+      none: { thinking: { type: "disabled" } },
+    },
+  },
+  {
+    pattern: /(?:^|\/)doubao-seed-2(?:\.0|-0)-pro$/i,
+    variants: {
+      thinking: { thinking: { type: "enabled" } },
+      none: { thinking: { type: "disabled" } },
+    },
+  },
+] as const
 type Variants = NonNullable<Provider.Model["variants"]>
 type Generate = (model: Provider.Model) => Variants
 
-export function customProviderVariants(model: Provider.Model, npm: unknown, generate: Generate): Variants {
+function knownOpenAICompatibleVariants(model: { id: string; api: { id: string } }, npm: unknown): Variants | undefined {
+  if (npm !== "@ai-sdk/openai-compatible") return undefined
+  const ids = [model.id, model.api.id]
+  return OPENAI_COMPATIBLE_REASONING_PROFILES.find((profile) => ids.some((id) => profile.pattern.test(id)))
+    ?.variants
+}
+
+export function customProviderReasoning(input: {
+  id: string
+  api: { id: string }
+  npm: unknown
+  configured: boolean | undefined
+  variants: Record<string, unknown> | undefined
+  existing: boolean | undefined
+}) {
+  if (input.variants && Object.keys(input.variants).length > 0) return true
+  if (input.configured !== undefined) return input.configured
+  if (knownOpenAICompatibleVariants(input, input.npm)) return true
+  return input.existing ?? false
+}
+
+export function customProviderVariants(
+  model: Provider.Model,
+  npm: unknown,
+  generate: Generate,
+  configuredReasoning?: boolean,
+): Variants {
   if (model.variants && Object.keys(model.variants).length > 0) return model.variants
+  if (configuredReasoning === false) return {}
 
   const supported = typeof npm === "string" && CUSTOM_PROVIDER_PACKAGES.has(npm) && model.api.npm === npm
+  const known = knownOpenAICompatibleVariants(model, npm)
+  if (known) return known
+
   const variants = generate(model)
   if (Object.keys(variants).length > 0) return variants
   if (!model.capabilities.reasoning || !supported) return variants

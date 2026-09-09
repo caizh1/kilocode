@@ -1,3 +1,4 @@
+import "../appearance"
 // ChipMateClaw SolidJS webview entry point
 
 import { render } from "solid-js/web"

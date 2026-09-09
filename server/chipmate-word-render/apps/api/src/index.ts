@@ -1,19 +1,23 @@
+import { join } from "node:path"
+import { registerDiagnostics } from "./diagnostics.ts"
 import Fastify from "fastify"
 import type { MarketDb } from "@chipmate/market-db"
 import { registerAligned } from "./aligned.ts"
-import type { ResolveUser } from "./identity.ts"
+import { Identity, type IdentityOptions } from "./identity.ts"
 import { register } from "./legacy.ts"
 import { registerWeb } from "./web.ts"
 import { MarketEvents } from "./events.ts"
 import { registerExtensions } from "./extensions.ts"
 import { registerUpdatePackages } from "./update-packages.ts"
 import { registerReviewRules } from "./review-rules.ts"
+import { registerRuntimePackages } from "./runtime-packages.ts"
 import type { FastifyRequest } from "fastify"
 
 export function build(
   db?: MarketDb,
   opts: {
-    resolveUser?: ResolveUser
+    diagnostics?: { root: string; quota?: number; active?: number; free?: number; timeout?: number }
+    auth?: IdentityOptions
     now?: () => number
     extensionMarket?: boolean
     extensionRoot?: string
@@ -24,6 +28,7 @@ export function build(
     extensionUploadMaxMs?: number
     extensionOwnerBindings?: Record<string, string>
     packageRoot?: string
+    runtimePackageRoot?: string
     reviewRoot?: string
     reviewAuthorize?: (req: FastifyRequest) => Promise<void>
     reviewPublishers?: string[]
@@ -41,14 +46,28 @@ export function build(
     (_req, body, done) => done(null, body),
   )
   const web = registerWeb(app)
+  const packageRoot = opts.packageRoot ?? process.env.PACKAGE_ROOT?.trim() ?? "/packages"
+  const runtimePackageRoot = opts.runtimePackageRoot ?? process.env.BUILTIN_RUNTIME_ROOT?.trim() ?? packageRoot
+  registerRuntimePackages(app, runtimePackageRoot)
   const enabled = Boolean(db) && (opts.extensionMarket ?? process.env.EXTENSION_MARKET_ENABLED === "1")
+  const auth = {
+    ...opts.auth,
+    ...(opts.auth?.now || opts.now ? { now: opts.auth?.now ?? opts.now! } : {}),
+  }
+  const identity = db ? new Identity(db, auth) : undefined
   register(app, !web, !enabled)
   registerReviewRules(app, db, {
     root: opts.reviewRoot ?? process.env.REVIEW_RULE_ROOT?.trim() ?? "/data/review-rules",
-    ...(opts.resolveUser ? { resolveUser: opts.resolveUser } : {}),
+    ...(identity ? { identity } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.reviewAuthorize ? { authorize: opts.reviewAuthorize } : {}),
     publishers: opts.reviewPublishers ?? list(process.env.REVIEW_RULE_PUBLISHERS),
+  })
+  if (db && identity) registerDiagnostics(app, db, {
+    root: process.env.DIAGNOSTICS_ROOT?.trim() || join(db.directory, "diagnostics"),
+    quota: number(process.env.DIAGNOSTICS_QUOTA_BYTES, 10 * 1024 ** 3),
+    active: number(process.env.DIAGNOSTICS_MAX_ACTIVE, 4),
+    ...opts.diagnostics, identity, now: opts.now,
   })
   if (db) {
     const events = new MarketEvents()
@@ -57,7 +76,7 @@ export function build(
       ? registerExtensions(app, db, {
           events,
           root: opts.extensionRoot ?? process.env.EXTENSION_MARKET_ROOT?.trim() ?? "/data/skill-market/extensions",
-          ...(opts.resolveUser ? { resolveUser: opts.resolveUser } : {}),
+          ...(identity ? { identity } : {}),
           ...(opts.now ? { now: opts.now } : {}),
           ...(opts.extensionScanMs
             ? { scanMs: opts.extensionScanMs }
@@ -71,17 +90,17 @@ export function build(
           uploadIdleMs: opts.extensionUploadIdleMs ?? number(process.env.EXTENSION_UPLOAD_IDLE_MS, 60_000),
           uploadMaxMs: opts.extensionUploadMaxMs ?? number(process.env.EXTENSION_UPLOAD_MAX_MS, 2 * 60 * 60 * 1_000),
           ownerBindings: opts.extensionOwnerBindings ?? bindings(process.env.EXTENSION_OWNER_BINDINGS_JSON),
-          packageRoot: opts.packageRoot ?? process.env.PACKAGE_ROOT?.trim() ?? "/packages",
+          packageRoot,
         })
       : undefined
     if (runtime)
-      registerUpdatePackages(app, db, runtime, opts.packageRoot ?? process.env.PACKAGE_ROOT?.trim() ?? "/packages")
+      registerUpdatePackages(app, db, runtime, packageRoot)
     registerAligned(app, db, {
       events,
+      ...(opts.now ? { now: opts.now } : {}),
       extensionMarket: enabled,
       ...(runtime ? { extensionStatus: () => runtime.health() } : {}),
-      ...(opts.resolveUser ? { resolveUser: opts.resolveUser } : {}),
-      ...(opts.now ? { now: opts.now } : {}),
+      ...(identity ? { identity } : {}),
     })
   }
   app.setNotFoundHandler((_req, reply) =>

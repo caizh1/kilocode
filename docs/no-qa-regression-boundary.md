@@ -4,7 +4,6 @@
 
 - [x] This document defines the boundary for migrating ChipMate non-QA features into ChipMate.
 - [x] The migration must not replace, bypass, or degrade ChipMate's native QA and code-understanding flow.
-- [x] New Word, Mermaid, artifact, detailed-design, and Agent Terminal capabilities must be additive side-channel capabilities.
 
 ## Authoritative ChipMate QA Capabilities
 
@@ -21,7 +20,6 @@
 - [x] Do not replace ChipMate `codebase_analysis`, `semantic_search`, or `document_search`.
 - [x] Do not replace ChipMate native skill discovery.
 - [x] Do not migrate ChipMate autocomplete or Qwen Coder autocomplete, because ChipMate already has a `qwen-direct` path.
-- [x] Do not replace ChipMate terminal/session manager when migrating Agent Terminal.
 
 ## Trigger Boundary
 
@@ -29,7 +27,6 @@
 - [x] Mermaid tools may be used only when the user explicitly asks for a diagram, Mermaid, PNG diagram output, or a Word document that requires diagram artifacts.
 - [x] Artifact tools may be used only when a file artifact is created, edited, rendered, listed, opened, or diagnosed.
 - [x] Source-backed detailed-design skill may be used only when the user explicitly asks for a design document, detailed design, source-backed report, or equivalent deliverable.
-- [x] Agent Terminal may be used only when the user explicitly opens or requests the agent terminal experience.
 
 ## Regression Rules
 
@@ -46,5 +43,4 @@
 - [x] Confirm ordinary code QA still routes through ChipMate-native code-understanding tools.
 - [x] Confirm document QA still routes through `document_search`.
 - [x] Confirm Word/Mermaid tools are not enabled by default for unrelated QA.
-- [x] Confirm Agent Terminal does not replace the existing terminal/session manager.
 - [x] Confirm VS Code extension activation still succeeds when document tools are present but renderer endpoint is empty.

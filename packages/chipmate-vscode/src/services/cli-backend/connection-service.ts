@@ -20,6 +20,13 @@ type FavoritesChangeListener = (favorites: Array<{ providerID: string; modelID: 
 type ModelSelectorExpandedListener = (value: boolean) => void
 type ClearPendingPromptsListener = () => void
 type DirectoryProvider = () => string[]
+export type HistoryMigrationProgress = {
+  phase: string
+  current: number
+  total: number
+  message: string
+  result: Record<string, unknown> | null
+}
 const DRAIN_CONCURRENCY = 4
 
 async function parallel(items: string[], fn: (item: string) => Promise<void>): Promise<void> {
@@ -70,12 +77,14 @@ function sameSet(a: Set<string>, b: Set<string>): boolean {
 const HEALTH_POLL_INTERVAL_MS = 10_000
 
 /** Reject all pending network-offline waits for a given directory. */
-async function drainNetworkWaits(client: ChipMateClient, dir: string) {
-  const { data: waits, error: err } = await client.network.list({ directory: dir })
+async function drainNetworkWaits(client: ChipMateClient, dir: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  const { data: waits, error: err } = await client.network.list({ directory: dir }, { signal })
   if (err) throw new Error(`Failed to list network waits for ${dir}: ${String(err)}`)
   if (!waits) return
   for (const w of waits) {
-    const { error } = await client.network.reject({ requestID: w.id, directory: dir })
+    signal?.throwIfAborted()
+    const { error } = await client.network.reject({ requestID: w.id, directory: dir }, { signal })
     if (error) throw new Error(`Failed to reject network wait ${w.id}: ${String(error)}`)
   }
 }
@@ -137,6 +146,8 @@ export class ChipMateConnectionService {
   private readonly recovery = new CrashRecovery()
   private recovering = false
   private disposed = false
+  private maintenancePromise: Promise<{ code: number; result: Record<string, unknown> | null }> | null = null
+  private maintaining = false
 
   constructor(context: vscode.ExtensionContext) {
     const state =
@@ -225,6 +236,76 @@ export class ChipMateConnectionService {
       }
     }
     return [...dirs]
+  }
+
+  async runHistoryMaintenance(
+    operation: "migrate" | "restore",
+    archive: string | undefined,
+    progress: (event: HistoryMigrationProgress) => void,
+  ): Promise<{ code: number; result: Record<string, unknown> | null }> {
+    if (this.maintenancePromise) throw new Error("已有聊天历史迁移或恢复任务正在执行")
+    const task = this.runHistoryMaintenanceOnce(operation, archive, progress)
+    this.maintenancePromise = task
+    try {
+      return await task
+    } finally {
+      this.maintenancePromise = null
+    }
+  }
+
+  private async runHistoryMaintenanceOnce(
+    operation: "migrate" | "restore",
+    archive: string | undefined,
+    progress: (event: HistoryMigrationProgress) => void,
+  ) {
+    const directory =
+      this.workspaceDir ?? this.getKnownDirectories()[0] ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    if (!directory) throw new Error("请先打开一个工作区，再执行聊天历史迁移")
+    await this.connect(directory)
+    const client = this.getClient()
+    const response = await client.chipmate.historyMigration.prepare({ directory })
+    if (response.error || !response.data) throw new Error("ChipMate Server 维护门禁请求失败")
+    const prepared = response.data
+    if (!prepared.ready || !prepared.token) {
+      const count = prepared.active.reduce((sum, item) => sum + item.sessions.length, 0)
+      throw new Error(
+        count > 0
+          ? `检测到 ${count} 个活动会话，请等待回复、工具调用和后台任务全部结束后重试`
+          : "另一个 VS Code 窗口正在执行聊天历史维护",
+      )
+    }
+    const token = prepared.token
+    this.maintaining = true
+    this.resetConnection()
+    this.setState("connecting")
+    let stopped = false
+    let result: Record<string, unknown> | null = null
+    try {
+      await this.serverManager.stopForMaintenance()
+      stopped = true
+      const args = ["history", operation]
+      if (operation === "restore") {
+        if (!archive) throw new Error("未选择聊天记录备份")
+        args.push("--archive", archive)
+      }
+      args.push("--format=jsonl")
+      const code = await this.serverManager.runMaintenance(args, (line) => {
+        try {
+          const event = JSON.parse(line) as HistoryMigrationProgress
+          if (!event || typeof event.phase !== "string" || typeof event.message !== "string") return
+          result = event.result
+          progress(event)
+        } catch {
+          // 非 JSONL 输出不展示，避免把完整本地路径或底层日志带入通知。
+        }
+      })
+      return { code, result }
+    } finally {
+      if (!stopped) await client.chipmate.historyMigration.release({ directory, token }).catch(() => undefined)
+      this.maintaining = false
+      await this.connect(directory)
+      this.notifyMigrationComplete()
+    }
   }
 
   /**
@@ -560,9 +641,10 @@ export class ChipMateConnectionService {
    * Throws if any list/reject call fails so callers can abort the
    * destructive operation.
    */
-  async drainPendingPrompts(): Promise<void> {
+  async drainPendingPrompts(signal?: AbortSignal): Promise<void> {
     const client = this.client
     if (!client) return
+    signal?.throwIfAborted()
 
     // Only drain directories from currently-mounted providers (root + worktree dirs).
     // Previously this also called project.list() to include every historically-opened
@@ -578,27 +660,35 @@ export class ChipMateConnectionService {
 
     const list = [...dirs]
     await parallel(list, async (dir) => {
-      const { data: perms, error: permsErr } = await client.permission.list({ directory: dir })
+      signal?.throwIfAborted()
+      const { data: perms, error: permsErr } = await client.permission.list({ directory: dir }, { signal })
       if (permsErr) throw new Error(`Failed to list permissions for ${dir}: ${String(permsErr)}`)
       if (perms) {
         for (const perm of perms) {
-          const { error } = await client.permission.reply({ requestID: perm.id, reply: "reject", directory: dir })
+          signal?.throwIfAborted()
+          const { error } = await client.permission.reply(
+            { requestID: perm.id, reply: "reject", directory: dir },
+            { signal },
+          )
           if (error && !isNotFound(error)) throw new Error(`Failed to reject permission ${perm.id}: ${String(error)}`)
         }
       }
-      const { data: qs, error: qsErr } = await client.question.list({ directory: dir })
+      signal?.throwIfAborted()
+      const { data: qs, error: qsErr } = await client.question.list({ directory: dir }, { signal })
       if (qsErr) throw new Error(`Failed to list questions for ${dir}: ${String(qsErr)}`)
       if (qs) {
         for (const q of qs) {
-          const { error } = await client.question.reject({ requestID: q.id, directory: dir })
+          signal?.throwIfAborted()
+          const { error } = await client.question.reject({ requestID: q.id, directory: dir }, { signal })
           if (error && !isNotFound(error)) throw new Error(`Failed to reject question ${q.id}: ${String(error)}`)
         }
       }
     })
 
     // Suggestions are backend-global despite the directory-bearing SDK route.
-    if (list[0]) await drainSuggestions(client, list[0])
-    await parallel(list, (dir) => drainNetworkWaits(client, dir))
+    if (list[0]) await drainSuggestions(client, list[0], signal)
+    await parallel(list, (dir) => drainNetworkWaits(client, dir, signal))
+    signal?.throwIfAborted()
     for (const listener of this.clearPendingPromptsListeners) {
       listener()
     }
@@ -811,6 +901,7 @@ export class ChipMateConnectionService {
     console.warn("[ChipMate New] ConnectionService: CLI background process exited:", info)
     this.clearStable()
     this.resetConnection()
+    if (info.expected && this.maintaining) return
     const exitReason = info.signal ? `signal ${info.signal}` : `code ${info.code ?? "unknown"}`
     const stderr = info.stderr
       .flatMap((line) => line.split("\n"))
@@ -1010,12 +1101,14 @@ export class ChipMateConnectionService {
   }
 }
 
-async function drainSuggestions(client: ChipMateClient, directory: string): Promise<void> {
-  const { data, error: err } = await client.suggestion.list({ directory })
+async function drainSuggestions(client: ChipMateClient, directory: string, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  const { data, error: err } = await client.suggestion.list({ directory }, { signal })
   if (err) throw new Error(`Failed to list suggestions for ${directory}: ${String(err)}`)
   if (data) {
     for (const s of data) {
-      const { error } = await client.suggestion.dismiss({ requestID: s.id, directory })
+      signal?.throwIfAborted()
+      const { error } = await client.suggestion.dismiss({ requestID: s.id, directory }, { signal })
       if (error) throw new Error(`Failed to dismiss suggestion ${s.id}: ${String(error)}`)
     }
   }

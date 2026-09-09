@@ -182,11 +182,11 @@ export interface Interface {
   readonly get: () => Effect.Effect<Info>
   readonly getGlobal: () => Effect.Effect<Info>
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
-  readonly update: (config: Info) => Effect.Effect<void>
   // chipmate_change start
+  readonly update: (config: Info, options?: { sandbox?: boolean; indexing?: boolean }) => Effect.Effect<void>
   readonly updateGlobal: (
     config: Info,
-    options?: { dispose?: boolean; deferred?: boolean },
+    options?: { dispose?: boolean; deferred?: boolean; indexing?: boolean },
   ) => Effect.Effect<{ info: Info; changed: boolean }>
   // chipmate_change end
   readonly invalidate: () => Effect.Effect<void>
@@ -490,6 +490,24 @@ const layer = Layer.effect(
         const auth = yield* authSvc.all().pipe(Effect.orDie)
 
         let result: Info = {}
+        // chipmate_change start - packaged internal providers are defaults, never overrides for user config
+        if (process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS) {
+          const source = "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS"
+          const defaults = yield* loadConfig(
+            process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS,
+            { dir: ctx.directory, source },
+            undefined,
+            true,
+          ).pipe(
+            Effect.tap(() => Effect.logDebug("loaded internal provider defaults")),
+            Effect.catchDefect((err: unknown) => {
+              caughtWarning(warnings, source, err)
+              return Effect.succeed({} as Info)
+            }),
+          )
+          result = mergeConfigConcatArrays(result, defaults.provider ? { provider: defaults.provider } : {})
+        }
+        // chipmate_change end
         const legacy = yield* Effect.promise(() =>
           ChipMateConfig.loadLegacyConfigs({
             projectDir: ctx.directory,
@@ -1021,8 +1039,11 @@ const layer = Layer.effect(
       )
     })
 
-    const update = Effect.fn("Config.update")(function* (config: Info) {
-      // chipmate_change start - delegate ChipMate project config update behavior.
+    // chipmate_change start - delegate ChipMate project config update behavior.
+    const update = Effect.fn("Config.update")(function* (
+      config: Info,
+      options?: { sandbox?: boolean; indexing?: boolean },
+    ) {
       const ctx = yield* InstanceState.context
       yield* ChipMateConfig.updateProjectConfig({
         fs,
@@ -1040,7 +1061,10 @@ const layer = Layer.effect(
           directory: ctx.directory,
           payload: {
             type: Event.ConfigUpdated.type,
-            properties: { sandbox: Object.hasOwn(config, "sandbox") },
+            properties: {
+              sandbox: options?.sandbox ?? Object.hasOwn(config, "sandbox"),
+              ...(options?.indexing ?? Object.hasOwn(config, "indexing") ? { indexing: true as const } : {}),
+            },
           },
         }),
       )
@@ -1053,12 +1077,15 @@ const layer = Layer.effect(
 
     const invalidate = Effect.fn("Config.invalidate")(function* () {
       yield* invalidateGlobal
+      // chipmate_change start - invalidate the merged instance state together with global config
+      yield* InstanceState.invalidate(state).pipe(Effect.catchCause(() => Effect.void))
+      // chipmate_change end
     })
 
     // chipmate_change start - add dispose option to skip Instance.disposeAll for permission-only changes
     const updateGlobal = Effect.fn("Config.updateGlobal")(function* (
       config: Info,
-      options?: { dispose?: boolean; deferred?: boolean },
+      options?: { dispose?: boolean; deferred?: boolean; indexing?: boolean },
     ) {
       const dispose = options?.dispose ?? true
       // chipmate_change end
@@ -1110,7 +1137,11 @@ const layer = Layer.effect(
             directory: "global",
             payload: {
               type: Event.ConfigUpdated.type,
-              properties: { ...(options?.deferred ? { deferred: true } : {}), sandbox: sandboxChanged },
+              properties: {
+                ...(options?.deferred ? { deferred: true } : {}),
+                sandbox: sandboxChanged,
+                ...(options?.indexing ?? Object.hasOwn(config, "indexing") ? { indexing: true as const } : {}),
+              },
             },
           }),
         ).pipe(Effect.catchCause(() => Effect.void))
@@ -1121,13 +1152,16 @@ const layer = Layer.effect(
       if (changed) yield* invalidate()
       // chipmate_change start - hot-reload global config changes in the active instance
       if (changed) {
-        yield* InstanceState.invalidate(state).pipe(Effect.catchCause(() => Effect.void))
         yield* Effect.sync(() =>
           GlobalBus.emit("event", {
             directory: "global",
             payload: {
               type: Event.ConfigUpdated.type,
-              properties: { ...(options?.deferred ? { deferred: true } : {}), sandbox: sandboxChanged },
+              properties: {
+                ...(options?.deferred ? { deferred: true } : {}),
+                sandbox: sandboxChanged,
+                ...(options?.indexing ?? Object.hasOwn(config, "indexing") ? { indexing: true as const } : {}),
+              },
             },
           }),
         ).pipe(Effect.catchCause(() => Effect.void))

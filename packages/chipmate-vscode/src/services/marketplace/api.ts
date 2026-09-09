@@ -33,6 +33,8 @@ export interface MarketplaceApiClientOptions {
   disabledReason?: string
 }
 
+export type MarketplaceAuthorize = <T>(task: (accessToken: string) => Promise<T>, interactive?: boolean) => Promise<T>
+
 export interface InstallIntent {
   skillId: string
   revision: number
@@ -143,6 +145,7 @@ export class MarketplaceApiClient {
   private readonly skillsOnly: boolean
   private readonly fetchText: FetchText
   private readonly disabledReason?: string
+  private authorization?: MarketplaceAuthorize
 
   constructor(options: MarketplaceApiClientOptions = {}) {
     this.baseUrl = options.disabledReason ? "" : normalizeBaseUrl(options.baseUrl) || BASE_URL
@@ -163,6 +166,14 @@ export class MarketplaceApiClient {
 
   marketplaceBaseUrl(): string {
     return this.baseUrl
+  }
+
+  setAuthorization(authorization: MarketplaceAuthorize) {
+    this.authorization = authorization
+  }
+
+  private protected<T>(accessToken: string, task: (token: string) => Promise<T>) {
+    return this.authorization ? this.authorization(task, false) : task(accessToken)
   }
 
   isSkillsOnly(): boolean {
@@ -350,28 +361,26 @@ export class MarketplaceApiClient {
     return { items, ...(typeof value.nextCursor === "string" ? { nextCursor: value.nextCursor } : {}) }
   }
 
-  async resolveUser(apiKey: string): Promise<MarketplaceUser> {
-    const response = await postJson(`${this.serverBaseUrl()}/auth/new-api/resolve-user`, { apiKey })
-    if (!isObject(response) || response.ok !== true || !isObject(response.user)) {
-      const code = isObject(response) && typeof response.code === "string" ? response.code : "resolve-user-failed"
-      throw new Error(code)
+  async resolveUser(accessToken: string): Promise<MarketplaceUser> {
+    const response = await this.protected(accessToken, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/auth/me`, { apiKey: token }),
+    )
+    if (!isObject(response) || typeof response.displayName !== "string" || !response.displayName.trim()) {
+      throw new Error("marketplace-user-invalid")
     }
-    const name = typeof response.user.name === "string" ? response.user.name : ""
-    if (!name) throw new Error("resolve-user-missing-name")
-    return {
-      name,
-      tokenName: typeof response.user.tokenName === "string" ? response.user.tokenName : undefined,
-    }
+    return { name: response.displayName }
   }
 
   async starSkill(id: string, apiKey: string): Promise<{ stars?: number }> {
     if (await this.isAligned()) {
       const items = await this.fetchSkills(apiKey)
       const item = items.find((entry) => entry.id === id)
-      await requestJson(`${this.serverBaseUrl()}/api/v1/favorites/${encodeURIComponent(id)}`, {
-        method: item?.favorite ? "DELETE" : "PUT",
-        apiKey,
-      })
+      await this.protected(apiKey, (token) =>
+        requestJson(`${this.serverBaseUrl()}/api/v1/favorites/${encodeURIComponent(id)}`, {
+          method: item?.favorite ? "DELETE" : "PUT",
+          apiKey: token,
+        }),
+      )
       this.cache.delete("skills")
       return { stars: item?.stars }
     }
@@ -400,30 +409,38 @@ export class MarketplaceApiClient {
   }
 
   async installations(apiKey: string): Promise<InstallationState[]> {
-    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/me/installations`, { apiKey })
+    const value = await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/me/installations`, { apiKey: token }),
+    )
     return Array.isArray(value) ? value.filter(installationState) : []
   }
 
   async publications(apiKey: string): Promise<PublicationRun[]> {
-    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/me/publications`, { apiKey })
+    const value = await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/me/publications`, { apiKey: token }),
+    )
     return Array.isArray(value) ? value.map(publication) : []
   }
 
   async unpublishSkill(id: string, apiKey: string): Promise<PublicationRun> {
-    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/skills/${encodeURIComponent(id)}/unpublish`, {
-      method: "POST",
-      apiKey,
-    })
+    const value = await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/skills/${encodeURIComponent(id)}/unpublish`, {
+        method: "POST",
+        apiKey: token,
+      }),
+    )
     this.cache.delete("skills")
     return publication(value)
   }
 
   async undoPublication(runId: string, apiKey: string, idempotencyKey: string): Promise<PublicationRun> {
-    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(runId)}/undo`, {
-      method: "POST",
-      apiKey,
-      idempotencyKey,
-    })
+    const value = await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(runId)}/undo`, {
+        method: "POST",
+        apiKey: token,
+        idempotencyKey,
+      }),
+    )
     this.cache.delete("skills")
     return publication(value)
   }
@@ -433,52 +450,57 @@ export class MarketplaceApiClient {
   }
 
   async analytics(apiKey: string): Promise<AnalyticsSeries[]> {
-    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/analytics/overview`, { apiKey })
+    const value = await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/analytics/overview`, { apiKey: token }),
+    )
     return Array.isArray(value) ? value.filter(analyticsSeries) : []
   }
 
   async events(items: MarketEvent[], apiKey: string): Promise<void> {
-    await requestJson(`${this.serverBaseUrl()}/api/v1/events/batch`, { method: "POST", apiKey, body: items })
+    await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/events/batch`, { method: "POST", apiKey: token, body: items }),
+    )
   }
 
   async publishArchive(archive: Buffer, apiKey: string, idempotencyKey: string): Promise<PublicationRun> {
-    const value = await requestBinary(`${this.serverBaseUrl()}/api/v1/publications`, archive, apiKey, idempotencyKey)
+    const value = await this.protected(apiKey, (token) =>
+      requestBinary(`${this.serverBaseUrl()}/api/v1/publications`, archive, token, idempotencyKey),
+    )
     return publication(value)
   }
 
   async getPublication(id: string, apiKey: string): Promise<PublicationRun> {
-    return publication(
-      await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}`, { apiKey }),
-    )
+    return publication(await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}`, { apiKey: token }),
+    ))
   }
 
   async putPublicationPatches(id: string, patches: PublicationPatch[], apiKey: string): Promise<PublicationRun> {
-    return publication(
-      await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}/patches`, {
+    return publication(await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}/patches`, {
         method: "POST",
-        apiKey,
+        apiKey: token,
         body: patches,
       }),
-    )
+    ))
   }
 
   async applyPublicationPatches(id: string, patchIds: string[], apiKey: string): Promise<PublicationRun> {
-    return publication(
-      await requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}/apply`, {
+    return publication(await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/publications/${encodeURIComponent(id)}/apply`, {
         method: "POST",
-        apiKey,
+        apiKey: token,
         body: { patchIds },
       }),
-    )
+    ))
   }
 
   async consumeInstallIntent(token: string, apiKey: string): Promise<InstallIntent> {
-    const value = await requestJson(
-      `${this.serverBaseUrl()}/api/v1/install-intents/${encodeURIComponent(token)}/consume`,
-      {
+    const value = await this.protected(apiKey, (accessToken) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/install-intents/${encodeURIComponent(token)}/consume`, {
         method: "POST",
-        apiKey,
-      },
+        apiKey: accessToken,
+      }),
     )
     if (
       !isObject(value) ||
@@ -497,11 +519,13 @@ export class MarketplaceApiClient {
     state: Omit<InstallationSync, "changedAt">,
     apiKey: string,
   ): Promise<InstallationSync> {
-    const value = await requestJson(`${this.serverBaseUrl()}/api/v1/installations/${encodeURIComponent(id)}`, {
-      method: state.status === "removed" ? "DELETE" : "PUT",
-      apiKey,
-      body: state,
-    })
+    const value = await this.protected(apiKey, (token) =>
+      requestJson(`${this.serverBaseUrl()}/api/v1/installations/${encodeURIComponent(id)}`, {
+        method: state.status === "removed" ? "DELETE" : "PUT",
+        apiKey: token,
+        body: state,
+      }),
+    )
     if (!isObject(value) || typeof value.changedAt !== "string") throw new Error("Invalid installation response")
     return value as unknown as InstallationSync
   }

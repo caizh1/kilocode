@@ -15,7 +15,7 @@ import AgentBehaviourTab from "../components/settings/AgentBehaviourTab"
 import AutoApproveTab from "../components/settings/AutoApproveTab"
 import ModeEditView from "../components/settings/ModeEditView"
 import McpEditView from "../components/settings/McpEditView"
-import type { AgentConfig, CommandConfig, Config } from "../types/messages"
+import type { AgentConfig, CommandConfig, Config, Provider } from "../types/messages"
 import IndexingTab from "../components/settings/IndexingTab"
 import ChipmateServerTab, { type ChipmateServerTabProps } from "../components/settings/ChipmateServerTab"
 import { CHIPMATE_SERVER_KEY } from "../../../src/shared/chipmate-server"
@@ -26,6 +26,9 @@ import { useDialog } from "@chipmate/chipmate-ui/context/dialog"
 import CustomProviderDialog from "../components/settings/CustomProviderDialog"
 import type { InternalOfflineProviderDefaults } from "../../../src/shared/internal-offline"
 import { QWEN_FIM_MODEL_ID } from "../../../src/shared/qwen-autocomplete"
+import PatentRadarProgressDialog from "../components/settings/PatentRadarProgressDialog"
+import { PatentRadarTaskStrip } from "../components/settings/PatentCenterTab"
+import type { PatentRadarRun } from "../../../src/patent-radar/types"
 
 const meta: Meta = {
   title: "Settings",
@@ -46,9 +49,14 @@ const customDefaults: InternalOfflineProviderDefaults = {
   variant: "low",
 }
 
-function OpenCustomProviderDialog(props: { defaults?: InternalOfflineProviderDefaults }) {
+function OpenCustomProviderDialog(props: {
+  defaults?: InternalOfflineProviderDefaults
+  setupMode?: "primary" | "additional"
+}) {
   const dialog = useDialog()
-  onMount(() => dialog.show(() => <CustomProviderDialog defaults={props.defaults} />))
+  onMount(() =>
+    dialog.show(() => <CustomProviderDialog defaults={props.defaults} setupMode={props.setupMode ?? "primary"} />),
+  )
   return <div style={{ width: "100%", height: "100%" }} />
 }
 
@@ -263,6 +271,9 @@ function AlignedSettings(props: {
   width?: string
   height?: string
   server?: string
+  settings?: Record<string, unknown>
+  providers?: Record<string, Provider>
+  connected?: string[]
   onClose?: () => void
 }) {
   let ref: HTMLDivElement | undefined
@@ -282,7 +293,9 @@ function AlignedSettings(props: {
         noPadding
         locale="zh"
         config={aligned}
-        settings={{ [CHIPMATE_SERVER_KEY]: props.server ?? "http://127.0.0.1:6001" }}
+        settings={{ [CHIPMATE_SERVER_KEY]: props.server ?? "http://127.0.0.1:6001", ...props.settings }}
+        providers={props.providers}
+        connected={props.connected}
         dirty={props.dirty}
         saving={props.saving}
         canSave={props.canSave}
@@ -297,6 +310,188 @@ function AlignedSettings(props: {
       </StoryProviders>
     </div>
   )
+}
+
+const patentProviders = {
+  chipmate: {
+    id: "chipmate",
+    name: "ChipMate",
+    env: [],
+    models: {
+      "deepseek-v4-flash": {
+        id: "deepseek-v4-flash",
+        name: "deepseek-v4-flash",
+        limit: { context: 128000, output: 8192 },
+      },
+    },
+  },
+} as unknown as Record<string, Provider>
+
+export const SettingsPatentCenter: Story = {
+  name: "设置 — 专利中心",
+  render: () => (
+    <AlignedSettings
+      tab="patentCenter"
+      width="1440px"
+      height="1024px"
+      settings={{
+        "patentRadar.serverBaseUrl": "https://patent.internal:6020",
+        "patentRadar.enabled": true,
+        "patentRadar.scheduleDays": 7,
+        "patentRadar.analysisModel": { providerID: "chipmate", modelID: "deepseek-v4-flash" },
+        "patentRadar.uploadFullSnapshot": false,
+      }}
+      providers={patentProviders}
+      connected={["chipmate"]}
+    />
+  ),
+}
+
+export const SettingsPatentCenterNarrow: Story = {
+  name: "设置 — 专利中心窄屏",
+  render: () => (
+    <AlignedSettings
+      tab="patentCenter"
+      width="480px"
+      height="900px"
+      settings={{
+        "patentRadar.serverBaseUrl": "https://patent.internal:6020",
+        "patentRadar.enabled": true,
+        "patentRadar.scheduleDays": 7,
+        "patentRadar.analysisModel": { providerID: "chipmate", modelID: "deepseek-v4-flash" },
+      }}
+      providers={patentProviders}
+      connected={["chipmate"]}
+    />
+  ),
+}
+
+const patentRun: PatentRadarRun = {
+  schemaVersion: 2,
+  methodVersion: "2.1.0",
+  id: "patent-story-run",
+  workspace: "/workspace/embedded-controller",
+  scope: { kind: "workspace" },
+  scopeFingerprint: "workspace-fingerprint",
+  scopeCoverage: null,
+  sourceFingerprint: "source-fingerprint",
+  createdAt: "2026-09-01T01:30:00.000Z",
+  updatedAt: "2026-09-01T01:48:42.000Z",
+  status: "SCANNING",
+  cutoffDate: "2026-09-01",
+  corpus: null,
+  coverage: {
+    supportedFiles: 214,
+    analyzedFiles: 208,
+    skippedFiles: 6,
+    codeEvidence: 936,
+    documentEvidence: 42,
+    relations: 381,
+    compileCommands: "available",
+    completeWorkspaceScan: false,
+  },
+  relations: [],
+  candidates: [
+    {
+      id: "candidate-37",
+      title: "基于环形缓冲区水位的自适应中断采样控制",
+      technicalProblem: "根据中断采集负载与缓冲区水位，动态调整采样与功耗控制策略。",
+      implementation: "根据缓冲区水位切换中断采样状态。",
+      technicalEffect: "减少空闲唤醒并保持数据连续。",
+      features: [
+        { id: "F1", text: "依据缓冲区水位选择采样状态", necessary: true },
+        { id: "F2", text: "在中断入口原子切换状态", necessary: true },
+        { id: "F3", text: "联动功耗控制策略调整采样频率", necessary: true },
+      ],
+      evidenceIds: ["E1", "E2", "E3", "E4", "E5", "E6"],
+      discoveryTier: "technical-candidate",
+      origin: "cross-file",
+      relationIds: ["R1", "R2"],
+      coreSourceFiles: ["src/irq.c", "src/ring_buffer.c", "src/power_control.c"],
+      supportingSourceFiles: [],
+      effectEvidenceLevel: "implemented",
+      groundingStatus: "verified",
+    },
+  ],
+  sources: [],
+  assessments: [],
+  reviews: {},
+  warnings: [],
+  failure: null,
+  progress: {
+    phase: "bridge-discovery",
+    completedUnits: 110,
+    totalUnits: 128,
+    failedUnits: 0,
+    startedAt: new Date(Date.now() - (60 * 60 + 46 * 60 + 51) * 1000).toISOString(),
+    lastActivityAt: new Date().toISOString(),
+    events: [
+      {
+        id: "1",
+        at: new Date(Date.now() - 18 * 60_000).toISOString(),
+        phase: "workspace-scan",
+        message: "工作区证据提取完成，开始分批分析候选。",
+      },
+      {
+        id: "2",
+        at: new Date(Date.now() - 12 * 60_000).toISOString(),
+        phase: "relation-building",
+        message: "确定性关系图已建立，共 381 条关系。",
+        batchIndex: 24,
+        totalBatches: 128,
+      },
+      {
+        id: "3",
+        at: new Date().toISOString(),
+        phase: "bridge-discovery",
+        message: "正在发现跨文件组合",
+        batchIndex: 110,
+        totalBatches: 128,
+      },
+    ],
+  },
+}
+
+function OpenPatentRadarProgress() {
+  const dialog = useDialog()
+  onMount(() =>
+    dialog.show(() => (
+      <PatentRadarProgressDialog
+        run={() => patentRun}
+        loading={() => false}
+        cancelling={() => false}
+        error={() => undefined}
+        model={() => "chipmate / deepseek-v4-flash"}
+        onCancel={noop}
+        onRestart={noop}
+        onRetry={noop}
+        onOpenCandidates={noop}
+      />
+    )),
+  )
+  return <div style={{ width: "100%", height: "100%" }} />
+}
+
+export const PatentRadarProgress: Story = {
+  name: "专利中心 — 扫描进度弹窗",
+  render: () => (
+    <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
+      <StoryProviders noPadding locale="zh">
+        <OpenPatentRadarProgress />
+      </StoryProviders>
+    </div>
+  ),
+}
+
+export const PatentRadarCollapsed: Story = {
+  name: "专利中心 — 后台任务条",
+  render: () => (
+    <StoryProviders locale="zh">
+      <div class="settings-shell" style={{ width: "900px", padding: "32px" }}>
+        <PatentRadarTaskStrip run={patentRun} onOpen={noop} />
+      </div>
+    </StoryProviders>
+  ),
 }
 
 export const SettingsChipmateUpdateLatest: Story = {
@@ -399,12 +594,7 @@ export const SettingsChipmateUpdateContrast: Story = {
 
 export const SettingsChipmateUpdateError: Story = {
   name: "设置更新 — 失败详情响应式基准",
-  render: () => (
-    <AlignedSettings
-      server="https://chipmate.internal:7443"
-      preview={{ update: failedUpdate }}
-    />
-  ),
+  render: () => <AlignedSettings server="https://chipmate.internal:7443" preview={{ update: failedUpdate }} />,
 }
 
 export const SettingsAlignedDesktop: Story = {
@@ -635,6 +825,106 @@ export const ProvidersConfigure: Story = {
   name: "ProvidersTab — no providers configured",
   render: () => (
     <StoryProviders>
+      <div style={{ "max-height": "700px", overflow: "auto" }}>
+        <ProvidersTab />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+const internalPrimaryConfig = {
+  chipmate: {
+    name: "ChipMate",
+    npm: "@ai-sdk/openai-compatible",
+    options: { baseURL: customDefaults.baseURL },
+    models: { [customDefaults.modelID]: { name: customDefaults.modelID, reasoning: true } },
+  },
+} as const
+
+const internalProviderConfig = {
+  ...internalPrimaryConfig,
+  lab: {
+    name: "Internal Lab",
+    npm: "@ai-sdk/openai-compatible",
+    options: { baseURL: "https://lab.example.com/v1" },
+    models: { "lab-chat": { name: "Lab Chat" } },
+  },
+} as const
+
+const internalPrimaryProviders: Record<string, Provider> = {
+  chipmate: {
+    id: "chipmate",
+    name: "ChipMate",
+    source: "config",
+    env: [],
+    models: { [customDefaults.modelID]: { id: customDefaults.modelID, name: customDefaults.modelID } },
+  },
+}
+
+const internalProviders: Record<string, Provider> = {
+  ...internalPrimaryProviders,
+  lab: {
+    id: "lab",
+    name: "Internal Lab",
+    source: "config",
+    env: [],
+    models: { "lab-chat": { id: "lab-chat", name: "Lab Chat" } },
+  },
+}
+
+export const ProvidersInternalMultiple: Story = {
+  name: "ProvidersTab — internal multiple custom providers",
+  render: () => (
+    <StoryProviders
+      locale="zh"
+      config={{ provider: internalProviderConfig } as Config}
+      providers={internalProviders}
+      connected={["chipmate", "lab"]}
+    >
+      <div style={{ "max-height": "760px", overflow: "auto" }}>
+        <ProvidersTab internal internalDefaults={customDefaults} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const ProvidersInternalPrimaryOnly: Story = {
+  name: "ProvidersTab — internal connected ChipMate only",
+  render: () => (
+    <StoryProviders
+      locale="zh"
+      chipmateAuth
+      config={{ provider: internalPrimaryConfig } as Config}
+      providers={internalPrimaryProviders}
+      connected={["chipmate"]}
+    >
+      <div style={{ "max-height": "760px", overflow: "auto" }}>
+        <ProvidersTab internal internalDefaults={customDefaults} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const ProvidersInternalPrimaryUnconnected: Story = {
+  name: "ProvidersTab — internal unconnected ChipMate configuration",
+  render: () => (
+    <StoryProviders
+      locale="zh"
+      config={{ provider: internalPrimaryConfig } as Config}
+      providers={internalPrimaryProviders}
+      connected={[]}
+    >
+      <div style={{ "max-height": "760px", overflow: "auto" }}>
+        <ProvidersTab internal internalDefaults={customDefaults} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const ProvidersGatewayConnected: Story = {
+  name: "ProvidersTab — public ChipMate Gateway connected",
+  render: () => (
+    <StoryProviders locale="zh" chipmateAuth connected={["chipmate"]}>
       <div style={{ "max-height": "700px", overflow: "auto" }}>
         <ProvidersTab />
       </div>

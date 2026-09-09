@@ -1,3 +1,4 @@
+import { diagnosticCapabilities } from "./diagnostics.ts"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
 import type { FastifyInstance, FastifyReply } from "fastify"
@@ -20,7 +21,8 @@ import type {
   SearchItem,
 } from "@chipmate/market-db"
 import { SKILL_SPEC_VERSION } from "@chipmate/skill-spec"
-import { Identity, IdentityError, isSecure, sendIdentityError, type ResolveUser } from "./identity.ts"
+import { Identity, IdentityError, isSecure, sendIdentityError } from "./identity.ts"
+import type { LdapConfig } from "./ldap.ts"
 import { MarketEvents } from "./events.ts"
 
 interface Params {
@@ -42,9 +44,9 @@ interface Query {
 }
 
 interface AlignedOptions {
-  resolveUser?: ResolveUser
-  now?: () => number
+  identity?: Identity
   events?: MarketEvents
+  now?: () => number
   extensionMarket?: boolean
   extensionStatus?: () => ExtensionStatus
 }
@@ -104,7 +106,7 @@ const CONTEXT = new Set([
 ])
 
 export function registerAligned(app: FastifyInstance, db: MarketDb, opts: AlignedOptions = {}) {
-  const identity = new Identity(db, opts.resolveUser, opts.now)
+  const identity = opts.identity ?? new Identity(db)
   const now = opts.now ?? Date.now
   const events = opts.events ?? new MarketEvents()
   const searches = new Map<string, Promise<SearchItem[]>>()
@@ -114,16 +116,19 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
     cached(reply, req.headers["if-none-match"], await capabilities(db, opts.extensionMarket === true)),
   )
 
+  app.get("/api/v1/auth/status", async (_req, reply) => reply.send(await identity.authStatus()))
+
   app.post("/api/v1/auth/session", async (req, reply) => {
-    const key =
-      typeof (req.body as { apiKey?: unknown } | undefined)?.apiKey === "string"
-        ? (req.body as { apiKey: string }).apiKey.trim()
-        : ""
-    if (!key) return problem(reply, 400, "AUTH_INVALID", "API key is required.")
+    const body = (req.body ?? {}) as { username?: unknown; password?: unknown }
+    const username = typeof body.username === "string" ? body.username.trim() : ""
+    const password = typeof body.password === "string" ? body.password : ""
+    if (!username || !password) return problem(reply, 400, "AUTH_INVALID", "用户名和密码为必填项。")
     try {
-      const session = await identity.login(key)
+      const session = await identity.login(username, password, req.ip)
       identity.cookie(reply, session.token, isSecure(req))
-      return reply.header("x-csrf-token", session.csrf).send(session.user)
+      return reply
+        .header("x-csrf-token", session.csrf)
+        .send({ ...session.user, isAdmin: session.isAdmin, authSource: "ldap" })
     } catch (err) {
       return sendIdentityError(reply, err)
     }
@@ -141,7 +146,231 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
 
   app.get("/api/v1/auth/me", async (req, reply) => {
     try {
-      return reply.send((await identity.principal(req)).user)
+      const principal = await identity.principal(req)
+      return reply.send({ ...principal.user, isAdmin: principal.isAdmin, authSource: "ldap" })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/auth/device/code", async (req, reply) => {
+    try {
+      return reply.send(await identity.createDevice(origin(req)))
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/auth/device/approve", async (req, reply) => {
+    try {
+      const principal = await identity.write(req)
+      const userCode = typeof (req.body as { userCode?: unknown } | undefined)?.userCode === "string"
+        ? (req.body as { userCode: string }).userCode
+        : ""
+      await identity.approveDevice(userCode, principal)
+      return reply.send({ ok: true })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/auth/device/deny", async (req, reply) => {
+    try {
+      await identity.write(req)
+      const userCode = typeof (req.body as { userCode?: unknown } | undefined)?.userCode === "string"
+        ? (req.body as { userCode: string }).userCode
+        : ""
+      await identity.denyDevice(userCode)
+      return reply.send({ ok: true })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/auth/device/token", async (req, reply) => {
+    try {
+      const deviceCode = typeof (req.body as { deviceCode?: unknown } | undefined)?.deviceCode === "string"
+        ? (req.body as { deviceCode: string }).deviceCode
+        : ""
+      if (!deviceCode) return problem(reply, 400, "VALIDATION_FAILED", "deviceCode 为必填项。")
+      const result = await identity.pollDevice(deviceCode)
+      if (!("state" in result)) return reply.send(result)
+      if (result.state === "pending") return problem(reply, 400, "AUTHORIZATION_PENDING", "等待用户批准。")
+      if (result.state === "slow_down") {
+        return reply.header("retry-after", String(result.interval ?? 10)).code(429).send({ ok: false, code: "SLOW_DOWN", message: "轮询过快。" })
+      }
+      if (result.state === "expired" || result.state === "consumed") {
+        return problem(reply, 410, "DEVICE_CODE_EXPIRED", "设备码已过期或已使用。")
+      }
+      return problem(reply, result.state === "denied" ? 403 : 404, "DEVICE_CODE_INVALID", "设备码无效。")
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/auth/token/refresh", async (req, reply) => {
+    try {
+      const refreshToken = typeof (req.body as { refreshToken?: unknown } | undefined)?.refreshToken === "string"
+        ? (req.body as { refreshToken: string }).refreshToken
+        : ""
+      return reply.send(await identity.refresh(refreshToken))
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/auth/token/revoke", async (req, reply) => {
+    try {
+      await identity.revoke(bearer(req.headers.authorization))
+      return reply.send({ ok: true })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/admin/auth/session", async (req, reply) => {
+    try {
+      const key = typeof (req.body as { key?: unknown } | undefined)?.key === "string"
+        ? (req.body as { key: string }).key
+        : ""
+      const session = await identity.breakGlassLogin(key)
+      identity.adminCookie(reply, session.token, isSecure(req))
+      return reply.header("x-csrf-token", session.csrf).send({ ok: true })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.get("/api/v1/admin/auth/session", async (req, reply) => {
+    try { return reply.send(await identity.adminStatus(req, reply)) }
+    catch (err) { return sendIdentityError(reply, err) }
+  })
+
+  app.delete("/api/v1/admin/auth/session", async (req, reply) => {
+    try {
+      await identity.adminLogout(req)
+      identity.clearAdmin(reply, isSecure(req))
+      return reply.send({ ok: true })
+    } catch (err) { return sendIdentityError(reply, err) }
+  })
+
+  app.get("/api/v1/admin/auth/admins", async (req, reply) => {
+    try {
+      await identity.admin(req)
+      return reply.header("cache-control", "no-store").send({ items: await db.administrators() })
+    } catch (err) { return sendIdentityError(reply, err) }
+  })
+
+  app.post("/api/v1/admin/auth/admins/resolve", async (req, reply) => {
+    try {
+      await identity.admin(req, true)
+      const body = req.body as { username?: unknown } | undefined
+      if (typeof body?.username !== "string" || !body.username.trim()) return problem(reply, 400, "VALIDATION_FAILED", "请输入 LDAP 用户名。")
+      return reply.header("cache-control", "no-store").send(await identity.resolveAdministrator(body.username))
+    } catch (err) { return sendIdentityError(reply, err) }
+  })
+
+  app.post("/api/v1/admin/auth/admins", async (req, reply) => {
+    try {
+      await identity.admin(req, true)
+      const body = req.body as { username?: unknown; subject?: unknown } | undefined
+      if (typeof body?.username !== "string" || typeof body.subject !== "string" || !body.subject || !body.username.trim()) {
+        return problem(reply, 400, "VALIDATION_FAILED", "请先查询并确认 LDAP 身份。")
+      }
+      return reply.send(await identity.changeAdministrator(req, { username: body.username, subject: body.subject, displayName: "" }, true))
+    } catch (err) {
+      await identity.auditAdminDenied(req, "grant", err)
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.delete("/api/v1/admin/auth/admins/:subject", async (req, reply) => {
+    try {
+      await identity.admin(req, true)
+      const subject = (req.params as { subject: string }).subject
+      const target = (await db.administrators()).find((item) => item.subject === subject)
+      if (!target) return problem(reply, 404, "NOT_FOUND", "管理员记录不存在。")
+      return reply.send(await identity.changeAdministrator(req, target, false))
+    } catch (err) {
+      await identity.auditAdminDenied(req, "revoke", err)
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.get("/api/v1/admin/auth/ldap", async (req, reply) => {
+    try {
+      await identity.admin(req)
+      return reply.header("cache-control", "no-store").send({ config: await identity.config() })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/admin/auth/ldap/test", async (req, reply) => {
+    try {
+      await identity.admin(req, true)
+      const body = (req.body ?? {}) as { config?: LdapConfig; bindPassword?: unknown; username?: unknown }
+      if (!body.config || typeof body.config !== "object") {
+        return problem(reply, 400, "VALIDATION_FAILED", "config 为必填项。")
+      }
+      const profile = await identity.testConfig(
+        body.config,
+        typeof body.bindPassword === "string" ? body.bindPassword : "",
+        typeof body.username === "string" ? body.username : undefined,
+      )
+      return reply.send({ ok: true, ...(profile ? { profile } : {}) })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.put("/api/v1/admin/auth/ldap", async (req, reply) => {
+    try {
+      const admin = await identity.admin(req, true)
+      const body = (req.body ?? {}) as { config?: LdapConfig; bindPassword?: unknown; testUsername?: unknown }
+      if (!body.config || typeof body.config !== "object") {
+        return problem(reply, 400, "VALIDATION_FAILED", "config 为必填项。")
+      }
+      const config = await identity.saveConfig(
+        body.config,
+        typeof body.bindPassword === "string" ? body.bindPassword : "",
+        admin.actor,
+        typeof body.testUsername === "string" ? body.testUsername : undefined,
+      )
+      identity.clearAdmin(reply, isSecure(req))
+      return reply.send({ config, sessionsRevoked: true })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.get("/api/v1/admin/auth/identity-mappings", async (req, reply) => {
+    try {
+      await identity.admin(req)
+      return reply.header("cache-control", "no-store").send({ items: await db.identityMappings() })
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.post("/api/v1/admin/auth/identity-mappings", async (req, reply) => {
+    try {
+      const admin = await identity.admin(req, true)
+      const body = (req.body ?? {}) as { username?: unknown; userId?: unknown }
+      if (typeof body.username !== "string" || typeof body.userId !== "string") {
+        return problem(reply, 400, "VALIDATION_FAILED", "username 和 userId 为必填项。")
+      }
+      return reply.send(await identity.mapIdentity(body.username, body.userId, admin.actor))
+    } catch (err) {
+      return sendIdentityError(reply, err)
+    }
+  })
+
+  app.delete("/api/v1/admin/auth/identity-mappings/:subject", async (req, reply) => {
+    try {
+      const admin = await identity.admin(req, true)
+      const removed = await identity.unmapIdentity((req.params as { subject: string }).subject, admin.actor)
+      return reply.send({ ok: true, removed })
     } catch (err) {
       return sendIdentityError(reply, err)
     }
@@ -567,6 +796,8 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
 
   app.get("/api/v1/status", async (req, reply) => {
     const health = await db.health()
+    const auth = await identity.authStatus()
+    const authReady = auth.configured && auth.enabled
     const trustedHttp = req.protocol !== "https"
     const runtime = opts.extensionStatus?.() ?? {
       enabled: true,
@@ -587,14 +818,18 @@ export function registerAligned(app: FastifyInstance, db: MarketDb, opts: Aligne
         extensions.temporary === true &&
         (extensions.warnings?.length ?? 0) === 0)
     return reply.send({
-      ok: health.available && extensionReady,
+      ok: health.available && extensionReady && authReady,
       transport: trustedHttp ? "trusted-http" : "https",
       render: "ready",
       market: health.available ? "ready" : "degraded",
       packages: "ready",
+      auth,
       ...(extensions ? { extensions } : {}),
       warnings: [
-        ...(trustedHttp ? ["当前使用受信内网 HTTP，登录时的 New API key 不受传输加密保护。"] : []),
+        ...(trustedHttp ? ["当前网页使用 HTTP，LDAP 用户名、密码和会话不受浏览器到 Server 的传输加密保护。"] : []),
+        ...(!auth.configured ? ["LDAP 尚未配置，受保护的市场操作不可用。"] : []),
+        ...(auth.configured && !auth.enabled ? ["LDAP 认证当前未启用，受保护的市场操作不可用。"] : []),
+        ...(authReady && auth.insecure ? ["Server 到 Active Directory 使用未加密 LDAP。"] : []),
         ...(health.available ? [] : ["Market database is unavailable."]),
       ],
     })
@@ -625,6 +860,7 @@ async function capabilities(db: MarketDb, extensions: boolean): Promise<MarketCa
   return {
     mode: "aligned-v1",
     apiVersion: "1.0.0",
+    diagnostics: diagnosticCapabilities,
     catalogVersion: await db.version(),
     skillSpecVersion: SKILL_SPEC_VERSION,
     features: {
@@ -888,6 +1124,23 @@ function metricContext(value: unknown) {
 
 function header(value: string | string[] | undefined) {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? ""
+}
+
+function bearer(value: string | undefined) {
+  return value?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? ""
+}
+
+function origin(req: Parameters<Identity["write"]>[0]) {
+  const configured = process.env.CHIPMATE_PUBLIC_BASE_URL?.trim()
+  try {
+    const value = new URL(configured || `${req.protocol}://${header(req.headers.host)}`)
+    if (!/^https?:$/.test(value.protocol) || (configured && (value.pathname !== "/" || value.search || value.hash))) {
+      throw new Error("invalid")
+    }
+    return value.origin
+  } catch {
+    throw new IdentityError(503, "PUBLIC_URL_INVALID", "ChipMate Server 公网地址配置无效。")
+  }
 }
 
 function positive(value: string | undefined) {

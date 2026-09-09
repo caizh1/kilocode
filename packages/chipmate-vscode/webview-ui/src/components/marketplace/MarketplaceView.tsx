@@ -343,6 +343,11 @@ export const MarketplaceView = () => {
     vscode.postMessage({ type: "verifyMarketplaceUser" })
   }
 
+  const logoutUser = () => {
+    setRuntimeIdentity({ status: "verifying", checkedAt: new Date().toISOString() })
+    vscode.postMessage({ type: "logoutMarketplaceUser" })
+  }
+
   const openLocalImport = () => {
     dialog.show(() => <LocalSkillImportDialog onClose={() => dialog.close()} />)
   }
@@ -491,6 +496,7 @@ export const MarketplaceView = () => {
                 server={runtimeServer()}
                 identity={runtimeIdentity()}
                 onVerify={verifyUser}
+                onLogout={logoutUser}
                 diagnostics={
                   protocol() === "legacy" ? (
                     <MarketplaceDiagnostics

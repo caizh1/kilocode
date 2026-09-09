@@ -66,6 +66,7 @@ export namespace ChipMateConfigSources {
     const project = Flag.CHIPMATE_DISABLE_PROJECT_CONFIG ? [] : await projectSources(input)
     const dirs = Flag.CHIPMATE_DISABLE_PROJECT_CONFIG ? [] : await configDirSources(input)
     const sources = [
+      ...internalProviderDefaultsSources(),
       ...wellknownSources(input.auth ?? {}),
       ...(await globalSources()),
       ...(await envFileSources()),
@@ -210,6 +211,21 @@ export namespace ChipMateConfigSources {
       })
     }
     return sources
+  }
+
+  function internalProviderDefaultsSources(): Pending[] {
+    if (!process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS) return []
+    return [
+      {
+        kind: "env-content",
+        scope: "env",
+        label: "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
+        source: "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
+        exists: true,
+        editable: false,
+        reason: "Packaged provider defaults; user configuration takes precedence and the value is not exposed.",
+      },
+    ]
   }
 
   function cloudSources(account: Input["account"]): Pending[] {

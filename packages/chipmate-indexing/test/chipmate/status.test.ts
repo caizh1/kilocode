@@ -47,6 +47,7 @@ function status(input: {
   recentErrors?: IndexingPipelineRecentErrors
   notices?: IndexingNotice[]
   activePipeline?: "codeGraph" | "rag" | "documents"
+  codePending?: boolean
   document?: DocumentIndexStatus
   graphProgress?: {
     state: "Standby" | "Indexing" | "Indexed" | "Error"
@@ -70,12 +71,35 @@ function status(input: {
       totalItems: input.totalItems ?? 0,
       currentItemUnit: "files",
       activePipeline: input.activePipeline,
+      codePending: input.codePending,
       notices: input.notices,
     }),
   })
 }
 
 describe("indexing status pipelines", () => {
+  test("文档联建期间代码等待，文档单独重建不改变代码结果", () => {
+    const input = {
+      systemStatus: "Indexed" as const,
+      activePipeline: "documents" as const,
+      document: {
+        state: "In Progress" as const,
+        message: "正在处理文档",
+        percent: 40,
+        processedFiles: 2,
+        totalFiles: 5,
+        errorCount: 0,
+        staleCount: 0,
+        skippedCount: 0,
+      },
+    }
+    const joint = status({ ...input, codePending: true })
+    expect(joint).toMatchObject({ state: "In Progress", percent: 40, processedFiles: 2 })
+    expect(joint.pipelines?.codeGraph).toMatchObject({ state: "Standby", message: "等待文档阶段结束" })
+    expect(joint.pipelines?.rag).toMatchObject({ state: "Standby", message: "等待文档阶段结束" })
+    expect(status(input).pipelines?.rag.state).toBe("Complete")
+  })
+
   test("disabled status includes disabled code graph and rag pipelines", () => {
     const result = disabledIndexingStatus("off")
 

@@ -21,6 +21,7 @@ import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
 // ---------------------------------------------------------------------------
 
 export interface ThinkingSelectorBaseProps {
+  class?: string
   /** Available variant names (e.g. ["low","medium","high"]) */
   variants: string[]
   /** Currently selected variant */
@@ -56,10 +57,12 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
 
   function display(value: string | undefined) {
     if (!value) return clearLabel()
+    if (value === "none") return language.t("prompt.thinking.variant.none")
+    if (value === "xhigh") return "XHigh"
     return value.charAt(0).toUpperCase() + value.slice(1)
   }
 
-  const desc = () => `Reasoning effort: ${display(props.value)}`
+  const desc = () => language.t("prompt.thinking.description", { value: display(props.value) })
 
   function focusItem(idx: number) {
     const items = listRef?.querySelectorAll<HTMLElement>("[role=option]")
@@ -144,6 +147,7 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
   return (
     <Show when={rows().length > 0}>
       <Tooltip
+        class={props.class}
         value={
           <div data-slot="tooltip-keybind">
             <span>{language.t("prompt.thinking.tooltip")}</span>
@@ -157,10 +161,11 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
         <PopupSelector
           expanded={false}
           placement={props.placement ?? "top-start"}
-          preferredWidth={184}
+          preferredWidth={168}
           minHeight={100}
           portal={props.portal}
           deferDismiss={props.deferDismiss}
+          class="thinking-selector-popover"
           open={open()}
           onOpenChange={onOpen}
           triggerAs={Button}
@@ -227,6 +232,7 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
 
 interface ThinkingSelectorProps {
   sessionID?: Accessor<string | undefined>
+  class?: string
 }
 
 export const ThinkingSelector: Component<ThinkingSelectorProps> = (props) => {
@@ -236,6 +242,7 @@ export const ThinkingSelector: Component<ThinkingSelectorProps> = (props) => {
 
   return (
     <ThinkingSelectorBase
+      class={props.class}
       variants={session.variantList(id())}
       value={session.currentVariant(id())}
       onSelect={(value) => session.selectVariant(value, id())}

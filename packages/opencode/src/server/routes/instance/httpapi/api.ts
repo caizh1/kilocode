@@ -1,3 +1,4 @@
+import { TurnChangesApi } from "@/chipmate/server/httpapi/groups/turn-changes" // chipmate_change
 import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
 import { EventV2 } from "@opencode-ai/core/event"
@@ -40,6 +41,7 @@ import { InteractiveTerminalApi } from "@/chipmate/server/httpapi/groups/interac
 import { ChipMateGatewayApi } from "@/chipmate/server/httpapi/groups/chipmate-gateway"
 import { ChipMateApi } from "@/chipmate/server/httpapi/groups/chipmate"
 import { NetworkApi } from "@/chipmate/server/httpapi/groups/network"
+import { PatentRadarApi } from "@/chipmate/server/httpapi/groups/patent-radar"
 import { RemoteApi } from "@/chipmate/server/httpapi/groups/remote"
 import { SandboxApi } from "@/chipmate/server/httpapi/groups/sandbox"
 import { SessionImportApi } from "@/chipmate/server/httpapi/groups/session-import"
@@ -101,6 +103,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(AgentBuilderApi)
   .addHttpApi(BackgroundProcessApi)
   .addHttpApi(BranchNameApi)
+  .addHttpApi(TurnChangesApi)
   .addHttpApi(CommitMessageApi)
   .addHttpApi(ConfigConsoleApi)
   .addHttpApi(DesignDocApi)
@@ -111,6 +114,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(ChipMateGatewayApi)
   .addHttpApi(ChipMateApi)
   .addHttpApi(NetworkApi)
+  .addHttpApi(PatentRadarApi)
   .addHttpApi(RemoteApi)
   .addHttpApi(SandboxApi)
   .addHttpApi(SessionImportApi)

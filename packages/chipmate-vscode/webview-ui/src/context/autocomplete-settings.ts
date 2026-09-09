@@ -1,3 +1,4 @@
+import { resolveAppearance } from "../../../src/shared/appearance"
 import type { ExtensionMessage, WebviewMessage } from "../types/messages"
 
 type Transport = {
@@ -109,7 +110,14 @@ export function buildAutocompleteSettingMessages(
       requestId,
     })
   }
+  if ("appearance.skin" in pending || "appearance.motion" in pending) {
+    messages.push({ type: "updateAppearance", appearance: resolveAppearance({
+      skin: (pending["appearance.skin"] ?? current["appearance.skin"]) as "default" | "night-city",
+      motion: (pending["appearance.motion"] ?? current["appearance.motion"]) as "off" | "subtle" | "immersive",
+    }), requestId })
+  }
   for (const [key, value] of Object.entries(pending)) {
+    if (key === "appearance.skin" || key === "appearance.motion") continue
     if (selectionDirty && (key === providerKey || key === modelKey)) continue
     messages.push({ type: "updateSetting", key, value, requestId })
   }

@@ -17,7 +17,8 @@ test("public publication states and labels remain complete", () => {
 })
 
 test("Fastify registers the complete frozen legacy route list", () => {
-  assert.equal(LEGACY_ROUTES.length, 14)
+  assert.equal(LEGACY_ROUTES.length, 15)
+  assert.ok(LEGACY_ROUTES.some((route) => route.method === "POST" && route.url === "/convert/word-to-images"))
   assert.ok(LEGACY_ROUTES.some((route) => route.method === "POST" && route.url === "/render/word"))
   assert.ok(LEGACY_ROUTES.some((route) => route.method === "POST" && route.url === "/render/plantuml"))
   assert.ok(LEGACY_ROUTES.some((route) => route.method === "GET" && route.url === "/marketplace/skills/*"))

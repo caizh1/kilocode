@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import { generateText } from "ai"
 import { ProviderTransform } from "../../src/provider/transform"
 import { Provider } from "../../src/provider/provider"
-import { customProviderVariants } from "../../src/chipmate/provider/provider"
+import { customProviderReasoning, customProviderVariants } from "../../src/chipmate/provider/provider"
 import type * as ModelsDev from "@opencode-ai/core/models-dev"
 
 function mockModel(overrides: Partial<any> = {}): any {
@@ -35,6 +37,10 @@ function mockModel(overrides: Partial<any> = {}): any {
 
 function raw(options: ModelsDev.Model["reasoning_options"]): ModelsDev.Model {
   return { reasoning_options: options } as ModelsDev.Model
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 describe("ProviderTransform.reasoningVariants - models.dev reasoning_options", () => {
@@ -143,6 +149,252 @@ describe("ProviderTransform.reasoningVariants - models.dev reasoning_options", (
 describe("custom provider fallback reasoning efforts", () => {
   const efforts = ["none", "low", "medium", "high", "xhigh", "max"]
 
+  const profiles: Array<{ ids: string[]; variants: Record<string, Record<string, unknown>> }> = [
+    {
+      ids: ["glm-5.2", "Zhipu/GLM-5.2"],
+      variants: {
+        max: { reasoningEffort: "max" },
+        high: { reasoningEffort: "high" },
+      },
+    },
+    {
+      ids: ["deepseek-v4-flash", "DeepSeek/DeepSeek-V4-Flash"],
+      variants: {
+        max: { reasoningEffort: "max" },
+        high: { reasoningEffort: "high" },
+        thinking: { thinking: { type: "enabled" } },
+        none: { thinking: { type: "disabled" } },
+      },
+    },
+    {
+      ids: ["deepseek-v4-pro", "DeepSeek/DeepSeek-V4-Pro"],
+      variants: {
+        max: { reasoningEffort: "max" },
+        high: { reasoningEffort: "high" },
+        thinking: { thinking: { type: "enabled" } },
+        none: { thinking: { type: "disabled" } },
+      },
+    },
+    {
+      ids: ["doubao-seed-2.0-pro", "ByteDance/Doubao-Seed-2-0-Pro"],
+      variants: {
+        thinking: { thinking: { type: "enabled" } },
+        none: { thinking: { type: "disabled" } },
+      },
+    },
+  ]
+
+  for (const profile of profiles) {
+    for (const id of profile.ids) {
+      test(`${id} exposes only its exact OpenAI-compatible capability profile`, () => {
+        const npm = "@ai-sdk/openai-compatible"
+        const model = mockModel({ id, api: { id, url: "https://api.test.com", npm } })
+
+        expect(customProviderVariants(model, npm, ProviderTransform.variants)).toEqual(profile.variants)
+      })
+    }
+  }
+
+  for (const id of [
+    "glm-5.2-air",
+    "prefix-glm-5.2",
+    "deepseek-v4-flash-lite",
+    "deepseek-v4-pro-plus",
+    "doubao-seed-2.0-pro-preview",
+    "doubao-seed-2.1-pro",
+  ]) {
+    test(`${id} does not match an exact auto-discovered capability profile`, () => {
+      const npm = "@ai-sdk/openai-compatible"
+      const model = mockModel({ id, api: { id, url: "https://api.test.com", npm } })
+      const generated = ProviderTransform.variants({ ...model, variants: {} })
+
+      expect(customProviderVariants(model, npm, ProviderTransform.variants)).toEqual(generated)
+      expect(
+        customProviderReasoning({
+          id,
+          api: model.api,
+          npm,
+          configured: undefined,
+          variants: undefined,
+          existing: undefined,
+        }),
+      ).toBe(false)
+    })
+  }
+
+  for (const id of ["qwen3.8-27b", "Qwen/Qwen3.8-27B", "qwen3.8-27b-fp8", "QWEN/QWEN3.8-27B-FP8"]) {
+    test(`${id} exposes its supported per-request thinking controls`, () => {
+      const npm = "@ai-sdk/openai-compatible"
+      const model = mockModel({ id, api: { id, url: "https://api.test.com", npm } })
+
+      const result = customProviderVariants(model, npm, ProviderTransform.variants)
+
+      expect(Object.keys(result)).toEqual(["xhigh", "medium", "low", "none"])
+      expect(result).toEqual({
+        xhigh: { reasoningEffort: "xhigh", chat_template_kwargs: { enable_thinking: true } },
+        medium: { reasoningEffort: "medium", chat_template_kwargs: { enable_thinking: true } },
+        low: { reasoningEffort: "low", chat_template_kwargs: { enable_thinking: true } },
+        none: { chat_template_kwargs: { enable_thinking: false } },
+      })
+      expect(result.none?.reasoningEffort).toBeUndefined()
+      expect(JSON.stringify(result)).not.toContain("chat_template_args")
+      expect(JSON.stringify(result)).not.toContain("preserve_thinking")
+      expect(result.high).toBeUndefined()
+      expect(result.max).toBeUndefined()
+    })
+  }
+
+  for (const id of ["qwen3.8-32b", "qwen3.8-27b-extra", "prefix-qwen3.8-27b", "qwen3.5-27b"]) {
+    test(`${id} does not match the Qwen3.8 27B capability profile`, () => {
+      const npm = "@ai-sdk/openai-compatible"
+      const model = mockModel({ id, api: { id, url: "https://api.test.com", npm } })
+
+      expect(Object.keys(customProviderVariants(model, npm, ProviderTransform.variants))).toEqual(efforts)
+    })
+  }
+
+  test("serializes Qwen3.8 thinking controls into the OpenAI-compatible request body", async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const body: unknown = await request.json()
+        if (!isRecord(body)) throw new Error("请求体不是 JSON 对象")
+        bodies.push(body)
+        return Response.json({
+          id: "fixture-completion",
+          object: "chat.completion",
+          created: 0,
+          model: "qwen3.8-27b",
+          choices: [{ index: 0, message: { role: "assistant", content: "ready" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        })
+      },
+    })
+
+    try {
+      const port = server.port
+      if (port === undefined) throw new Error("测试服务未绑定端口")
+      const sdk = createOpenAICompatible({ name: "qwen-fixture", baseURL: `http://127.0.0.1:${port}/v1` })
+      const npm = "@ai-sdk/openai-compatible"
+      const model = mockModel({
+        id: "qwen3.8-27b",
+        providerID: "qwen-fixture",
+        api: { id: "qwen3.8-27b", url: "https://api.test.com", npm },
+      })
+      const variants = customProviderVariants(model, npm, ProviderTransform.variants)
+
+      for (const name of ["xhigh", "medium", "low", "none"]) {
+        await generateText({
+          model: sdk.languageModel("qwen3.8-27b"),
+          prompt: "hello",
+          providerOptions: ProviderTransform.providerOptions(model, variants[name]),
+        })
+      }
+
+      expect(
+        bodies.map((body) => ({
+          chat_template_kwargs: body.chat_template_kwargs,
+          reasoning_effort: body.reasoning_effort,
+          chat_template_args: body.chat_template_args,
+        })),
+      ).toEqual([
+        {
+          chat_template_kwargs: { enable_thinking: true },
+          reasoning_effort: "xhigh",
+          chat_template_args: undefined,
+        },
+        {
+          chat_template_kwargs: { enable_thinking: true },
+          reasoning_effort: "medium",
+          chat_template_args: undefined,
+        },
+        {
+          chat_template_kwargs: { enable_thinking: true },
+          reasoning_effort: "low",
+          chat_template_args: undefined,
+        },
+        {
+          chat_template_kwargs: { enable_thinking: false },
+          reasoning_effort: undefined,
+          chat_template_args: undefined,
+        },
+      ])
+    } finally {
+      await server.stop(true)
+    }
+  })
+
+  test("serializes exact discovered-model controls without generic efforts", async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const body: unknown = await request.json()
+        if (!isRecord(body)) throw new Error("请求体不是 JSON 对象")
+        bodies.push(body)
+        return Response.json({
+          id: "fixture-completion",
+          object: "chat.completion",
+          created: 0,
+          model: body.model,
+          choices: [{ index: 0, message: { role: "assistant", content: "ready" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        })
+      },
+    })
+
+    try {
+      const port = server.port
+      if (port === undefined) throw new Error("测试服务未绑定端口")
+      const providerID = "reasoning-fixture"
+      const sdk = createOpenAICompatible({ name: providerID, baseURL: `http://127.0.0.1:${port}/v1` })
+      const npm = "@ai-sdk/openai-compatible"
+      const cases = [
+        { id: "glm-5.2", names: ["max", "high"] },
+        { id: "deepseek-v4-flash", names: ["max", "high", "thinking", "none"] },
+        { id: "deepseek-v4-pro", names: ["max", "high", "thinking", "none"] },
+        { id: "doubao-seed-2.0-pro", names: ["thinking", "none"] },
+      ]
+
+      for (const item of cases) {
+        const model = mockModel({ id: item.id, providerID, api: { id: item.id, url: "https://api.test.com", npm } })
+        const variants = customProviderVariants(model, npm, ProviderTransform.variants)
+        expect(Object.keys(variants)).toEqual(item.names)
+        for (const name of item.names) {
+          await generateText({
+            model: sdk.languageModel(item.id),
+            prompt: "hello",
+            providerOptions: ProviderTransform.providerOptions(model, variants[name]),
+          })
+        }
+      }
+
+      expect(
+        bodies.map((body) => ({ model: body.model, reasoning_effort: body.reasoning_effort, thinking: body.thinking })),
+      ).toEqual([
+        { model: "glm-5.2", reasoning_effort: "max", thinking: undefined },
+        { model: "glm-5.2", reasoning_effort: "high", thinking: undefined },
+        { model: "deepseek-v4-flash", reasoning_effort: "max", thinking: undefined },
+        { model: "deepseek-v4-flash", reasoning_effort: "high", thinking: undefined },
+        { model: "deepseek-v4-flash", reasoning_effort: undefined, thinking: { type: "enabled" } },
+        { model: "deepseek-v4-flash", reasoning_effort: undefined, thinking: { type: "disabled" } },
+        { model: "deepseek-v4-pro", reasoning_effort: "max", thinking: undefined },
+        { model: "deepseek-v4-pro", reasoning_effort: "high", thinking: undefined },
+        { model: "deepseek-v4-pro", reasoning_effort: undefined, thinking: { type: "enabled" } },
+        { model: "deepseek-v4-pro", reasoning_effort: undefined, thinking: { type: "disabled" } },
+        { model: "doubao-seed-2.0-pro", reasoning_effort: undefined, thinking: { type: "enabled" } },
+        { model: "doubao-seed-2.0-pro", reasoning_effort: undefined, thinking: { type: "disabled" } },
+      ])
+      for (const body of bodies) {
+        expect(body.reasoning).toBeUndefined()
+        expect(body.reasoningEffort).toBeUndefined()
+      }
+    } finally {
+      await server.stop(true)
+    }
+  })
+
   for (const npm of ["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"]) {
     test(`${npm} exposes broad efforts after heuristics fail`, () => {
       const model = mockModel({ id: "qwen-custom", api: { id: "qwen-custom", url: "https://api.test.com", npm } })
@@ -168,6 +420,23 @@ describe("custom provider fallback reasoning efforts", () => {
     expect(customProviderVariants(model, model.api.npm, () => generated)).toBe(generated)
   })
 
+  test("limits exact capability profiles to OpenAI-compatible providers", () => {
+    const npm = "@ai-sdk/openai"
+    for (const id of ["qwen3.8-27b", "glm-5.2", "deepseek-v4-flash", "deepseek-v4-pro", "doubao-seed-2.0-pro"]) {
+      const model = mockModel({ id, api: { id, url: "https://api.test.com", npm } })
+      expect(
+        customProviderReasoning({
+          id,
+          api: model.api,
+          npm,
+          configured: undefined,
+          variants: undefined,
+          existing: undefined,
+        }),
+      ).toBe(false)
+    }
+  })
+
   test("prefers configured variants to inference", () => {
     const variants = { custom: { reasoningEffort: "custom" } }
     for (const npm of ["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"]) {
@@ -177,6 +446,24 @@ describe("custom provider fallback reasoning efforts", () => {
           throw new Error("inference should not run")
         }),
       ).toBe(variants)
+    }
+  })
+
+  test("prefers explicit reasoning false over exact capability inference", () => {
+    const npm = "@ai-sdk/openai-compatible"
+    for (const id of ["glm-5.2", "deepseek-v4-flash", "deepseek-v4-pro", "doubao-seed-2.0-pro"]) {
+      const model = mockModel({ id, api: { id, url: "https://api.test.com", npm } })
+      expect(customProviderVariants(model, npm, ProviderTransform.variants, false)).toEqual({})
+      expect(
+        customProviderReasoning({
+          id,
+          api: model.api,
+          npm,
+          configured: false,
+          variants: undefined,
+          existing: true,
+        }),
+      ).toBe(false)
     }
   })
 

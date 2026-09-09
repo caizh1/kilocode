@@ -503,7 +503,7 @@ function Find-ChipMateTerminalEdit {
     if (-not $current.IsEnabled -or -not $current.IsKeyboardFocusable -or $current.IsOffscreen) { continue }
     if ($rect.Left -lt $minimum -or $rect.Width -le 1 -or $rect.Height -le 1) { continue }
     $label = "$($current.Name) $($current.HelpText) $($current.AutomationId)"
-    $score = if ($label -match "terminal|xterm|shell|agent console") { 100 } else { 0 }
+    $score = if ($label -match "terminal|xterm|shell") { 100 } else { 0 }
     $score += [int]($rect.Left - $minimum)
     $score += [int]$rect.Top
     $candidates += [pscustomobject]@{ edit = $edit; score = $score; label = $label; left = $rect.Left; top = $rect.Top }

@@ -5,7 +5,6 @@ import { AgentManagerTool } from "./agent-manager"
 import { BackgroundProcessTool } from "./background-process"
 import { GenerateImageTool } from "./generate-image"
 import { InteractiveTerminalTool } from "./interactive-terminal"
-import { AgentConsoleShellTool } from "./agent-console-shell"
 import { NotebookEditTool, NotebookExecuteTool, NotebookReadTool } from "./notebook-host"
 import { SkillMarketTools } from "./skill-market"
 import { MemoryRecallTool } from "./memory-recall"
@@ -35,13 +34,16 @@ import { EmbeddedReviewSubmitTool } from "./embedded-review-submit"
 import { SourceBackedDesignJobTool } from "./source-backed-design-job"
 import { DocumentScopeTool } from "./document-scope"
 import { DocumentAgentScope } from "../document-agent/scope"
+import { UfsReviewTool } from "./ufs-review"
+import { UfsReviewAgent } from "../ufs-review/agent"
+import { Session } from "@/session/session"
 
 const log = Log.create({ service: "chipmate-tool-registry" })
 type ConfigSource = Pick<Config.Interface, "get" | "getGlobal">
 type Deps = {
   agent: Agent.Interface
   truncate: Truncate.Interface
-  task?: Tool.Def<typeof TaskParameters>
+  task: Tool.Def<typeof TaskParameters>
   internal?: boolean
   indexing?: boolean
 }
@@ -138,10 +140,10 @@ export namespace ChipMateToolRegistry {
       const process = yield* BackgroundProcessTool
       const image = yield* GenerateImageTool
       const terminal = yield* InteractiveTerminalTool
-      const consoleShell = yield* AgentConsoleShellTool
       const review = yield* EmbeddedReviewSubmitTool
       const sourceBackedDesignJob = yield* SourceBackedDesignJobTool
       const documentScope = yield* DocumentScopeTool
+      const reviewSessions = yield* Session.Service
       const sessions = yield* ChipMateSessions.Service
       const notify = yield* NotifyUserTool.pipe(Effect.provideService(ChipMateSessions.Service, sessions))
       const markets = yield* SkillMarketTools.pipe(
@@ -158,10 +160,10 @@ export namespace ChipMateToolRegistry {
           process,
           image,
           terminal,
-          consoleShell,
           review,
           sourceBackedDesignJob,
           documentScope,
+          reviewSessions,
           notify,
           markets,
         }
@@ -180,10 +182,10 @@ export namespace ChipMateToolRegistry {
         process,
         image,
         terminal,
-        consoleShell,
         review,
         sourceBackedDesignJob,
         documentScope,
+        reviewSessions,
         notify,
         markets,
         ...tools,
@@ -204,10 +206,10 @@ export namespace ChipMateToolRegistry {
       process: Tool.Info
       image: Tool.Info
       terminal?: Tool.Info
-      consoleShell?: Tool.Info
       review?: Tool.Info
       sourceBackedDesignJob?: Tool.Info
       documentScope?: Tool.Info
+      reviewSessions?: Session.Interface
       notify: Tool.Info
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
@@ -237,7 +239,6 @@ export namespace ChipMateToolRegistry {
         ...(tools.review ? { review: Tool.init(tools.review) } : {}),
         ...(tools.sourceBackedDesignJob ? { sourceBackedDesignJob: Tool.init(tools.sourceBackedDesignJob) } : {}),
         ...(tools.documentScope ? { documentScope: Tool.init(tools.documentScope) } : {}),
-        ...(tools.consoleShell ? { consoleShell: Tool.init(tools.consoleShell) } : {}),
       })
       const terminal = tools.terminal ? yield* Tool.init(tools.terminal) : undefined
       const notebooks =
@@ -270,16 +271,24 @@ export namespace ChipMateToolRegistry {
       const mermaid = yield* mermaidTools(deps, loaders)
       const plantuml = yield* plantumlTools(deps, loaders)
       const plantumlSource = yield* plantumlSourceTool(deps, loaders)
-      const ultra =
-        deps.task && ProductProfile.chipmate
-          ? yield* Effect.gen(function* () {
-              const info = yield* UltraVerifyTool(deps.task!).pipe(
+      const ultra = ProductProfile.chipmate
+        ? yield* Effect.gen(function* () {
+              const info = yield* UltraVerifyTool(deps.task).pipe(
                 Effect.provideService(Agent.Service, deps.agent),
                 Effect.provideService(Truncate.Service, deps.truncate),
               )
               return [yield* Tool.init(info)]
             })
-          : []
+        : []
+      const ufs = ProductProfile.chipmate && tools.reviewSessions
+        ? yield* Effect.gen(function* () {
+            const info = yield* UfsReviewTool(tools.reviewSessions!).pipe(
+              Effect.provideService(Agent.Service, deps.agent),
+              Effect.provideService(Truncate.Service, deps.truncate),
+            )
+            return [yield* Tool.init(info)]
+          })
+        : []
       return {
         ...base,
         terminal,
@@ -294,6 +303,7 @@ export namespace ChipMateToolRegistry {
         mermaid,
         plantuml: [...plantuml, ...plantumlSource],
         ultra,
+        ufs,
       }
     })
   }
@@ -450,6 +460,7 @@ export namespace ChipMateToolRegistry {
         Tool.init(infos.diff),
         Tool.init(infos.normalizeTableSpec),
         Tool.init(infos.render),
+        Tool.init(infos.images),
       ])
     })
   }
@@ -548,10 +559,11 @@ export namespace ChipMateToolRegistry {
     tool: Pick<Tool.Def, "id">,
     agent: Pick<Agent.Info, "name" | "mode" | "native" | "options">,
   ) {
+    if (UfsReviewAgent.active(agent))
+      return new Set(["ufs_review", "question", "read", "grep", "glob", "list", "bash"]).has(tool.id)
+    if (tool.id === "ufs_review") return false
     if (tool.id === "notify_user") return ChipMateSessions.remoteStatus().enabled
     if (tool.id === DocumentAgentScope.TOOL) return agent.name === DocumentAgentScope.AGENT
-    if (agent.name === "agent-console") return tool.id === "agent_console_shell"
-    if (tool.id === "agent_console_shell") return false
     if (
       [
         "ultra_code_baseline",
@@ -583,6 +595,7 @@ export namespace ChipMateToolRegistry {
       mermaid?: Tool.Def[]
       plantuml?: Tool.Def[]
       ultra?: Tool.Def[]
+      ufs?: Tool.Def[]
       recall: Tool.Def
       managerModels: Tool.Def
       memory: Tool.Def
@@ -591,7 +604,6 @@ export namespace ChipMateToolRegistry {
       process: Tool.Def
       image: Tool.Def
       terminal?: Tool.Def
-      consoleShell?: Tool.Def
       review?: Tool.Def
       sourceBackedDesignJob?: Tool.Def
       documentScope?: Tool.Def
@@ -622,6 +634,7 @@ export namespace ChipMateToolRegistry {
       ...(tools.mermaid ?? []),
       ...(tools.plantuml ?? []),
       ...(tools.ultra ?? []),
+      ...(tools.ufs ?? []),
       ...(tools.review ? [tools.review] : []),
       ...(tools.sourceBackedDesignJob ? [tools.sourceBackedDesignJob] : []),
       ...(internal() && ProductProfile.chipmate && tools.documentScope ? [tools.documentScope] : []),
@@ -630,7 +643,6 @@ export namespace ChipMateToolRegistry {
       tools.recall,
       ...(Flag.CHIPMATE_CLIENT === "cli" || Flag.CHIPMATE_CLIENT === "vscode" ? [tools.process] : []),
       ...(Flag.CHIPMATE_CLIENT === "cli" && tools.terminal ? [tools.terminal] : []),
-      ...(Flag.CHIPMATE_CLIENT === "vscode" && tools.consoleShell ? [tools.consoleShell] : []),
       // Agent Manager tools are useful only when the extension can create and display their sessions.
       ...(Flag.CHIPMATE_CLIENT === "vscode" ? [tools.managerModels, tools.manager] : []),
       ...(Flag.CHIPMATE_CLIENT === "vscode" && opts.market !== false && tools.markets ? Object.values(tools.markets) : []),

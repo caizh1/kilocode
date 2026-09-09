@@ -41,6 +41,7 @@ mkdirSync(join(bundleDir, "packages", "skill-market", "skills"), { recursive: tr
 mkdirSync(workDir, { recursive: true })
 
 copyFileSync(join(serverDir, "install-render-server.sh"), join(bundleDir, "install-render-server.sh"))
+copyFileSync(join(serverDir, "RELEASE_NOTES.md"), join(bundleDir, "RELEASE_NOTES.md"))
 copyFileSync(archivePath, join(bundleDir, archiveName))
 const archiveSha = sha256File(archivePath)
 writeFileSync(archiveShaPath, archiveSha)

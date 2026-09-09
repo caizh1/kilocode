@@ -8,7 +8,7 @@ PowerShell verifiers. It uses only Python standard library modules.
 
 Boundary: this verifies package transfer integrity only. It does not prove
 installed VS Code runtime behavior, S1-S16 smoke, provider/auth, Document RAG,
-autocomplete, Agent Terminal, Word/Mermaid, or source-backed detail-design
+autocomplete, Word/Mermaid, or source-backed detail-design
 behavior.
 """
 
@@ -125,7 +125,7 @@ def write_summary(
                 "- Tar contents evidence: `tar-contents.actual.txt`",
                 "- Tar contents expected: `tar-contents.expected.txt`",
                 "",
-                "This verifies transfer/package integrity only. It does not prove installed VS Code chat QA, Document RAG, autocomplete, Agent Terminal, Word, Mermaid, or source-backed detail-design runtime behavior.",
+                "This verifies transfer/package integrity only. It does not prove installed VS Code chat QA, Document RAG, autocomplete, Word, Mermaid, or source-backed detail-design runtime behavior.",
                 "",
             ]
         ),

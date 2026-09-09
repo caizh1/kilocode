@@ -4,24 +4,33 @@ import {
   CHIPMATE_AUTO_FREE_ID,
   CHIPMATE_PROVIDER_ID,
 } from "../../../src/shared/provider-model"
+import { isInternalModelHidden } from "../utils/internal-model-policy"
 
 export type EnrichedModel = ProviderModel & { providerID: string; providerName: string }
 
 /**
  * Flatten a provider map into a list of models enriched with provider info.
  */
-export function flattenModels(providers: Record<string, Provider>): EnrichedModel[] {
+export function flattenModels(providers: Record<string, Provider>, internal?: boolean): EnrichedModel[] {
   const result: EnrichedModel[] = []
   for (const providerID of Object.keys(providers)) {
     const provider = providers[providerID]!
     for (const modelID of Object.keys(provider.models)) {
+      const model = provider.models[modelID]!
+      if (
+        isInternalModelHidden(
+          { providerID, providerName: provider.name, modelID, modelName: model.name },
+          internal,
+        )
+      )
+        continue
       result.push({
-        ...provider.models[modelID]!,
+        ...model,
         id: modelID,
         name:
           providerID === CHIPMATE_PROVIDER_ID && modelID === CHIPMATE_AUTO_FREE_ID
             ? CHIPMATE_AUTO_FREE_NAME
-            : provider.models[modelID]!.name,
+            : model.name,
         providerID,
         providerName: provider.name === "ChipMate Gateway" ? "ChipMate Gateway" : provider.name,
       })
@@ -46,10 +55,22 @@ export function isModelValid(
   providers: Record<string, Provider>,
   connected: string[],
   selection: ModelSelection | null,
+  internal?: boolean,
 ): boolean {
   if (!selection) return false
+  if (isInternalModelHidden({ providerID: selection.providerID, modelID: selection.modelID }, internal)) return false
   const provider = providers[selection.providerID]
   if (!provider) return false
   if (selection.providerID !== "chipmate" && !connected.includes(selection.providerID)) return false
-  return !!provider.models[selection.modelID]
+  const model = provider.models[selection.modelID]
+  if (!model) return false
+  return !isInternalModelHidden(
+    {
+      providerID: selection.providerID,
+      providerName: provider.name,
+      modelID: selection.modelID,
+      modelName: model.name,
+    },
+    internal,
+  )
 }

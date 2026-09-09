@@ -150,7 +150,6 @@ suite("Installed ChipMate VSIX smoke", () => {
       "chipmate-code.new.generateTerminalCommand",
       "chipmate-code.new.documents.openArtifact",
       "chipmate-code.new.documents.exportDiagnostics",
-      "chipmate-code.new.agentTerminal.open",
       "chipmate-code.new.qwenAutocomplete.showLogs",
       "chipmate-code.new.qwenAutocomplete.exportDiagnostics",
       "chipmate-code.new.qwenAutocomplete.smokeDiagnostics",
@@ -163,7 +162,6 @@ suite("Installed ChipMate VSIX smoke", () => {
     const config = vscode.workspace.getConfiguration()
     assert.strictEqual(config.get("chipmate.documents.artifacts.root"), ".chipmate/artifacts")
     assert.strictEqual(config.get("chipmate.documents.tools.enabled"), true)
-    assert.strictEqual(config.get("chipmate.agentTerminal.enabled"), false)
     assert.strictEqual(config.get("chipmate.autocomplete.enabled"), false)
     assert.strictEqual(config.get("chipmate.autocomplete.provider"), "none")
     assert.ok(config.has("chipmate.autocomplete.qwen.model"))
@@ -174,7 +172,6 @@ suite("Installed ChipMate VSIX smoke", () => {
     assert.ok(config.has("chipmate-code.new.autocomplete.model"))
 
     const contributes = extension.packageJSON.contributes
-    assert.ok((contributes.terminal?.profiles ?? []).some((profile) => profile.id === "chipmate.agentTerminal"))
     assert.ok((contributes.views?.["chipmate-code-ActivityBar"] ?? []).some((view) => view.id === "chipmate-code.SidebarProvider"))
   })
 
@@ -213,12 +210,6 @@ suite("Installed ChipMate VSIX smoke", () => {
     await vscode.commands.executeCommand("chipmate-code.new.documents.exportDiagnostics")
     const afterDiagnostics = (await fs.readdir(artifactRoot)).filter((item) => /^artifact-diagnostics-.*\.json$/.test(item))
     assert.ok(afterDiagnostics.some((item) => !beforeDiagnostics.has(item)), "document artifact diagnostics command must write a diagnostics JSON file")
-
-    await vscode.workspace.getConfiguration().update("chipmate.agentTerminal.enabled", true, vscode.ConfigurationTarget.Workspace)
-    await vscode.commands.executeCommand("chipmate-code.new.agentTerminal.open")
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    await fs.stat(path.join(workspace, ".chipmate", "agent-terminal", "agent-terminal.sh"))
-    await fs.stat(path.join(workspace, ".chipmate", "agent-terminal", "context.md"))
 
     await vscode.commands.executeCommand("chipmate-code.new.qwenAutocomplete.showLogs")
   })

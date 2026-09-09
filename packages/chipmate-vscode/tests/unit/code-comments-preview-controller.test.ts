@@ -6,6 +6,7 @@ import {
   CodeCommentPreviewController,
   DISCARD_CODE_COMMENT_PREVIEW_COMMAND,
   previewTitle,
+  sourceAnnotationPreviewTitle,
   type CodeCommentPreviewHost,
   type CodeCommentSourceViewState,
 } from "../../src/services/code-comments/preview-controller"
@@ -125,6 +126,20 @@ describe("高可信注释 Diff 预览控制器", () => {
     expect(previewTitle("main.c", 1, 0)).toBe("main.c · 1 个函数高可信注释预览")
     expect(previewTitle("main.c", 1, 1)).toBe("main.c · 1 个函数注释预览（复杂逻辑覆盖不足）")
     expect(previewTitle("main.c", 4, 2)).toBe("main.c · 4 个函数注释预览（2 个覆盖不足）")
+    expect(sourceAnnotationPreviewTitle("main.c", 3)).toBe("main.c · 3 个源码目标高可信注释预览")
+  })
+
+  it("声明和混合目标复用同一个只读 Diff 生命周期", async () => {
+    const host = new PreviewHost()
+    const controller = new CodeCommentPreviewController(host)
+    const result = controller.confirmSourceAnnotations(target, target.documentText, 2, sourceView)
+    await Promise.resolve()
+
+    expect(host.opened?.title).toBe("nvme_cmd_table.c · 2 个源码目标高可信注释预览")
+    expect(host.read?.(host.opened!.original.key)).toBe(target.documentText)
+    host.commands.get(APPLY_CODE_COMMENT_PREVIEW_COMMAND)?.()
+    expect(await result).toBe(true)
+    expect(host.restored).toEqual([sourceView])
   })
 
   it("通过只读虚拟资源打开一个 Diff，并从标题栏应用", async () => {

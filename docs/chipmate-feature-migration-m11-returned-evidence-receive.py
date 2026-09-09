@@ -182,7 +182,6 @@ def build_complete_bundle(root: Path) -> tuple[Path, Path, Path]:
         write(bundle / target / "target-intake-summary.md", f"# ChipMate Offline Target Evidence Intake Verify\n\n- Target: `{target_name}`\n- Final status: `PASS`\n\n## Package evidence checks\n- package summary status PASS\n\n## Runtime evidence checks\n- runtime intake summary final status PASS: runtime-intake-summary.md\n\n## Target evidence return template checks\n- target evidence return template overall status PASS\n- Overall target status PASS\n")
     write(bundle / "internal-embedded-c" / "summary.md", "# Internal Embedded-C Source-Backed Detail Design Intake Summary\n\nStatus: `PASS`\nPassed checks: `24`\nFailed checks: `0`\n\n## Passed checks\n- evidence file found: internal-embedded-c-detail-design-evidence.md\n- context filled: Installed VSIX profile\n- context filled: Source workspace\n- context filled: Embedded C module\n- status PASS: ChipMate native QA preserved\n- status PASS: Source-backed detail-design skill selected\n- status PASS: Markdown detail design generated\n- status PASS: Word detail design generated\n- status PASS: At least one diagram generated\n- status PASS: Quality report generated\n- status PASS: Old ChipMate contract markers absent\n- status PASS: No missing-diagram auto-repair triggered\n- status PASS: No document-contract planning triggered when skill disabled\n- generated Markdown artifacts: 1\n- generated Word artifacts: 1\n- generated diagram artifacts: 1\n- quality report artifacts: 1\n")
     write(bundle / "company-template" / "summary.md", "# Company DOCX Template Validation\n\n- Status: `PASS`\n- Template: `/tmp/company.docx`\n- Template size: `1000`\n- Style count: `12`\n\n## Failures\n- None\n\n## Warnings\n- None\n\n## Boundary\n\nThis helper validates a real .docx template or style source as OOXML input evidence only. It does not generate Word output, does not fill placeholders, does not require missing artifacts, does not run recipe repair, and does not decide installed chat/runtime S8 acceptance.\n")
-    write(bundle / "agent-terminal-visible-ux" / "summary.md", "# Agent Terminal Visible UX Intake Summary\n\nStatus: `PASS`\nPassed checks: `18`\nFailed checks: `0`\n\n## Passed checks\n- evidence file found: agent-terminal-visible-ux-evidence.md\n- context filled: Installed VSIX profile\n- status PASS: Agent Terminal command visible\n- status PASS: Terminal pane opens after enable\n- status PASS: Native ChipMate terminal unaffected\n- status PASS: Dangerous command confirmation visible\n- attached evidence assets: 2\n")
     return bundle, s3, source_guard
 
 
@@ -195,7 +194,6 @@ def build_placeholder_bundle(root: Path) -> Path:
         ("linux-target", "target-intake-summary.md"),
         ("internal-embedded-c", "summary.md"),
         ("company-template", "summary.md"),
-        ("agent-terminal-visible-ux", "summary.md"),
     }
     for parts in required:
         write(bundle.joinpath(*parts), "# Placeholder\n\n- Status: `PENDING`\n")

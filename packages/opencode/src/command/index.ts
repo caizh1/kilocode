@@ -16,6 +16,7 @@ import { apply as applyOverride, type Override } from "@/chipmate/command/overri
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 import { SessionResume } from "@/chipmate/session-resume" // chipmate_change
+import { specCommand } from "@/chipmate/spec/command" // chipmate_change
 
 type State = {
   commands: Record<string, Info>
@@ -121,6 +122,7 @@ export const layer = Layer.effect(
       commands[Default.REVIEW] = reviewCommand()
       commands["embedded-review"] = embeddedReviewCommand()
       commands["semantic-explore"] = semanticExploreCommand()
+      commands["spec"] = specCommand()
       commands["local-review"] = legacyReviewCommand("local-review")!
       commands["local-review-uncommitted"] = legacyReviewCommand("local-review-uncommitted")!
       commands["resume-claude"] = SessionResume.resumeClaude

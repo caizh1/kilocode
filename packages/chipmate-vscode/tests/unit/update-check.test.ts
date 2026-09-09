@@ -142,7 +142,7 @@ describe("UpdateCheckService", () => {
     const env = await setup({ info: [INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
-    env.exec.mockResolvedValueOnce({ stdout: "", stderr: "" })
+    env.install.mockResolvedValueOnce(undefined)
 
     await env.service.checkAuto()
 
@@ -150,10 +150,8 @@ describe("UpdateCheckService", () => {
       "http://server.test:6001/packages/manifest.json",
       "http://server.test:6001/packages/chipmate.vsix",
     ])
-    expect(env.exec.mock.calls[0]).toEqual([
-      "code",
-      ["--install-extension", env.final("0.0.17"), "--force"],
-      { timeout: 300000, windowsHide: true },
+    expect(env.install.mock.calls[0]).toEqual([
+      env.final("0.0.17"),
     ])
     expect(env.info).toEqual([
       {
@@ -173,7 +171,7 @@ describe("UpdateCheckService", () => {
     expect(log).toContain("VSIX 下载完成")
     expect(log).toContain("SHA-256 校验通过")
     expect(log).toContain("VSIX 身份校验通过")
-    expect(log).toContain("安装器成功退出")
+    expect(log).toContain("当前窗口的扩展安装服务已完成")
     expect(log).toContain("已下载并校验，等待用户确认安装并重载窗口")
     expect(log).toContain("立即请求完整窗口重载")
     expect(log).not.toContain("VSCODE_IPC_HOOK_CLI")
@@ -188,7 +186,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkAuto()
 
     expect(await exists(env.final("0.0.17"))).toBe(true)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
     expect(env.commands).toEqual([])
     expect(env.state.get(PENDING_ACTIVATION_KEY)).toBeUndefined()
   })
@@ -200,7 +198,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkAuto()
 
     expect(env.fetch).toHaveBeenCalledTimes(1)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
     expect(env.commands).toEqual([])
   })
 
@@ -211,7 +209,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkAuto()
 
     expect(env.fetch).toHaveBeenCalledTimes(1)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("offers complete release notes after automatic preparation and returns to install-and-reload", async () => {
@@ -294,7 +292,7 @@ describe("UpdateCheckService", () => {
 
     await env.service.checkAuto()
 
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.install).toHaveBeenCalledTimes(1)
     expect(env.commands).toEqual([])
     expect(env.warnings).toEqual([
       "ChipMate installed the update but could not record its activation receipt. Open the update log before reloading.",
@@ -320,7 +318,7 @@ describe("UpdateCheckService", () => {
         "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 检测新版后先查看更新说明",
       items: [RELEASE_NOTES, INSTALL_AND_RELOAD],
     })
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.install).toHaveBeenCalledTimes(1)
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
@@ -329,7 +327,7 @@ describe("UpdateCheckService", () => {
     const env = await setup({ config: { autoDownload: false }, info: [INSTALL_AND_RELOAD] })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.17", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
-    env.exec.mockResolvedValueOnce({ stdout: "", stderr: "" })
+    env.install.mockResolvedValueOnce(undefined)
 
     await env.service.checkManual()
 
@@ -337,7 +335,7 @@ describe("UpdateCheckService", () => {
       message: "ChipMate update 0.0.17 is available. Current version: 0.0.16.",
       items: [INSTALL_AND_RELOAD],
     })
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.install).toHaveBeenCalledTimes(1)
   })
 
   it("shows release notes before a command-triggered install and then continues the update", async () => {
@@ -363,7 +361,7 @@ describe("UpdateCheckService", () => {
         items: [INSTALL_AND_RELOAD],
       },
     ])
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.install).toHaveBeenCalledTimes(1)
     expect(env.commands).toEqual(["workbench.action.reloadWindow"])
   })
 
@@ -374,7 +372,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkManual()
 
     expect(env.info[0]?.message).toBe("ChipMate is already up to date.")
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
     expect(env.fetch).toHaveBeenCalledTimes(1)
   })
 
@@ -385,7 +383,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkManual()
 
     expect(env.info[0]?.message).toBe("ChipMate is already up to date.")
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("rejects a malformed target package before installation", async () => {
@@ -395,7 +393,7 @@ describe("UpdateCheckService", () => {
     await env.service.checkManual()
 
     expect(env.warnings).toEqual([`Update package target does not match ${TARGET}.`])
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("deletes temporary files and skips install when sha256 does not match", async () => {
@@ -414,7 +412,7 @@ describe("UpdateCheckService", () => {
     expect(result).toMatchObject({ status: "error", code: "sha256" })
     expect(await exists(env.final("0.0.18"))).toBe(false)
     expect(await exists(`${env.final("0.0.18")}.tmp`)).toBe(false)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("rejects missing sha256 before downloading", async () => {
@@ -443,7 +441,7 @@ describe("UpdateCheckService", () => {
 
     expect(env.info[0]?.message).toBe("ChipMate is already up to date.")
     expect(env.fetch).toHaveBeenCalledTimes(1)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("accepts only same-origin paths below /packages/", () => {
@@ -471,7 +469,7 @@ describe("UpdateCheckService", () => {
     expect(await exists(env.final("0.0.19"))).toBe(false)
     expect(await exists(`${env.final("0.0.19")}.tmp`)).toBe(false)
     expect(env.fetch).toHaveBeenCalledTimes(1)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("retains a verified VSIX and returns the original reason when installation fails", async () => {
@@ -480,17 +478,57 @@ describe("UpdateCheckService", () => {
     const env = await setup({ config: { codeCliPath: cli } })
     env.fetch.mockResolvedValueOnce(json(manifest({ version: "0.0.20", sha256: sha(body), sizeBytes: body.length })))
     env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
-    env.exec.mockRejectedValueOnce(new Error("code not found"))
+    env.install.mockRejectedValueOnce(new Error("原生安装命令不可用"))
 
     const available = await env.service.probeManual()
     expect(available.status).toBe("available")
     if (available.status !== "available") throw new Error("expected update candidate")
     const result = await env.service.installManual(available.candidateId)
 
-    expect(env.exec.mock.calls[0]?.[0]).toBe(cli)
+    expect(env.install.mock.calls[0]?.[0]).toBe(env.final("0.0.20"))
     expect(result).toMatchObject({ status: "error", code: "install" })
-    expect(result.status === "error" ? result.message : "").toContain("code not found")
+    expect(result.status === "error" ? result.message : "").toContain("原生安装命令不可用")
     expect(await exists(env.final("0.0.20"))).toBe(true)
+  })
+
+  for (const outcome of ["窗口关闭", "切换配置文件", "取消安装", "命令不可用"]) {
+    it(`${outcome}后不写成功回执、不重载且保留校验包`, async () => {
+      const body = await vsix()
+      const env = await setup()
+      env.fetch.mockResolvedValueOnce(json(manifest({ sha256: sha(body), sizeBytes: body.length })))
+      env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
+      let finish!: () => void
+      let started!: () => void
+      const ready = new Promise<void>((resolve) => { started = resolve })
+      env.install.mockImplementationOnce(async () => {
+        started()
+        if (outcome === "取消安装" || outcome === "命令不可用") throw new Error(outcome)
+        await new Promise<void>((resolve) => { finish = resolve })
+      })
+      const candidate = await env.service.probeManual()
+      if (candidate.status !== "available") throw new Error("未生成更新候选")
+      const result = env.service.installManual(candidate.candidateId)
+      await ready
+      if (outcome === "窗口关闭" || outcome === "切换配置文件") {
+        env.service.dispose()
+        finish()
+      }
+      expect(await result).toMatchObject({ status: "error", code: "install" })
+      expect(env.commands).toEqual([])
+      expect(env.state.get(PENDING_ACTIVATION_KEY)).toBeUndefined()
+      expect(await exists(env.final("0.0.17"))).toBe(true)
+    })
+  }
+
+  it("确认安装前窗口被关闭时不调用安装服务", async () => {
+    const env = await setup()
+    env.fetch.mockResolvedValueOnce(json(manifest()))
+    const candidate = await env.service.probeManual()
+    if (candidate.status !== "available") throw new Error("未生成更新候选")
+    env.service.dispose()
+    expect(await env.service.installManual(candidate.candidateId)).toMatchObject({ status: "error" })
+    expect(env.install).not.toHaveBeenCalled()
+    expect(env.commands).toEqual([])
   })
 
   it("rejects an internal VSIX identity mismatch before installation", async () => {
@@ -505,7 +543,7 @@ describe("UpdateCheckService", () => {
     const result = await env.service.installManual(available.candidateId)
 
     expect(result).toMatchObject({ status: "error", code: "identity" })
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
     expect(await exists(env.final("0.0.17"))).toBe(false)
   })
 
@@ -521,7 +559,7 @@ describe("UpdateCheckService", () => {
     const result = await env.service.installManual(available.candidateId)
 
     expect(result).toMatchObject({ status: "error", code: "download-size" })
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("coalesces concurrent explicit installs into one download and install", async () => {
@@ -534,7 +572,7 @@ describe("UpdateCheckService", () => {
       }
       return new Response(body, { status: 200 })
     })
-    env.exec.mockResolvedValue({ stdout: "", stderr: "" })
+    env.install.mockResolvedValue(undefined)
 
     const available = await env.service.probeManual()
     expect(available.status).toBe("available")
@@ -544,7 +582,7 @@ describe("UpdateCheckService", () => {
       env.service.installManual(available.candidateId),
     ])
 
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.install).toHaveBeenCalledTimes(1)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
     expect(env.info).toHaveLength(0)
   })
@@ -566,7 +604,7 @@ describe("UpdateCheckService", () => {
     await env.service.installManual(available.candidateId)
     await env.service.installManual(available.candidateId)
 
-    expect(env.exec).toHaveBeenCalledTimes(1)
+    expect(env.install).toHaveBeenCalledTimes(1)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
     expect(env.info).toHaveLength(0)
   })
@@ -581,7 +619,7 @@ describe("UpdateCheckService", () => {
       }
       return new Response(body, { status: 200 })
     })
-    env.exec.mockRejectedValue(new Error("code not found"))
+    env.install.mockRejectedValue(new Error("原生安装命令不可用"))
 
     const available = await env.service.probeManual()
     expect(available.status).toBe("available")
@@ -589,7 +627,7 @@ describe("UpdateCheckService", () => {
     await env.service.installManual(available.candidateId)
     await env.service.installManual(available.candidateId)
 
-    expect(env.exec).toHaveBeenCalledTimes(2)
+    expect(env.install).toHaveBeenCalledTimes(2)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(1)
     expect(await exists(env.final("0.0.21"))).toBe(true)
   })
@@ -604,7 +642,7 @@ describe("UpdateCheckService", () => {
       }
       return new Response(body, { status: 200 })
     })
-    env.exec.mockRejectedValueOnce(new Error("code not found"))
+    env.install.mockRejectedValueOnce(new Error("原生安装命令不可用"))
 
     const available = await env.service.probeManual()
     expect(available.status).toBe("available")
@@ -613,7 +651,7 @@ describe("UpdateCheckService", () => {
     await fs.writeFile(env.final("0.0.25"), "已被修改")
 
     expect(await env.service.installManual(available.candidateId)).toMatchObject({ status: "installed", version: "0.0.25" })
-    expect(env.exec).toHaveBeenCalledTimes(2)
+    expect(env.install).toHaveBeenCalledTimes(2)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(2)
   })
 
@@ -624,7 +662,7 @@ describe("UpdateCheckService", () => {
     const result = await env.service.probeManual()
 
     expect(result).toMatchObject({ status: "available", currentVersion: "0.0.16", version: "0.0.22" })
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
     expect(env.fetch).toHaveBeenCalledTimes(1)
   })
 
@@ -649,7 +687,7 @@ describe("UpdateCheckService", () => {
       publishedAt: "2026-07-24T08:00:00.000Z",
     })
     expect(await env.service.installManual("forged")).toMatchObject({ status: "error", code: "manifest" })
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 
   it("expires candidates before any package download", async () => {
@@ -664,7 +702,7 @@ describe("UpdateCheckService", () => {
 
     expect(await env.service.installManual(result.candidateId)).toMatchObject({ status: "error", code: "manifest" })
     expect(env.fetch).toHaveBeenCalledTimes(1)
-    expect(env.exec).not.toHaveBeenCalled()
+    expect(env.install).not.toHaveBeenCalled()
   })
 })
 
@@ -697,7 +735,7 @@ async function setup(
   const commands: string[] = []
   const logs = { log: [] as string[], warn: [] as string[], error: [] as string[], shown: 0 }
   const fetcher = mock(async () => new Response("", { status: 404 }))
-  const exec = mock(async () => ({ stdout: "", stderr: "" }))
+  const install = mock(async (_file: string): Promise<void> => {})
   const context = {
     globalState: state,
     globalStorageUri: vscode.Uri.file(root),
@@ -742,7 +780,7 @@ async function setup(
 
   const service = new UpdateCheckService(context, {
     fetch: fetcher as unknown as typeof fetch,
-    exec,
+    install,
     now: opts.now ?? (() => 1_000),
     updates: () => "http://server.test:6001/packages/manifest.json",
     log: {
@@ -761,7 +799,7 @@ async function setup(
     state,
     service,
     fetch: fetcher,
-    exec,
+    install,
     warnings,
     info,
     documents,

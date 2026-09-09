@@ -2,6 +2,36 @@ export interface MarketDbOptions {
   dir: string
 }
 
+export interface AdminActor {
+  actor: string
+  subject?: string
+  sessionHash?: string
+  familyId?: string
+  expiresAt?: string
+}
+
+export interface AdminTarget {
+  subject: string
+  username: string
+  displayName: string
+  email?: string
+}
+
+export interface AdminItem extends AdminTarget {
+  grantedBy: string
+  grantedAt: string
+  userId?: string
+}
+
+export interface AdminChange {
+  actor: AdminActor
+  target: AdminTarget
+  grant: boolean
+  now: string
+}
+
+export type AdminChangeResult = { ok: true; changed: boolean } | { ok: false; code: "ADMIN_REQUIRED" | "LAST_ADMIN_REQUIRED" }
+
 export interface MarketDbHealth {
   available: boolean
   schemaVersion: number
@@ -297,6 +327,10 @@ export interface SessionInput extends IdentityInput {
   csrfHash: string
   idleExpiresAt: string
   absoluteExpiresAt: string
+  authRevision?: number
+  subject?: string
+  isAdmin?: boolean
+  verifiedAt?: string
 }
 
 export interface SessionLookup {
@@ -310,6 +344,119 @@ export interface SessionItem {
   csrfHash: string
   idleExpiresAt: string
   absoluteExpiresAt: string
+  authRevision: number
+  subject?: string
+  isAdmin: boolean
+  verifiedAt?: string
+}
+
+export interface AuthSettingsItem {
+  revision: number
+  configJson: string
+  bindPasswordCiphertext: string
+  updatedAt: string
+  updatedBy: string
+}
+
+export type AuthSettingsInput = AuthSettingsItem
+
+export interface ExternalIdentityInput {
+  sourceId: string
+  subject: string
+  userId: string
+  username: string
+  email?: string
+  displayName: string
+  isAdmin: boolean
+  verifiedAt: string
+}
+
+export interface ExternalIdentityItem extends ExternalIdentityInput {
+  user: MarketUserItem
+}
+
+export interface IdentityMappingItem {
+  user: MarketUserItem
+  external?: Omit<ExternalIdentityInput, "userId">
+}
+
+export interface DeviceAuthorizationInput {
+  deviceHash: string
+  userCode: string
+  intervalSeconds: number
+  expiresAt: string
+  createdAt: string
+}
+
+export interface DeviceAuthorizationItem extends DeviceAuthorizationInput {
+  userId?: string
+  approvedAt?: string
+  deniedAt?: string
+  consumedAt?: string
+  lastPolledAt?: string
+}
+
+export interface DeviceAuthorizationApproval {
+  userCode: string
+  userId: string
+  approvedAt: string
+  actor: AdminActor
+}
+
+export interface DeviceAuthorizationPoll {
+  deviceHash: string
+  now: string
+}
+
+export type DeviceAuthorizationPollResult =
+  | { state: "approved"; item: DeviceAuthorizationItem & { userId: string } }
+  | { state: "pending" | "slow_down" | "denied" | "expired" | "consumed" | "missing" }
+
+export interface TokenPairInput {
+  deviceHash: string
+  familyId: string
+  userId: string
+  authRevision: number
+  subject: string
+  isAdmin: boolean
+  familyExpiresAt: string
+  accessHash: string
+  accessExpiresAt: string
+  refreshHash: string
+  refreshExpiresAt: string
+  createdAt: string
+}
+
+export interface AccessTokenLookup {
+  hash: string
+  now: string
+}
+
+export interface AccessTokenItem {
+  familyId: string
+  user: MarketUserItem
+  authRevision: number
+  subject: string
+  isAdmin: boolean
+  expiresAt: string
+}
+
+export interface RefreshTokenRotation extends AccessTokenLookup {
+  nextAccessHash: string
+  nextAccessExpiresAt: string
+  nextRefreshHash: string
+  nextRefreshExpiresAt: string
+}
+
+export type RefreshTokenResult =
+  | { state: "ok"; token: AccessTokenItem }
+  | { state: "missing" | "expired" | "replayed" | "revoked" }
+
+export interface AuthAuditInput {
+  actor: string
+  action: string
+  details?: Record<string, unknown>
+  occurredAt: string
 }
 
 export interface InstallationInput {

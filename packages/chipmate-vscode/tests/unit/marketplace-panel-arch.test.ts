@@ -5,6 +5,7 @@ import path from "node:path"
 const root = path.resolve(import.meta.dir, "../..")
 const chipmate = fs.readFileSync(path.join(root, "src/ChipMateProvider.ts"), "utf-8")
 const panel = fs.readFileSync(path.join(root, "src/MarketplacePanelProvider.ts"), "utf-8")
+const auth = fs.readFileSync(path.join(root, "src/services/marketplace/auth.ts"), "utf-8")
 const remove = fs.readFileSync(path.join(root, "src/chipmate-provider/remove-config-item.ts"), "utf-8")
 const card = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/ItemCard.tsx"), "utf-8")
 const list = fs.readFileSync(path.join(root, "webview-ui/src/components/marketplace/MarketplaceListView.tsx"), "utf-8")
@@ -51,12 +52,14 @@ describe("standalone Marketplace architecture", () => {
     }
   })
 
-  it("automatically resolves the Marketplace user and keeps a manual recovery flow", () => {
+  it("使用独立设备码身份自动恢复市场用户并保留手动登录入口", () => {
     expect(panel).toContain("await this.refreshMarketplaceUser()")
-    expect(panel).toContain("this.getCurrentProviderApiKey()")
+    expect(panel).toContain("this.auth.access(")
     expect(panel).toContain('case "verifyMarketplaceUser"')
-    expect(panel).toContain("client.auth")
-    expect(panel).toContain(".get({ providerID: selectedProvider }")
+    expect(panel).toContain("context.secrets")
+    expect(panel).not.toContain("getCurrentProviderApiKey")
+    expect(auth).toContain("/api/v1/auth/device/code")
+    expect(auth).toContain("vscode.env.openExternal")
     expect(panel).not.toContain("showInputBox")
     expect(panel).not.toContain("MARKETPLACE_API_KEY_SECRET")
     expect(runtime).toContain('t("marketplace.runtime.reverify")')

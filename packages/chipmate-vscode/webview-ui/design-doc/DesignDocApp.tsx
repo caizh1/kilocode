@@ -1,3 +1,4 @@
+import { acquireAppearanceApi } from "../appearance/api"
 import { Button } from "@chipmate/chipmate-ui/button"
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import type { DesignDocInMessage, DesignDocOutMessage, DesignDocPanelState } from "../../src/design-doc/types"
@@ -8,9 +9,8 @@ interface VSCodeAPI {
   setState(state: unknown): void
 }
 
-declare function acquireVsCodeApi(): VSCodeAPI
 
-const vscode = acquireVsCodeApi()
+const vscode: VSCodeAPI = acquireAppearanceApi()
 const types = [
   ["overview", "模块说明"],
   ["business-flow", "业务流程"],

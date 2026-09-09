@@ -30,6 +30,7 @@ import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } fro
 import { ChipMateAuthPlugin } from "@chipmate/chipmate-gateway" // chipmate_change
 import { AtomicChatPlugin } from "@chipmate/plugin-atomic-chat" // chipmate_change
 import { AnacondaDesktopPlugin } from "@/chipmate/anaconda-desktop/provider" // chipmate_change
+import { SpecPlugin } from "@/chipmate/spec/command" // chipmate_change
 import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -71,6 +72,7 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
     ChipMateAuthPlugin, // chipmate_change
     AtomicChatPlugin, // chipmate_change
     AnacondaDesktopPlugin, // chipmate_change
+    SpecPlugin, // chipmate_change
     // Temporary rollout: pre-release builds use WebSockets by default; releases require explicit opt-in.
     (input) =>
       CodexAuthPlugin(input, {

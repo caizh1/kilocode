@@ -27,6 +27,11 @@ function createManager(): CodeIndexManager {
   return new CodeIndexManager(join(root, "workspace"), join(root, "cache"))
 }
 
+async function applySettings(manager: CodeIndexManager, input: IndexingConfigInput): Promise<void> {
+  await manager.handleSettingsChange(input)
+  await (manager as unknown as { _flow: Promise<void> })._flow
+}
+
 type Data = {
   _configManager: {
     isFeatureEnabled: boolean
@@ -89,6 +94,246 @@ function createStartError(location = "orchestrator:startIndexing"): IndexingTele
 }
 
 describe("CodeIndexManager", () => {
+  test("连续全量重建淘汰旧文档批次，只有最新批次启动代码", async () => {
+    const root = await mkdtemp(join(tmpdir(), "连续重建-"))
+    const mgr = new CodeIndexManager(root, join(root, "缓存"))
+    const entered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+    const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+    const data = mgr as unknown as {
+      _cacheManager: { clearCacheFile(): Promise<void> }
+      _orchestrator: {
+        stopWatcher(): void
+        cancelIndexing(): void
+        clearIndexData(): Promise<void>
+        startIndexing(): Promise<void>
+      }
+      _documentService?: { dispose(): Promise<void>; setRefreshPaused(value: boolean): void }
+      prepareDocuments(): Promise<void>
+    }
+    let documents = 0
+    let codes = 0
+    data._cacheManager = { async clearCacheFile() {} }
+    data._orchestrator = {
+      stopWatcher() {},
+      cancelIndexing() {},
+      async clearIndexData() {},
+      async startIndexing() {
+        codes += 1
+      },
+    }
+    data.prepareDocuments = async () => {
+      const index = documents++
+      const gate = gates[index]!
+      data._documentService = {
+        async dispose() {
+          gate.resolve()
+        },
+        setRefreshPaused() {},
+      }
+      entered[index]!.resolve()
+      await gate.promise
+    }
+    try {
+      const first = mgr.clearIndexData()
+      await entered[0]!.promise
+      const second = mgr.clearIndexData()
+      await entered[1]!.promise
+      expect(codes).toBe(0)
+      gates[1]!.resolve()
+      await Promise.all([first, second])
+      expect(documents).toBe(2)
+      expect(codes).toBe(1)
+    } finally {
+      for (const gate of gates) gate.resolve()
+      await mgr.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("停止后的晚到代码错误不会重新触发自动恢复", async () => {
+    const mgr = createManager()
+    const data = createData(mgr)
+    let recreates = 0
+    data._recreateServices = async () => {
+      recreates += 1
+    }
+    mgr.cancelIndexing()
+    data.handleTelemetry(createStartError())
+    await mgr.recoverFromError("background")
+    await Bun.sleep(0)
+    expect(recreates).toBe(0)
+    await mgr.dispose()
+  })
+
+  test("初始化不等待文档整批结束，重复初始化共享同一批次", async () => {
+    const mgr = createManager()
+    const gate = Promise.withResolvers<void>()
+    const data = mgr as unknown as {
+      _cacheManager: {}
+      _orchestrator?: { state: string; startIndexing(): Promise<void> }
+      _searchService?: {}
+      _batch?: { task: Promise<void> }
+      prepareDocuments(): Promise<void>
+      _recreateServices(): Promise<void>
+    }
+    let documents = 0
+    let codes = 0
+    data._cacheManager = {}
+    data._recreateServices = async () => {
+      data._searchService = {}
+      data._orchestrator = {
+        state: "Standby",
+        async startIndexing() {
+          codes += 1
+        },
+      }
+    }
+    data.prepareDocuments = async () => {
+      documents += 1
+      await gate.promise
+    }
+    const input = createInput({ openAiKey: "sk-test", documents: { enabled: true } })
+    try {
+      await mgr.initialize(input)
+      await mgr.initialize(input)
+      expect(documents).toBe(1)
+      expect(codes).toBe(0)
+      gate.resolve()
+      await data._batch?.task
+      expect(codes).toBe(1)
+    } finally {
+      gate.resolve()
+      await mgr.dispose()
+    }
+  })
+
+  test("保存新 embedding 配置不等待旧文档批次停止", async () => {
+    const mgr = createManager()
+    const gate = Promise.withResolvers<void>()
+    const stopped = Promise.withResolvers<void>()
+    const input = createInput({ openAiKey: "sk-test", documents: { enabled: true } })
+    const data = mgr as unknown as {
+      _configManager: CodeIndexConfigManager
+      _documentService: { dispose(): Promise<void> }
+      _batch?: { task: Promise<void> }
+      _flow: Promise<void>
+      prepareDocuments(): Promise<void>
+      _recreateServices(): Promise<void>
+      configureDocuments(trigger: IndexingTelemetryTrigger, options: { code(): Promise<void> }): Promise<void>
+    }
+    data._configManager = new CodeIndexConfigManager(input)
+    data.prepareDocuments = () => gate.promise
+    data._recreateServices = async () => {}
+    let oldStarts = 0
+    await data.configureDocuments("background", {
+      code: async () => {
+        oldStarts += 1
+      },
+    })
+    data._documentService = {
+      async dispose() {
+        stopped.resolve()
+        await gate.promise
+      },
+    }
+    try {
+      await mgr.handleSettingsChange({ ...input, modelId: "text-embedding-ada-002" })
+      await stopped.promise
+      expect(oldStarts).toBe(0)
+      gate.resolve()
+      await data._flow
+      await data._batch?.task
+      expect(oldStarts).toBe(0)
+    } finally {
+      gate.resolve()
+      await mgr.dispose()
+    }
+  })
+
+  test("代码运行期间保存文档配置及时返回，代码结束后只补一次文档", async () => {
+    const mgr = createManager()
+    const gate = Promise.withResolvers<void>()
+    const entered = Promise.withResolvers<void>()
+    const events: string[] = []
+    const input = createInput({ openAiKey: "sk-test", documents: { enabled: true, paths: ["文档"] } })
+    const data = mgr as unknown as {
+      _configManager: CodeIndexConfigManager
+      _batch?: { task: Promise<void> }
+      prepareDocuments(): Promise<void>
+      configureDocuments(trigger: IndexingTelemetryTrigger, options: { code(): Promise<void> }): Promise<void>
+    }
+    data._configManager = new CodeIndexConfigManager(input)
+    data.prepareDocuments = async () => {
+      events.push("文档")
+    }
+    await data.configureDocuments("background", {
+      code: async () => {
+        events.push("代码开始")
+        entered.resolve()
+        await gate.promise
+        events.push("代码结束")
+      },
+    })
+    await entered.promise
+    try {
+      await mgr.handleSettingsChange({ ...input, documents: { enabled: true, paths: ["资料"] } })
+      await mgr.handleSettingsChange({ ...input, documents: { enabled: true, paths: ["说明"] } })
+      await (mgr as unknown as { _flow: Promise<void> })._flow
+      expect(events).toEqual(["文档", "代码开始"])
+      gate.resolve()
+      await data._batch?.task
+      expect(events).toEqual(["文档", "代码开始", "代码结束", "文档"])
+    } finally {
+      gate.resolve()
+      await mgr.dispose()
+    }
+  })
+
+  test("取消排队的重建后不启动旧任务，新的手动启动仍有效", async () => {
+    const mgr = createManager()
+    const data = mgr as unknown as { start(): Promise<void>; clear(): Promise<void> }
+    let starts = 0
+    let clears = 0
+    data.start = async () => {
+      starts += 1
+    }
+    data.clear = async () => {
+      clears += 1
+    }
+    const task = mgr.startIndexing()
+    const rebuild = mgr.clearIndexData()
+    mgr.cancelIndexing()
+    await Promise.all([task, rebuild])
+    expect(starts).toBe(0)
+    expect(clears).toBe(0)
+    await mgr.startIndexing()
+    expect(starts).toBe(1)
+    await mgr.dispose()
+  })
+
+  test("代码恢复保留文档结果且不重复文档批次", async () => {
+    const mgr = createManager()
+    const data = createData(mgr) as Data & { prepareDocuments(): Promise<void> }
+    let documents = 0
+    let codes = 0
+    data.prepareDocuments = async () => {
+      documents += 1
+    }
+    data._recreateServices = async () => {
+      data._orchestrator = {
+        state: "Indexed",
+        stopWatcher() {},
+        async startIndexing() {
+          codes += 1
+        },
+      }
+    }
+    await mgr.recoverFromError("manual")
+    expect(codes).toBe(1)
+    expect(documents).toBe(0)
+    await mgr.dispose()
+  })
+
   test("waits for an active Document RAG generation before starting a new scan", async () => {
     const mgr = createManager()
     const gate = Promise.withResolvers<void>()
@@ -172,6 +417,7 @@ describe("CodeIndexManager", () => {
     expect(peak).toBe(1)
     gate.resolve()
     await Promise.all([first, second])
+    await (mgr as unknown as { _flow: Promise<void> })._flow
 
     expect(events).toEqual(["start:1", "end:1", "start:2", "end:2"])
     expect(peak).toBe(1)
@@ -253,76 +499,58 @@ describe("CodeIndexManager", () => {
     }
   })
 
-  test("keeps Document RAG blocked when the preceding RAG generation fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "chipmate-manager-doc-gate-"))
-    const mgr = new CodeIndexManager(root, join(root, "cache"))
+  test.each(["正常", "部分失败", "全部失败", "初始化异常"])("文档%s后代码只启动一次且状态独立", async (scenario) => {
+    const mgr = createManager()
+    const gate = Promise.withResolvers<void>()
+    const events: string[] = []
     const data = mgr as unknown as {
-      _configManager: CodeIndexConfigManager
-      _cacheManager: CacheManager
-      _generation: number
-      configureDocuments(
-        trigger: IndexingTelemetryTrigger,
-        opts: {
-          after: Promise<{ state: "failed"; pipeline: "rag" }>
-          generation: number
-          wait: boolean
-        },
-      ): Promise<void>
+      _batch?: { task: Promise<void> }
+      prepareDocuments(): Promise<void>
+      configureDocuments(trigger: IndexingTelemetryTrigger, options: { code(): Promise<void> }): Promise<void>
     }
-    data._configManager = new CodeIndexConfigManager(
-      createInput({ openAiKey: "sk-test", documents: { enabled: true } }),
-    )
-    data._cacheManager = new CacheManager(join(root, "cache"), root)
-    data._generation = 1
-
+    data.prepareDocuments = async () => {
+      events.push("文档开始")
+      await gate.promise
+      events.push("文档结束")
+      if (scenario !== "正常") throw new Error(scenario)
+    }
     await data.configureDocuments("background", {
-      after: Promise.resolve({ state: "failed", pipeline: "rag" }),
-      generation: 1,
-      wait: true,
+      code: async () => {
+        events.push("代码开始")
+      },
     })
-
-    expect(mgr.getDocumentStatus()).toMatchObject({
-      state: "Standby",
-      message: "Document RAG blocked because Code RAG did not complete.",
-    })
-    expect(mgr.getDocumentStatus().lastFullScanAt).toBeUndefined()
+    expect(events).toEqual(["文档开始"])
+    const task = mgr.startIndexing()
+    expect(task).toBe(data._batch?.task)
+    gate.resolve()
+    await task
+    expect(events).toEqual(["文档开始", "文档结束", "代码开始"])
+    expect(mgr.getCurrentStatus().systemStatus).not.toBe("Error")
+    if (scenario !== "正常") expect(mgr.getDocumentStatus()).toMatchObject({ state: "Error", message: scenario })
     await mgr.dispose()
-    await rm(root, { recursive: true, force: true })
   })
 
-  test("does not start Document RAG from a stale generation", async () => {
-    const root = await mkdtemp(join(tmpdir(), "chipmate-manager-doc-generation-"))
-    const mgr = new CodeIndexManager(root, join(root, "cache"))
-    const gate = Promise.withResolvers<{ state: "completed"; pipeline: "rag" }>()
+  test("全局取消后旧文档任务完成也不启动代码", async () => {
+    const mgr = createManager()
+    const gate = Promise.withResolvers<void>()
+    let starts = 0
     const data = mgr as unknown as {
-      _configManager: CodeIndexConfigManager
-      _cacheManager: CacheManager
-      _generation: number
-      _documentService?: { getStatus(): { state: string; message: string; lastFullScanAt?: string } }
-      configureDocuments(
-        trigger: IndexingTelemetryTrigger,
-        opts: {
-          after: Promise<{ state: "completed"; pipeline: "rag" }>
-          generation: number
-        },
-      ): Promise<void>
+      _batch?: { task: Promise<void> }
+      prepareDocuments(): Promise<void>
+      configureDocuments(trigger: IndexingTelemetryTrigger, options: { code(): Promise<void> }): Promise<void>
     }
-    data._configManager = new CodeIndexConfigManager(
-      createInput({ openAiKey: "sk-test", documents: { enabled: true } }),
-    )
-    data._cacheManager = new CacheManager(join(root, "cache"), root)
-    data._generation = 1
-
-    await data.configureDocuments("background", { after: gate.promise, generation: 1 })
-    const service = data._documentService
-    data._generation = 2
-    gate.resolve({ state: "completed", pipeline: "rag" })
-    await Bun.sleep(0)
-
-    expect(service?.getStatus()).toMatchObject({ state: "Standby", message: "Document RAG ready." })
-    expect(service?.getStatus().lastFullScanAt).toBeUndefined()
+    data.prepareDocuments = () => gate.promise
+    await data.configureDocuments("background", {
+      code: async () => {
+        starts += 1
+      },
+    })
+    const task = data._batch?.task
+    mgr.cancelIndexing()
+    gate.resolve()
+    await task
+    expect(starts).toBe(0)
     await mgr.dispose()
-    await rm(root, { recursive: true, force: true })
   })
 
   test("retries a waiting worktree baseline once and stops after it becomes ready", async () => {
@@ -363,7 +591,10 @@ describe("CodeIndexManager", () => {
         startIndexing(trigger: IndexingTelemetryTrigger): Promise<{ state: "completed"; pipeline: "codeGraph" }>
       }
       _recreateGraphServices(reason: string, generation: number): Promise<void>
-      configureDocuments(trigger: IndexingTelemetryTrigger, opts: { start: boolean; generation: number }): Promise<void>
+      configureDocuments(
+        trigger: IndexingTelemetryTrigger,
+        opts: { code(): Promise<void>; generation: number },
+      ): Promise<void>
       waiting(): boolean
       waitWithGraph(generation: number, trigger: IndexingTelemetryTrigger): Promise<void>
     }
@@ -384,7 +615,8 @@ describe("CodeIndexManager", () => {
       dispose() {},
     }
     data.configureDocuments = async (trigger, opts) => {
-      events.push(`documents:${trigger}:${opts.start}:${opts.generation}`)
+      events.push(`documents:${trigger}:${opts.generation}`)
+      void opts.code()
     }
     data.waiting = () => {
       events.push("baseline:waiting")
@@ -396,9 +628,8 @@ describe("CodeIndexManager", () => {
     expect(events).toEqual([
       "services:worktree-baseline-wait:1",
       "graph:worktree-baseline-wait",
+      "documents:background:1",
       "scan:background",
-      "documents:background:false:1",
-      "baseline:waiting",
     ])
     scan.resolve({ state: "completed", pipeline: "codeGraph" })
     await Bun.sleep(0)
@@ -854,6 +1085,7 @@ describe("CodeIndexManager", () => {
           }
 
           await mgr.handleSettingsChange(input("wrong-key"))
+          await mgr._flow
           await wait(
             () => (mgr.getRecentErrors().rag?.length ?? 0) > count,
             "Failed revalidation cleared or failed to append RAG diagnostics",
@@ -881,6 +1113,7 @@ describe("CodeIndexManager", () => {
           })
 
           await mgr.handleSettingsChange(input("valid-key"))
+          await mgr._flow
           await wait(
             () => (mgr.getRecentErrors().rag?.length ?? 0) === 0,
             "Successful live validation did not clear prior RAG diagnostics",
@@ -1110,7 +1343,7 @@ describe("CodeIndexManager", () => {
     full = 0
     rag = 0
 
-    await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
+    await applySettings(mgr, createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
 
     expect(full).toBe(0)
     expect(rag).toBe(1)
@@ -1152,7 +1385,7 @@ describe("CodeIndexManager", () => {
     data._graphStorage.getScanState = () => "complete"
     data._postingsStorage.getScanState = () => "interrupted"
 
-    await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
+    await applySettings(mgr, createInput({ openAiKey: "sk-test", modelId: "text-embedding-ada-002" }))
 
     expect(full).toBe(1)
     expect(rag).toBe(0)
@@ -1185,7 +1418,7 @@ describe("CodeIndexManager", () => {
 
     await mgr.initialize(createInput({ openAiKey: "sk-test", searchMinScore: 0.4 }))
     restarts = 0
-    await mgr.handleSettingsChange(createInput({ openAiKey: "sk-test", searchMinScore: 0.5 }))
+    await applySettings(mgr, createInput({ openAiKey: "sk-test", searchMinScore: 0.5 }))
 
     expect(restarts).toBe(0)
   })
@@ -1222,9 +1455,10 @@ describe("CodeIndexManager", () => {
     recreates = 0
     scans = 0
 
-    await mgr.handleSettingsChange(structuredClone(input))
-    await mgr.handleSettingsChange(structuredClone(input))
-    await mgr.handleSettingsChange(
+    await applySettings(mgr, structuredClone(input))
+    await applySettings(mgr, structuredClone(input))
+    await applySettings(
+      mgr,
       createInput({
         openAiKey: "sk-test",
         searchMinScore: 0.7,
@@ -1233,7 +1467,7 @@ describe("CodeIndexManager", () => {
         scannerMaxBatchRetries: 5,
       }),
     )
-    await mgr.handleSettingsChange(structuredClone(input))
+    await applySettings(mgr, structuredClone(input))
 
     expect(recreates).toBe(0)
     expect(scans).toBe(0)
@@ -1268,9 +1502,9 @@ describe("CodeIndexManager", () => {
     recreates = 0
     scans = 0
 
-    await mgr.handleSettingsChange(structuredClone(input))
-    await mgr.handleSettingsChange(createInput({ enabled: false, searchMinScore: 0.7 }))
-    await mgr.handleSettingsChange(structuredClone(input))
+    await applySettings(mgr, structuredClone(input))
+    await applySettings(mgr, createInput({ enabled: false, searchMinScore: 0.7 }))
+    await applySettings(mgr, structuredClone(input))
 
     expect(recreates).toBe(0)
     expect(scans).toBe(0)
@@ -1332,7 +1566,8 @@ describe("CodeIndexManager", () => {
     )
 
     try {
-      await mgr.handleSettingsChange(
+      await applySettings(
+        mgr,
         createInput({
           openAiKey: "sk-test",
           documents: { enabled: true, paths: ["docs", "specs"], include: ["**/*.md", "**/*.txt"] },
@@ -1382,6 +1617,7 @@ describe("CodeIndexManager", () => {
     const original = data.configureDocuments.bind(mgr)
     data.configureDocuments = async (_trigger, opts) => {
       forces.push(opts.force)
+      await (opts as typeof opts & { code?: () => Promise<void> }).code?.()
     }
 
     const input = (apiKey: string) =>
@@ -1410,7 +1646,7 @@ describe("CodeIndexManager", () => {
     )
 
     try {
-      await mgr.handleSettingsChange(input("new-token"))
+      await applySettings(mgr, input("new-token"))
 
       expect(recreates).toBe(1)
       expect(ragScans).toBe(1)
@@ -1473,7 +1709,8 @@ describe("CodeIndexManager", () => {
     storage._stateManager.setSystemState("Indexed")
 
     try {
-      await mgr.handleSettingsChange(
+      await applySettings(
+        mgr,
         createInput({
           enabled: false,
           documents: { enabled: true, paths: ["docs", "specs"], include: ["**/*.md", "**/*.txt"] },
@@ -1711,6 +1948,7 @@ describe("CodeIndexManager", () => {
     data.restoreLastKnownGood = async () => true
 
     await data.graphFallback(new Error("fixed dimension rejected"), "background", "test")
+    await (mgr as unknown as { _batch?: { task: Promise<void> } })._batch?.task
 
     const status = mgr.getCurrentStatus()
     expect(status.systemStatus).toBe("Indexed")

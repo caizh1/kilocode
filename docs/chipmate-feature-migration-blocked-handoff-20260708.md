@@ -46,7 +46,6 @@ This audit records the current blocking state for the ChipMate non-QA migration 
 |---|---|---|
 | Offline Windows x86-64 target execution | `PENDING` | Run the delivery-set package and target runner on an actual offline Windows x86-64 target, then return packed package/runtime evidence. Static package checks already confirm PowerShell/cmd runner manifest-return support, but they do not replace target execution. |
 | Offline Linux x86-64 target execution | `PENDING` | Run the delivery-set package and target runner on an actual offline Linux x86-64 target, then return packed package/runtime evidence. Extracted Linux runner smoke exists locally but does not replace target OS execution. |
-| Installed VSIX UI/UX smoke | `PENDING` | Run installed VSIX chat/runtime S1-S16 and visible Agent Terminal/default-off UX checks in the agreed VS Code profile/workspace. |
 | M11 final no-regression review | `PENDING` | Complete runtime/target/internal evidence above, then manually adjudicate final review for QA, code understanding, Document RAG, autocomplete, terminal, tool registry, activation, and packaging. |
 
 ## Resume checks already performed
@@ -153,19 +152,12 @@ This blocked handoff is not a final PASS and does not reduce scope. It records t
 
 - Current-state consistency guard is updated to require the latest audit `docs/chipmate-feature-migration-validation-runs/20260709-074500-completion-audit-after-artifact-acceptance-rollup/completion-audit.md` and Artifact acceptance rollup `docs/chipmate-feature-migration-validation-runs/20260709-074000-artifact-acceptance-rollup/summary.md` in current-facing docs. Run evidence target: `docs/chipmate-feature-migration-validation-runs/20260709-075000-current-state-consistency-after-artifact-acceptance-rollup/summary.md`.
 
-## Agent Terminal acceptance rollup
 
-- Local Agent Terminal Acceptance Matrix evidence now rolls up to `PASS_WITH_LIMITS`: `docs/chipmate-feature-migration-validation-runs/20260709-080000-agent-terminal-acceptance-rollup/summary.md`. This does not change the remaining installed runtime, target execution, S3, S16, internal-project, company-template, or M11 blockers.
 
-## Post-Agent-Terminal-acceptance-rollup audit refresh
 
-- Latest completion audit `docs/chipmate-feature-migration-validation-runs/20260709-080500-completion-audit-after-agent-terminal-acceptance-rollup/completion-audit.md` reports `44` blockers, `85` review items, and `Completion allowed: no` after closing the local Agent Terminal acceptance item with limits.
 
-## Current-state consistency after Agent Terminal acceptance rollup
 
-- Current-state consistency guard is updated to require the latest audit `docs/chipmate-feature-migration-validation-runs/20260709-080500-completion-audit-after-agent-terminal-acceptance-rollup/completion-audit.md` and Agent Terminal acceptance rollup `docs/chipmate-feature-migration-validation-runs/20260709-080000-agent-terminal-acceptance-rollup/summary.md` in current-facing docs. Run evidence target: `docs/chipmate-feature-migration-validation-runs/20260709-081000-current-state-consistency-after-agent-terminal-acceptance-rollup/summary.md`.
 
-## S3 readiness rerun after Agent Terminal rollup
 
 - Latest S3 readiness rerun `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-readiness-summary.md` remains `ERROR_NEEDS_REVIEW`; provider diagnostics `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-provider-diagnostics.md` still report `server_or_upstream_unavailable` / HTTP `503` for `embedder-openai-compatible`.
 
@@ -183,7 +175,6 @@ This blocked handoff is not a final PASS and does not reduce scope. It records t
 
 ## Current-facing narrative refresh
 
-- Current-facing review/evidence text has been refreshed so active S3, Artifact, and Agent Terminal conclusions point to latest rerun/rollup evidence. Latest audit `docs/chipmate-feature-migration-validation-runs/20260709-084000-completion-audit-after-current-narrative-refresh/completion-audit.md` reports `45` blockers, `85` review items, and `Completion allowed: no`.
 
 ## Current-state consistency after narrative refresh
 
@@ -227,25 +218,15 @@ This blocked handoff is not a final PASS and does not reduce scope. It records t
 
 - Current-state consistency guard is updated to require latest audit `docs/chipmate-feature-migration-validation-runs/20260709-114000-completion-audit-after-company-template-output-compat/completion-audit.md` and remaining blocker unblock packet `docs/chipmate-feature-migration-validation-runs/20260709-093000-remaining-blocker-unblock-packet/remaining-blocker-unblock-packet.md` in current-facing docs. Run evidence target: `docs/chipmate-feature-migration-validation-runs/20260709-094000-current-state-consistency-after-blocker-unblock-packet/summary.md`.
 
-## Agent Terminal visible UX request and intake
 
-- Agent Terminal visible UX operator request now exists at `docs/chipmate-feature-migration-validation-runs/20260709-095000-agent-terminal-visible-ux-request/agent-terminal-visible-ux-request.md` and should be sent with installed VSIX UI/UX smoke work.
-- Agent Terminal visible UX intake self-check now exists at `docs/chipmate-feature-migration-validation-runs/20260709-095500-agent-terminal-visible-ux-intake-self-check/summary.md` and proves placeholder-only evidence is rejected.
-- This does not close visible installed Agent Terminal UX; it only standardizes returned evidence and workstation intake.
 
-## Post-Agent-Terminal-visible-UX-request audit refresh
 
 - Latest completion audit target: `docs/chipmate-feature-migration-validation-runs/20260709-114000-completion-audit-after-company-template-output-compat/completion-audit.md`.
 
-## Current-state consistency after Agent Terminal visible UX request
 
-- Current-state consistency guard is updated to require latest audit `docs/chipmate-feature-migration-validation-runs/20260709-114000-completion-audit-after-company-template-output-compat/completion-audit.md`, Agent Terminal visible UX request `docs/chipmate-feature-migration-validation-runs/20260709-095000-agent-terminal-visible-ux-request/agent-terminal-visible-ux-request.md`, and intake self-check `docs/chipmate-feature-migration-validation-runs/20260709-095500-agent-terminal-visible-ux-intake-self-check/summary.md` in current-facing docs. Run evidence target: `docs/chipmate-feature-migration-validation-runs/20260709-101000-current-state-consistency-after-agent-terminal-visible-ux-request/summary.md`.
 
-## M11 visible Agent Terminal UX readiness gate
 
-- M11 readiness now includes Visible Agent Terminal UX as a required gate: `docs/chipmate-feature-migration-validation-runs/20260709-120500-m11-readiness-after-current-s3-rerun/summary.md` reports `NOT_READY_FOR_M11_REVIEW`, `0/8` ready gates.
 - M11 final signoff intake now points at that readiness gate: `docs/chipmate-feature-migration-validation-runs/20260709-102500-m11-final-signoff-after-visible-ux-gate/current-signoff-summary.md` and `docs/chipmate-feature-migration-validation-runs/20260709-102500-m11-final-signoff-after-visible-ux-gate/summary.md` report `NOT_READY_FOR_FINAL_SIGNOFF`.
-- This is a guardrail against premature M11 entry; it does not close visible installed Agent Terminal UX.
 
 ## Post-M11-visible-UX-gate audit refresh
 
@@ -255,11 +236,7 @@ This blocked handoff is not a final PASS and does not reduce scope. It records t
 
 - Current-state consistency guard is updated to require latest audit `docs/chipmate-feature-migration-validation-runs/20260709-114000-completion-audit-after-company-template-output-compat/completion-audit.md`, M11 readiness `docs/chipmate-feature-migration-validation-runs/20260709-120500-m11-readiness-after-current-s3-rerun/summary.md`, final signoff `docs/chipmate-feature-migration-validation-runs/20260709-102500-m11-final-signoff-after-visible-ux-gate/current-signoff-summary.md`, and final signoff summary `docs/chipmate-feature-migration-validation-runs/20260709-102500-m11-final-signoff-after-visible-ux-gate/summary.md` in current-facing docs. Run evidence target: `docs/chipmate-feature-migration-validation-runs/20260709-104000-current-state-consistency-after-m11-visible-ux-gate/summary.md`.
 
-## M11 visible Agent Terminal UX gate self-check
 
-- M11 visible Agent Terminal UX gate self-check now exists at `docs/chipmate-feature-migration-validation-runs/20260709-121000-m11-visible-ux-evidence-shape-self-check/summary.md` and reports `PASS`.
-- It proves the readiness helper rejects missing Visible Agent Terminal UX evidence instead of relying only on local Agent Terminal rollup.
-- This is a guardrail against premature M11 entry; it does not close visible installed Agent Terminal UX.
 
 ## Post-M11-visible-UX-self-check audit refresh
 
@@ -267,7 +244,6 @@ This blocked handoff is not a final PASS and does not reduce scope. It records t
 
 ## Current-state consistency after M11 visible UX self-check
 
-- Current-state consistency guard is updated to require latest audit `docs/chipmate-feature-migration-validation-runs/20260709-114000-completion-audit-after-company-template-output-compat/completion-audit.md` and M11 visible Agent Terminal UX gate self-check `docs/chipmate-feature-migration-validation-runs/20260709-121000-m11-visible-ux-evidence-shape-self-check/summary.md` in current-facing docs. Run evidence target: `docs/chipmate-feature-migration-validation-runs/20260709-110500-current-state-consistency-after-m11-visible-ux-self-check/summary.md`.
 
 ## M11 final signoff gate self-check
 
@@ -315,7 +291,6 @@ This blocked handoff is not a final PASS and does not reduce scope. It records t
 
 - Current S3 rerun evidence: `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-readiness-summary.md` and `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-provider-diagnostics.md`. The blocker is unchanged: no `document_search`, provider/readiness failure `yes`, HTTP `503`, classification `server_or_upstream_unavailable`.
 - Current M11 readiness evidence: `docs/chipmate-feature-migration-validation-runs/20260709-120500-m11-readiness-after-current-s3-rerun/summary.md`. It remains `NOT_READY_FOR_M11_REVIEW`, `0/8` gates ready.
-- Visible Agent Terminal UX evidence-shape guard: `docs/chipmate-feature-migration-validation-runs/20260709-121000-m11-visible-ux-evidence-shape-self-check/summary.md`. Self-check/generic `PASS` files cannot satisfy the real installed UX gate.
 - Current audit target: `docs/chipmate-feature-migration-validation-runs/20260709-122000-completion-audit-after-current-s3-rerun-and-visible-ux-shape-guard/completion-audit.md`. Current consistency target: `docs/chipmate-feature-migration-validation-runs/20260709-122500-current-state-consistency-after-current-s3-rerun-and-visible-ux-shape-guard/summary.md`. Current final signoff target: `docs/chipmate-feature-migration-validation-runs/20260709-123000-m11-final-signoff-after-current-s3-rerun-and-visible-ux-shape-guard/current-signoff-summary.md` and `docs/chipmate-feature-migration-validation-runs/20260709-123000-m11-final-signoff-after-current-s3-rerun-and-visible-ux-shape-guard/summary.md`.
 
 ## M11 external evidence-shape guard

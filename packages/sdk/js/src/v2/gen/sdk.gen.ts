@@ -74,6 +74,10 @@ import type {
   ChipmateFimResponses,
   ChipmateHeapSnapshotErrors,
   ChipmateHeapSnapshotResponses,
+  ChipmateHistoryMigrationPrepareErrors,
+  ChipmateHistoryMigrationPrepareResponses,
+  ChipmateHistoryMigrationReleaseErrors,
+  ChipmateHistoryMigrationReleaseResponses,
   ChipmateModelsImagesErrors,
   ChipmateModelsImagesResponses,
   ChipmateModelsTranscriptionsErrors,
@@ -102,6 +106,8 @@ import type {
   ChipmateRemoveCommandResponses,
   ChipmateRemoveSkillErrors,
   ChipmateRemoveSkillResponses,
+  ChipmateSessionExportErrors,
+  ChipmateSessionExportResponses,
   ChipmateSessionImportMessageErrors,
   ChipmateSessionImportMessageResponses,
   ChipmateSessionImportPartErrors,
@@ -317,6 +323,34 @@ import type {
   PartDeleteResponses,
   PartUpdateErrors,
   PartUpdateResponses,
+  PatentRadarCancelErrors,
+  PatentRadarCancelResponses,
+  PatentRadarDeleteModuleErrors,
+  PatentRadarDeleteModuleResponses,
+  PatentRadarEvidenceErrors,
+  PatentRadarEvidenceResponses,
+  PatentRadarExportErrors,
+  PatentRadarExportResponses,
+  PatentRadarGetErrors,
+  PatentRadarGetResponses,
+  PatentRadarImportReviewsErrors,
+  PatentRadarImportReviewsResponses,
+  PatentRadarListErrors,
+  PatentRadarListModulesErrors,
+  PatentRadarListModulesResponses,
+  PatentRadarListResponses,
+  PatentRadarPreviewScopeErrors,
+  PatentRadarPreviewScopeResponses,
+  PatentRadarResearchErrors,
+  PatentRadarResearchResponses,
+  PatentRadarResumeErrors,
+  PatentRadarResumeResponses,
+  PatentRadarReviewErrors,
+  PatentRadarReviewResponses,
+  PatentRadarSaveModuleErrors,
+  PatentRadarSaveModuleResponses,
+  PatentRadarScanErrors,
+  PatentRadarScanResponses,
   PathGetErrors,
   PathGetResponses,
   PermissionAllowEverythingErrors,
@@ -497,6 +531,14 @@ import type {
   TuiShowToastResponses,
   TuiSubmitPromptErrors,
   TuiSubmitPromptResponses,
+  TurnChangesDetailErrors,
+  TurnChangesDetailResponses,
+  TurnChangesExternalErrors,
+  TurnChangesExternalResponses,
+  TurnChangesGetErrors,
+  TurnChangesGetResponses,
+  TurnChangesMutateErrors,
+  TurnChangesMutateResponses,
   V2AgentListErrors,
   V2AgentListResponses,
   V2CommandListErrors,
@@ -3598,7 +3640,6 @@ export class Pty extends HeyApiClient {
         rows: number
         cols: number
       }
-      sessionID?: string | null
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3612,7 +3653,6 @@ export class Pty extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "body", key: "title" },
             { in: "body", key: "size" },
-            { in: "body", key: "sessionID" },
           ],
         },
       ],
@@ -4275,7 +4315,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Get session status
    *
-   * Retrieve the current status of all sessions, including active, idle, and completed states.
+   * Retrieve non-idle active session states. Missing sessions are idle.
    */
   public status<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -4707,6 +4747,8 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       messageID?: string
+      afterMessageID?: string
+      operationID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4719,6 +4761,8 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "messageID" },
+            { in: "body", key: "afterMessageID" },
+            { in: "body", key: "operationID" },
           ],
         },
       ],
@@ -6449,6 +6493,158 @@ export class BranchName extends HeyApiClient {
   }
 }
 
+export class TurnChanges extends HeyApiClient {
+  /**
+   * 读取本轮修改清单
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<TurnChangesGetResponses, TurnChangesGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/turn-changes/{messageID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * 撤销或恢复本轮修改
+   */
+  public mutate<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+      revision?: number
+      requestID?: string
+      action?: "revert" | "restore"
+      fileID?: string
+      hunkID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "revision" },
+            { in: "body", key: "requestID" },
+            { in: "body", key: "action" },
+            { in: "body", key: "fileID" },
+            { in: "body", key: "hunkID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<TurnChangesMutateResponses, TurnChangesMutateErrors, ThrowOnError>({
+      url: "/session/{sessionID}/turn-changes/{messageID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * 审阅本轮文件和差异块
+   */
+  public detail<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      fileID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "path", key: "fileID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<TurnChangesDetailResponses, TurnChangesDetailErrors, ThrowOnError>({
+      url: "/session/{sessionID}/turn-changes/{messageID}/file/{fileID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * 记录执行期间的人工编辑
+   */
+  public external<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      file?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "file" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<TurnChangesExternalResponses, TurnChangesExternalErrors, ThrowOnError>(
+      {
+        url: "/turn-changes/external",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+}
+
 export class CommitMessage extends HeyApiClient {
   /**
    * Generate commit message
@@ -7911,6 +8107,81 @@ export class SkillMarket extends HeyApiClient {
   }
 }
 
+export class HistoryMigration extends HeyApiClient {
+  /**
+   * Prepare local chat history migration
+   *
+   * Acquire a short-lived maintenance gate only when all loaded workspaces are idle.
+   */
+  public prepare<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ChipmateHistoryMigrationPrepareResponses,
+      ChipmateHistoryMigrationPrepareErrors,
+      ThrowOnError
+    >({
+      url: "/chipmate/history-migration/prepare",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Release local chat history migration gate
+   */
+  public release<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      token?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ChipmateHistoryMigrationReleaseResponses,
+      ChipmateHistoryMigrationReleaseErrors,
+      ThrowOnError
+    >({
+      url: "/chipmate/history-migration/release",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class SessionImport extends HeyApiClient {
   /**
    * Insert project for session import
@@ -8885,6 +9156,42 @@ export class Chipmate extends HeyApiClient {
     })
   }
 
+  /**
+   * Export a raw QA session tree
+   *
+   * Export the routed local ChipMate QA root session and all descendants from a stable raw database snapshot.
+   */
+  public sessionExport<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ChipmateSessionExportResponses,
+      ChipmateSessionExportErrors,
+      ThrowOnError
+    >({
+      url: "/chipmate/session/{sessionID}/export",
+      ...options,
+      ...params,
+    })
+  }
+
   private _audio?: Audio
   get audio(): Audio {
     return (this._audio ??= new Audio({ client: this.client }))
@@ -8928,6 +9235,11 @@ export class Chipmate extends HeyApiClient {
   private _skillMarket?: SkillMarket
   get skillMarket(): SkillMarket {
     return (this._skillMarket ??= new SkillMarket({ client: this.client }))
+  }
+
+  private _historyMigration?: HistoryMigration
+  get historyMigration(): HistoryMigration {
+    return (this._historyMigration ??= new HistoryMigration({ client: this.client }))
   }
 
   private _sessionImport?: SessionImport
@@ -9133,6 +9445,551 @@ export class Network extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<NetworkRejectResponses, NetworkRejectErrors, ThrowOnError>({
       url: "/network/{requestID}/reject",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class PatentRadar extends HeyApiClient {
+  /**
+   * List Patent Radar runs
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PatentRadarListResponses, PatentRadarListErrors, ThrowOnError>({
+      url: "/patent-radar/runs",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Scan workspace for patent candidates
+   */
+  public scan<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      cutoffDate?: string
+      serverBaseUrl?: string
+      analysisModel?: {
+        providerID: string
+        modelID: string
+      }
+      scope?:
+        | {
+            kind: "workspace"
+          }
+        | {
+            kind: "module"
+            moduleId?: string
+            name?: string
+            corePaths: Array<string>
+            expansionPolicy: "quality-first" | "balanced"
+          }
+      confirmLargeClosure?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "cutoffDate" },
+            { in: "body", key: "serverBaseUrl" },
+            { in: "body", key: "analysisModel" },
+            { in: "body", key: "scope" },
+            { in: "body", key: "confirmLargeClosure" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarScanResponses, PatentRadarScanErrors, ThrowOnError>({
+      url: "/patent-radar/runs",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Preview a Patent Radar scope
+   */
+  public previewScope<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      body?:
+        | {
+            kind: "workspace"
+          }
+        | {
+            kind: "module"
+            moduleId?: string
+            name?: string
+            corePaths: Array<string>
+            expansionPolicy: "quality-first" | "balanced"
+          }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "body", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      PatentRadarPreviewScopeResponses,
+      PatentRadarPreviewScopeErrors,
+      ThrowOnError
+    >({
+      url: "/patent-radar/scopes/preview",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List saved Patent Radar modules
+   */
+  public listModules<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      PatentRadarListModulesResponses,
+      PatentRadarListModulesErrors,
+      ThrowOnError
+    >({
+      url: "/patent-radar/modules",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Save a Patent Radar module
+   */
+  public saveModule<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      id?: string
+      name?: string
+      corePaths?: Array<string>
+      expansionPolicy?: "quality-first" | "balanced"
+      autoScan?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
+            { in: "body", key: "name" },
+            { in: "body", key: "corePaths" },
+            { in: "body", key: "expansionPolicy" },
+            { in: "body", key: "autoScan" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      PatentRadarSaveModuleResponses,
+      PatentRadarSaveModuleErrors,
+      ThrowOnError
+    >({
+      url: "/patent-radar/modules",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete a Patent Radar module
+   */
+  public deleteModule<ThrowOnError extends boolean = false>(
+    parameters: {
+      moduleID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "moduleID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      PatentRadarDeleteModuleResponses,
+      PatentRadarDeleteModuleErrors,
+      ThrowOnError
+    >({
+      url: "/patent-radar/modules/{moduleID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get Patent Radar run
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PatentRadarGetResponses, PatentRadarGetErrors, ThrowOnError>({
+      url: "/patent-radar/runs/{runID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read Patent Radar evidence by ID
+   */
+  public evidence<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+      evidenceIds?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "evidenceIds" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarEvidenceResponses, PatentRadarEvidenceErrors, ThrowOnError>(
+      {
+        url: "/patent-radar/runs/{runID}/evidence",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Cancel Patent Radar run
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarCancelResponses, PatentRadarCancelErrors, ThrowOnError>({
+      url: "/patent-radar/runs/{runID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Resume Patent Radar run
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarResumeResponses, PatentRadarResumeErrors, ThrowOnError>({
+      url: "/patent-radar/runs/{runID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Research one Patent Radar run
+   */
+  public research<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+      serverBaseUrl?: string
+      candidateId?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "serverBaseUrl" },
+            { in: "body", key: "candidateId" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarResearchResponses, PatentRadarResearchErrors, ThrowOnError>(
+      {
+        url: "/patent-radar/runs/{runID}/research",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Add Patent Radar review
+   */
+  public review<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+      candidateId?: string
+      reviewer?: string
+      decision?: "worthy" | "reject" | "needs-arbitration"
+      note?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "candidateId" },
+            { in: "body", key: "reviewer" },
+            { in: "body", key: "decision" },
+            { in: "body", key: "note" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarReviewResponses, PatentRadarReviewErrors, ThrowOnError>({
+      url: "/patent-radar/runs/{runID}/reviews",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Import blind Patent Radar reviews
+   */
+  public importReviews<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+      schemaVersion?: 2
+      runId?: string
+      sourceFingerprint?: string
+      methodVersion?: string
+      reviews?: Array<{
+        candidateId: string
+        reviewer: string
+        decision: "worthy" | "reject" | "needs-arbitration"
+        note: string
+      }>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "schemaVersion" },
+            { in: "body", key: "runId" },
+            { in: "body", key: "sourceFingerprint" },
+            { in: "body", key: "methodVersion" },
+            { in: "body", key: "reviews" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      PatentRadarImportReviewsResponses,
+      PatentRadarImportReviewsErrors,
+      ThrowOnError
+    >({
+      url: "/patent-radar/runs/{runID}/reviews/import",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Export Patent Radar evidence package
+   */
+  public export<ThrowOnError extends boolean = false>(
+    parameters: {
+      runID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "runID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PatentRadarExportResponses, PatentRadarExportErrors, ThrowOnError>({
+      url: "/patent-radar/runs/{runID}/export",
       ...options,
       ...params,
     })
@@ -12089,6 +12946,11 @@ export class ChipMateClient extends HeyApiClient {
     return (this._branchName ??= new BranchName({ client: this.client }))
   }
 
+  private _turnChanges?: TurnChanges
+  get turnChanges(): TurnChanges {
+    return (this._turnChanges ??= new TurnChanges({ client: this.client }))
+  }
+
   private _commitMessage?: CommitMessage
   get commitMessage(): CommitMessage {
     return (this._commitMessage ??= new CommitMessage({ client: this.client }))
@@ -12127,6 +12989,11 @@ export class ChipMateClient extends HeyApiClient {
   private _network?: Network
   get network(): Network {
     return (this._network ??= new Network({ client: this.client }))
+  }
+
+  private _patentRadar?: PatentRadar
+  get patentRadar(): PatentRadar {
+    return (this._patentRadar ??= new PatentRadar({ client: this.client }))
   }
 
   private _remote?: Remote

@@ -321,6 +321,38 @@ describe("DocumentIndexService", () => {
     }
   })
 
+  test("代码阶段暂停刷新但保留新增文档事件，恢复后自动补齐", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "文档刷新工作区-"))
+    const cache = await mkdtemp(path.join(tmpdir(), "文档刷新缓存-"))
+    const memory = memoryStore()
+    const cfg = new CodeIndexConfigManager({
+      enabled: true,
+      embedderProvider: "openai",
+      openAiKey: "sk-test",
+      documents: { enabled: true },
+    })
+    const service = new DocumentIndexService(root, cache, cfg, embedder, memory, ignore(), undefined, undefined, {
+      autoRefresh: true,
+      debounceMs: 10,
+      maxLatencyMs: 30,
+      reconcileIntervalMs: 60_000,
+    })
+    try {
+      service.setRefreshPaused(true)
+      await service.start("manual")
+      await writeFile(path.join(root, "新增.md"), "代码阶段新增的文档")
+      await Bun.sleep(100)
+      expect(memory.points()).toHaveLength(0)
+      service.setRefreshPaused(false)
+      await waitFor(() => memory.points().some((point) => point.payload.codeChunk === "代码阶段新增的文档"))
+      expect(service.getStatus().validFileCount).toBe(1)
+    } finally {
+      await service.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(cache, { recursive: true, force: true })
+    }
+  })
+
   test("serially follows document events that arrive during an automatic refresh", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
     const cache = await mkdtemp(path.join(tmpdir(), "chipmate-doc-cache-"))
@@ -695,9 +727,7 @@ describe("DocumentIndexService", () => {
     const root = await mkdtemp(path.join(tmpdir(), "chipmate-doc-workspace-"))
     try {
       await writeFile(path.join(root, "notes.md"), "readable document")
-      await Promise.all(
-        Array.from({ length: 7 }, (_, index) => writeFile(path.join(root, `broken-${index}.docx`), "")),
-      )
+      await Promise.all(Array.from({ length: 7 }, (_, index) => writeFile(path.join(root, `broken-${index}.docx`), "")))
       const cfg = new CodeIndexConfigManager({
         enabled: true,
         embedderProvider: "openai",

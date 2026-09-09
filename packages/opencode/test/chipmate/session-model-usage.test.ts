@@ -56,15 +56,17 @@ const step = Effect.fn("ModelUsageTest.step")(function* (input: {
   model?: ReturnType<typeof ref>
   cost: number
   tokens: MessageV2.StepFinishPart["tokens"]
+  billing?: MessageV2.StepFinishPart["billing"]
 }) {
   const sessions = yield* Session.Service
-  yield* sessions.updatePart({
+  return yield* sessions.updatePart({
     id: PartID.ascending(),
     messageID: input.messageID,
     sessionID: input.sessionID,
     type: "step-finish",
     reason: "stop",
     model: input.model,
+    billing: input.billing,
     cost: input.cost,
     tokens: input.tokens,
   })
@@ -135,6 +137,14 @@ describe("session model usage", () => {
         totals: {
           steps: 3,
           cost: 1.125,
+          billing: {
+            amountCNY: 0,
+            settledSteps: 0,
+            pendingSteps: 0,
+            unavailableSteps: 0,
+            otherCostUSD: 1.125,
+            groups: [],
+          },
           tokens: { input: 350, output: 70, reasoning: 20, cache: { read: 700, write: 45 } },
         },
         models: [
@@ -142,16 +152,120 @@ describe("session model usage", () => {
             ...direct,
             steps: 2,
             cost: 0.875,
+            billing: {
+              amountCNY: 0,
+              settledSteps: 0,
+              pendingSteps: 0,
+              unavailableSteps: 0,
+              otherCostUSD: 0.875,
+              groups: [],
+            },
             tokens: { input: 250, output: 50, reasoning: 15, cache: { read: 500, write: 35 } },
           },
           {
             ...routed,
             steps: 1,
             cost: 0.25,
+            billing: {
+              amountCNY: 0,
+              settledSteps: 0,
+              pendingSteps: 0,
+              unavailableSteps: 0,
+              otherCostUSD: 0.25,
+              groups: [],
+            },
             tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 200, write: 10 } },
           },
         ],
       })
+    }),
+  )
+
+  it.instance("聚合主会话与子会话的人民币结算状态并保留其他 Provider 美元费用", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const root = yield* sessions.create({ title: "计费主会话" })
+      const child = yield* sessions.create({ title: "计费子会话", parentID: root.id })
+      const model = ref("chipmate", "model-a")
+      const rootMessage = yield* seed(root.id, model)
+      const childMessage = yield* seed(child.id, model)
+      const tokens = { input: 10, output: 2, reasoning: 0, cache: { read: 1, write: 0 } }
+
+      yield* step({
+        sessionID: root.id,
+        messageID: rootMessage.id,
+        cost: 0.1,
+        tokens,
+        billing: {
+          status: "settled",
+          source: "new-api-log",
+          requestID: "req-1",
+          currency: "CNY",
+          amount: 0.0068,
+          quota: 100,
+          quotaPerUnit: 500_000,
+          exchangeRate: 34,
+          group: "vip",
+          modelName: "model-a",
+          settledAt: Date.now(),
+        },
+      })
+      const pending = yield* step({
+        sessionID: child.id,
+        messageID: childMessage.id,
+        cost: 0.2,
+        tokens,
+        billing: { status: "pending", source: "new-api-log", requestID: "req-2" },
+      })
+      yield* step({
+        sessionID: child.id,
+        messageID: childMessage.id,
+        cost: 0.3,
+        tokens,
+        billing: {
+          status: "unavailable",
+          source: "new-api-log",
+          requestID: "req-3",
+          reason: "request-log-missing",
+        },
+      })
+      yield* step({ sessionID: child.id, messageID: childMessage.id, cost: 0.4, tokens })
+
+      const usage = yield* ModelUsage.get(root.id)
+      expect(usage?.totals.billing).toEqual({
+        amountCNY: 0.0068,
+        settledSteps: 1,
+        pendingSteps: 1,
+        unavailableSteps: 1,
+        otherCostUSD: 0.4,
+        groups: [{ name: "vip", steps: 1, amountCNY: 0.0068 }],
+      })
+      expect(usage?.totals.steps).toBe(4)
+      expect(usage?.models[0]?.billing).toEqual(usage?.totals.billing)
+
+      yield* sessions.updatePart({
+        ...pending,
+        billing: {
+          status: "settled",
+          source: "new-api-log",
+          requestID: "req-2",
+          currency: "CNY",
+          amount: 0.002,
+          quota: 20,
+          quotaPerUnit: 100_000,
+          exchangeRate: 10,
+          group: "standard",
+          modelName: "model-a",
+          settledAt: Date.now(),
+        },
+      })
+      const refreshed = yield* ModelUsage.get(child.id)
+      expect(refreshed?.totals.billing).toMatchObject({
+        settledSteps: 2,
+        pendingSteps: 0,
+        unavailableSteps: 1,
+      })
+      expect(refreshed?.totals.billing.amountCNY).toBeCloseTo(0.0088)
     }),
   )
 

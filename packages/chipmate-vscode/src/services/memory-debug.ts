@@ -1,3 +1,4 @@
+import { diagnostic } from "./diagnostics/record"
 import crypto from "crypto"
 import fs from "fs/promises"
 import path from "path"
@@ -58,6 +59,7 @@ export function hash(value: string | undefined) {
 }
 
 export function append(input: MemoryDebugEvent) {
+  diagnostic(input.event, { ...input.data, runId: input.runId, operationId: input.operationId }, /error|crash|fail/i.test(input.event) ? "ERROR" : "INFO", "extension.lifecycle")
   const item = {
     time: new Date().toISOString(),
     source: "extension",

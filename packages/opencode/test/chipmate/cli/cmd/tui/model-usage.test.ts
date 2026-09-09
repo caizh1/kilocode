@@ -27,6 +27,14 @@ const data = {
   totals: {
     steps: 0,
     cost: 0,
+    billing: {
+      amountCNY: 0,
+      settledSteps: 0,
+      pendingSteps: 0,
+      unavailableSteps: 0,
+      otherCostUSD: 0,
+      groups: [],
+    },
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
   },
   models: [],
@@ -58,6 +66,7 @@ describe("TUI model usage", () => {
         modelID: "minimax/minimax-m2",
         steps: 1,
         cost: 0,
+        billing: data.totals.billing,
         tokens: data.totals.tokens,
       },
       {
@@ -65,6 +74,7 @@ describe("TUI model usage", () => {
         modelID: "openai/gpt-5.5-20260423",
         steps: 1,
         cost: 0,
+        billing: data.totals.billing,
         tokens: data.totals.tokens,
       },
       {
@@ -72,6 +82,7 @@ describe("TUI model usage", () => {
         modelID: "minimax-m2",
         steps: 1,
         cost: 0,
+        billing: data.totals.billing,
         tokens: data.totals.tokens,
       },
     ]

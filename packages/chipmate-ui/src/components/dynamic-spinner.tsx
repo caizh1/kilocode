@@ -87,13 +87,13 @@ function sized(
 }
 
 function globalBase() {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return undefined
   return (window as typeof window & { CHIPMATE_LOADING_MOTION_URI?: string }).CHIPMATE_LOADING_MOTION_URI
 }
 
 function Motion(props: MotionProps) {
   const total = props.variant === "signal" ? 6 : prism.length
-  const [count, setCount] = createSignal(0)
+  const [, setCount] = createSignal(0)
   const load = () => {
     setCount((value) => {
       const next = value + 1
@@ -182,7 +182,7 @@ export function Spinner(props: SpinnerProps) {
   const path = () => (base && theme() !== "contrast" ? `${base}/${theme()}/${variant}` : undefined)
   const asset = () => {
     const root = path()
-    if (!root || stillFailed()) return
+    if (!root || stillFailed() || (failed() && !reduced())) return undefined
     return root
   }
 

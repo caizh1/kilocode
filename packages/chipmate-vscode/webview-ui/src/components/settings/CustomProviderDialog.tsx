@@ -24,6 +24,7 @@ import { createProviderAction } from "../../utils/provider-action"
 import { MASKED_CUSTOM_PROVIDER_KEY, resolveCustomProviderKey } from "../../../../src/shared/custom-provider"
 import {
   internalOfflineProviderDefaults,
+  isInternalOfflineBuild,
   shouldUseQuickProviderMode,
   type InternalOfflineProviderDefaults,
 } from "../../../../src/shared/internal-offline"
@@ -33,6 +34,11 @@ import {
   type CustomProviderPackage,
 } from "../../../../src/shared/provider-model"
 import { ModelCard } from "./CustomProviderModelCard"
+import {
+  isInternalModelHidden,
+  partitionInternalModels,
+  restoreInternalHiddenModels,
+} from "../../utils/internal-model-policy"
 import type {
   ChatTemplateArgsValue,
   EnableThinkingValue,
@@ -47,6 +53,8 @@ import type {
 import {
   createAutocompleteModel,
   createReasoningModel,
+  hasExtendedModelConfiguration,
+  mergeDiscoveredModels,
   resolveQuickModels,
   validateCustomProvider,
 } from "./CustomProviderValidation"
@@ -151,11 +159,11 @@ function parseVariant([name, cfg]: [string, Record<string, unknown>]): VariantEn
   }
 }
 
-function initModels(cfg: ProviderConfig | undefined): ModelEntry[] {
+function initModels(cfg: ProviderConfig | undefined, placeholder = true): ModelEntry[] {
   const empty = { id: "", name: "", reasoning: false, supportsImages: false, modalities: {}, variants: [] }
   if (!cfg?.models || typeof cfg.models !== "object") return [{ ...empty }]
   const entries = Object.entries(cfg.models)
-  if (entries.length === 0) return [{ ...empty }]
+  if (entries.length === 0) return placeholder ? [{ ...empty }] : []
   return entries.map(([id, model]) => {
     const raw = model as RawModel
     const modalities = modes(raw.modalities)
@@ -186,13 +194,39 @@ type ExistingProvider = {
   config: ProviderConfig
 }
 
+function configuredModelName(model: unknown, modelID: string): string {
+  if (!model || typeof model !== "object") return modelID
+  const name = (model as { name?: unknown }).name
+  return typeof name === "string" ? name : modelID
+}
+
+function partitionExistingModels(existing: ExistingProvider | undefined, internal: boolean) {
+  const models = (existing?.config.models ?? {}) as Record<string, unknown>
+  return partitionInternalModels(
+    {
+      providerID: existing?.providerID,
+      providerName: existing?.name,
+      models,
+      modelName: configuredModelName,
+    },
+    internal,
+  )
+}
+
 function resolveAuth(existing: ExistingProvider | undefined, states: Record<string, ProviderAuthState>) {
   if (!existing || existing.config.env?.length) return
   return states[existing.providerID]
 }
 
-function formModels(existing: ExistingProvider | undefined, defaults: InternalOfflineProviderDefaults | undefined) {
-  if (existing) return initModels(existing.config)
+function formModels(
+  existing: ExistingProvider | undefined,
+  defaults: InternalOfflineProviderDefaults | undefined,
+  internal: boolean,
+) {
+  if (existing) {
+    const visible = partitionExistingModels(existing, internal).visible
+    return initModels({ ...existing.config, models: visible }, false)
+  }
   if (defaults) return [createReasoningModel(defaults.modelID)]
   return initModels(undefined)
 }
@@ -201,6 +235,7 @@ function initForm(
   existing: ExistingProvider | undefined,
   auth: ProviderAuthState | undefined,
   defaults: InternalOfflineProviderDefaults | undefined,
+  internal: boolean,
 ): FormState {
   const npm = existing?.config?.npm
   return {
@@ -209,7 +244,7 @@ function initForm(
     npm: isCustomProviderPackage(npm) ? npm : CUSTOM_PROVIDER_PACKAGE,
     baseURL: (existing?.config?.options as { baseURL?: string } | undefined)?.baseURL ?? defaults?.baseURL ?? "",
     apiKey: resolveCustomProviderKey(auth),
-    models: formModels(existing, defaults),
+    models: formModels(existing, defaults, internal),
     headers: initHeaders(existing?.config),
     saving: false,
   }
@@ -219,6 +254,8 @@ export interface CustomProviderDialogProps {
   onBack?: () => void
   /** When set, the dialog opens in edit mode with pre-filled values. */
   existing?: ExistingProvider
+  /** Additional providers must not inherit the fixed internal ChipMate defaults. */
+  setupMode?: "primary" | "additional"
   /** Story/test override; production callers use compile-time internal defaults. */
   defaults?: InternalOfflineProviderDefaults
 }
@@ -233,19 +270,24 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const action = createProviderAction(vscode)
   onCleanup(action.dispose)
 
+  const internal = isInternalOfflineBuild()
   const editing = () => !!props.existing
-  const defaults = props.defaults ?? internalOfflineProviderDefaults()
-  const eligible = () => shouldUseQuickProviderMode(defaults, props.existing?.providerID)
+  const defaults = props.setupMode === "additional" ? undefined : (props.defaults ?? internalOfflineProviderDefaults())
+  const eligible = () =>
+    shouldUseQuickProviderMode(defaults, props.existing?.providerID) &&
+    !hasExtendedModelConfiguration(props.existing, defaults)
   const [advanced, setAdvanced] = createSignal(!eligible())
   const quick = () => eligible() && !advanced()
 
   const auth = resolveAuth(props.existing, provider.authStates())
-  const [form, setForm] = createStore<FormState>(initForm(props.existing, auth, defaults))
+  const hiddenModels = partitionExistingModels(props.existing, internal).hidden
+  const [form, setForm] = createStore<FormState>(initForm(props.existing, auth, defaults, internal))
 
   const [errors, setErrors] = createStore<FormErrors>({
     providerID: undefined,
     name: undefined,
     baseURL: undefined,
+    apiKey: undefined,
     models: form.models.map((m) => ({ variants: m.variants.map(() => ({})) })),
     headers: form.headers.map(() => ({})),
   })
@@ -260,6 +302,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const [fetchStatus, setFetchStatus] = createSignal<string>()
   const [quickModel, setQuickModel] = createSignal<FetchedModel>()
   const [quickAutocomplete, setQuickAutocomplete] = createSignal<FetchedModel>()
+  let modelList: HTMLDivElement | undefined
   const autocompleteStatus = createMemo(() => {
     const model = quickAutocomplete()
     if (!model) {
@@ -351,6 +394,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     // fetch with the stored key (#10139). Anything typed into the field
     // (a key or {env:VAR} syntax) takes precedence.
     const providerID = !raw && props.existing ? props.existing.providerID : undefined
+    const policyProviderID = form.providerID.trim()
+    const policyProviderName = form.name.trim()
     const existing = new Set(form.models.map((m) => m.id.trim().toLowerCase()).filter(Boolean))
 
     const hdrs = form.headers
@@ -385,7 +430,18 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         return
       }
 
-      const models = msg.models ?? []
+      const models = (msg.models ?? []).filter(
+        (model) =>
+          !isInternalModelHidden(
+            {
+              providerID: policyProviderID,
+              providerName: policyProviderName,
+              modelID: model.id,
+              modelName: model.name,
+            },
+            internal,
+          ),
+      )
       if (models.length === 0) {
         setFetchError(language.t("provider.custom.models.fetch.empty"))
         return
@@ -501,37 +557,17 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       return
     }
 
-    // Replace the single empty row or append
-    const row = form.models[0]
-    const empty = form.models.length === 1 && !!row && !row.id.trim() && !row.name.trim()
-    // Dedup against models already in the form (trimmed, case-insensitive). The
-    // picker is built from a fetch-time snapshot, so a model the user typed
-    // manually after fetching hasn't been filtered out yet.
-    const existing = new Set(form.models.map((m) => m.id.trim().toLowerCase()).filter(Boolean))
-    const toAdd = picked.filter((m) => {
-      const key = m.id.trim().toLowerCase()
-      if (!key || existing.has(key)) {
-        return false
-      }
-      existing.add(key)
-      return true
-    })
-
-    const defaults = (m: FetchedModel): ModelEntry => ({
-      ...m,
-      reasoning: false,
-      supportsImages: false,
-      modalities: {},
-      variants: [],
-    })
-    const merged = empty ? toAdd.map(defaults) : [...form.models, ...toAdd.map(defaults)]
+    const result = mergeDiscoveredModels(form.models, picked)
+    const merged = result.models
+    const toAdd = result.added
 
     if (toAdd.length > 0) {
-      setForm("models", merged)
+      setForm("models", reconcile(merged))
       setErrors(
         "models",
-        merged.map((m) => ({ variants: m.variants.map(() => ({})) })),
+        reconcile(merged.map((m) => ({ variants: m.variants.map(() => ({})) }))),
       )
+      queueMicrotask(() => modelList?.scrollIntoView({ behavior: "smooth", block: "start" }))
     }
 
     // Keep the picker open with the un-picked models so the user can keep adding.
@@ -629,6 +665,9 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       disabledProviders: config().disabled_providers ?? [],
       existingProviderIDs: new Set(Object.keys(provider.providers())),
       existingEnv: props.existing?.config?.env,
+      existingBaseURL: (props.existing?.config?.options as { baseURL?: string } | undefined)?.baseURL,
+      existingHasCredential: auth === "api" || !!props.existing?.config?.env?.length,
+      apiKeyChanged: apiTouched(),
     })
     setErrors(reconcile(output.errors))
     return output.result
@@ -643,6 +682,10 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     if (!result) return
     const active = quick() ? quickModel() : undefined
     const autocomplete = quick() ? quickAutocomplete() : undefined
+    const savedConfig = {
+      ...result.config,
+      models: restoreInternalHiddenModels(result.config.models, hiddenModels),
+    }
 
     setForm("saving", true)
 
@@ -650,7 +693,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       {
         type: "saveCustomProvider",
         providerID: result.providerID,
-        config: result.config,
+        config: savedConfig,
         apiKey: apiTouched() ? result.key : undefined,
         apiKeyChanged: apiTouched(),
         ...(active ? { activateModelID: active.id } : {}),
@@ -822,11 +865,13 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                     setForm("apiKey", key)
                     setFetchKey(key)
                   }}
+                  validationState={errors.apiKey ? "invalid" : undefined}
+                  error={errors.apiKey}
                 />
               </div>
 
               {/* Models */}
-              <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+              <div ref={modelList} style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
                 <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
                   <label
                     style={{
@@ -1113,6 +1158,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                   setForm("apiKey", key)
                   setFetchKey(key)
                 }}
+                validationState={errors.apiKey ? "invalid" : undefined}
+                error={errors.apiKey}
               />
 
               <div

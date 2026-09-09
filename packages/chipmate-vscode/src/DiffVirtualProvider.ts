@@ -1,3 +1,4 @@
+import { bindAppearance } from "./appearance"
 import * as vscode from "vscode"
 import { buildWebviewHtml, getWebviewFontSize } from "./utils"
 import { watchFontSizeConfig } from "./chipmate-provider/font-size"
@@ -54,6 +55,7 @@ export class DiffVirtualProvider implements vscode.Disposable {
       dark: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-dark.svg"),
     }
 
+    bindAppearance(panel)
     panel.webview.html = this.getHtml(panel.webview)
     panel.webview.onDidReceiveMessage((msg) => this.onMessage(msg))
     this.fontConfigDisposable?.dispose()

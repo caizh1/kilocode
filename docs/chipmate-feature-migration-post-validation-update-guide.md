@@ -14,7 +14,6 @@ Do not check a plan item merely because a script exists, a prompt exists, or a s
 |---|---|---|---|
 | C1 `packages/opencode && bun run test` | `PASS` | M1-M7 automated test checklist items for artifact, Word, Mermaid, source-backed skill, and QA routing boundary | Review failures by test name before checking any subitem. |
 | C2 `packages/opencode && bun run typecheck` | `PASS` | Tool-layer type-safety confidence for M1-M7 and M10 | Does not prove installed VS Code behavior. |
-| C3 `packages/chipmate-vscode && bun run test:unit` | `PASS` | M8 artifact UI tests, M9 Agent Terminal unit tests, autocomplete contribution smoke | Does not prove real installed profile behavior. |
 | C4 `packages/chipmate-vscode && bun run typecheck` | `PASS` | VS Code activation/type boundary confidence | Still requires installed smoke before M10/M11. |
 | C5 `packages/chipmate-vscode && bun run lint` | `PASS` | Extension/webview hygiene review | Does not prove runtime behavior. |
 | C6 `packages/chipmate-vscode && bun run package` | `PASS` | Local package/build readiness review | Still requires VSIX packaging if C7 is separate. |
@@ -38,8 +37,6 @@ Do not check a plan item merely because a script exists, a prompt exists, or a s
 | S11 Mermaid | `PASS` | Mermaid PNG acceptance item | Record `.mmd`, `.png`, diagnostics. |
 | S12 Mermaid + Word | `PASS` | Mermaid insert into Word acceptance item | Record new Word artifact and manifest. |
 | S13 Source-backed detail design | `PASS` | Internal embedded C detailed-design validation; real project M10 item | Record internal module, evidence refs, Markdown, diagrams, Word output, and quality report. |
-| S14 Agent Terminal open | `PASS` | Agent Terminal open acceptance item | Confirm default-off prompt and native terminal/session manager still exists. |
-| S15 Agent Terminal danger | `PASS` | Dangerous command confirmation acceptance item | Confirm no destructive command runs without explicit confirmation. |
 | S16 Autocomplete | `PASS` | Autocomplete preservation review | Confirm qwen-direct provider remains available. |
 
 ## M10 Review Update Rules
@@ -47,7 +44,6 @@ Do not check a plan item merely because a script exists, a prompt exists, or a s
 Check M10 review items only after the following minimum evidence exists:
 
 - `所有新增能力能按需触发`: S4-S15 are PASS or explicitly scoped with known issues.
-- `所有非目标能力没有被误迁移`: static non-goal review plus S1-S3, S16, and Agent Terminal sidecar smoke are reviewed.
 - `ChipMate 原有 QA、terminal、autocomplete、Document RAG 没有明显退化`: S1-S3, S14, and S16 are PASS.
 - `VSIX 体积和启动耗时没有明显异常`: C7 plus P1 plus installed startup observation are reviewed.
 

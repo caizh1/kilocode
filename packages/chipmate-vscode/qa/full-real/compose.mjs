@@ -25,7 +25,6 @@ const windows = [
   window("WIN-SMOKE-INSTALL", "正式安装、激活及 Extension Host 无启动错误"),
   window("WIN-SMOKE-SETTINGS", "真实键盘逐字符输入 embedding model 与维度，blur 后保持"),
   window("WIN-SMOKE-INDEXING", "Mock Provider 启动 CodeGraph/Code RAG，并加载 rg.exe 与 LanceDB"),
-  window("WIN-SMOKE-CONSOLE", "Agent Console 执行固定命令；取消审批后不执行"),
 ]
 const ledger = {
   runId: "20260718",

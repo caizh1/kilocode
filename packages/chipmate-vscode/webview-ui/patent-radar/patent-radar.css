@@ -1,0 +1,278 @@
+:root {
+  color-scheme: light dark;
+}
+
+.patent-radar-shell {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 12% 5%, color-mix(in srgb, var(--vscode-focusBorder) 12%, transparent), transparent 32%),
+    var(--vscode-editor-background);
+}
+
+.glass {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, white 22%);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent);
+  box-shadow:
+    0 12px 32px color-mix(in srgb, black 12%, transparent),
+    inset 0 1px color-mix(in srgb, white 20%, transparent);
+}
+
+.summary,
+.warnings,
+.candidate,
+.empty {
+  max-width: 1120px;
+  margin: 0 auto 18px;
+  padding: 22px;
+}
+
+.summary-title,
+.candidate-heading,
+.actions,
+.review-actions,
+.fingerprints,
+.references {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-toolbar,
+.history-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.history-toolbar {
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.history-toolbar select {
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: 620px;
+  padding: 7px 9px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 6px;
+}
+
+.summary-title,
+.candidate-heading {
+  justify-content: space-between;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 4px;
+  font-size: 26px;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: 19px;
+}
+
+h3 {
+  margin-bottom: 7px;
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.count,
+.verdict,
+.ordinal,
+.fingerprints span,
+.references span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.fingerprints,
+.actions {
+  margin-top: 14px;
+}
+
+.boundary,
+.reason {
+  margin: 14px 0 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.facts > div,
+.evidence > div,
+.review {
+  min-width: 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 68%, transparent);
+}
+
+.facts p,
+.features li {
+  line-height: 1.55;
+}
+
+.features code {
+  margin-right: 8px;
+  color: var(--vscode-textLink-foreground);
+}
+
+.verdict-single-reference-conflict,
+.verdict-cn-claim-risk {
+  border-color: var(--vscode-inputValidation-errorBorder);
+  color: var(--vscode-errorForeground);
+}
+
+.verdict-continue-human-review,
+.verdict-review-ready {
+  border-color: var(--vscode-testing-iconPassed);
+}
+
+details {
+  margin-top: 18px;
+}
+
+summary {
+  cursor: pointer;
+}
+
+.evidence {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.matrix {
+  display: grid;
+  gap: 1px;
+  margin-top: 12px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--vscode-panel-border);
+}
+
+.matrix > div {
+  display: grid;
+  grid-template-columns: minmax(52px, 0.5fr) minmax(130px, 1fr) minmax(48px, 0.4fr) minmax(220px, 3fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 11px;
+  background: var(--vscode-editor-background);
+}
+
+.matrix-head {
+  font-weight: 650;
+  color: var(--vscode-descriptionForeground);
+}
+
+.evidence small {
+  display: block;
+  margin-top: 4px;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.review {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.review label {
+  display: grid;
+  gap: 6px;
+}
+
+.review-history {
+  min-width: 0;
+}
+
+.review-history ul {
+  margin-bottom: 0;
+  padding-left: 20px;
+}
+
+.review-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.arbitration {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--vscode-inputValidation-warningBorder);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.review input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 7px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+}
+
+@media (max-width: 760px) {
+  .patent-radar-shell {
+    padding: 12px;
+  }
+
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
+  .matrix > div {
+    grid-template-columns: 1fr;
+  }
+
+  .summary,
+  .warnings,
+  .candidate,
+  .empty {
+    padding: 16px;
+  }
+}

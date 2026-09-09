@@ -23,7 +23,7 @@ async function waitForTab(match: (tab: vscode.Tab) => boolean): Promise<vscode.T
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       disposable.dispose()
-      reject(new Error("等待注释 Diff 标签超时"))
+      reject(new Error("等待目标标签超时"))
     }, 10_000)
     const disposable = vscode.window.tabGroups.onDidChangeTabs(() => {
       const tab = find()
@@ -51,13 +51,12 @@ suite("Extension Test Suite", () => {
     for (const command of [
       "chipmate.v2.plusButtonClicked",
       "chipmate.v2.agentManagerOpen",
-      "chipmate.v2.sidebarTitle.agentTerminalOpen",
       "chipmate.v2.settingsButtonClicked",
       "chipmate.v2.openInTab",
+      "chipmate.v2.returnToSidebar",
       "chipmate.v2.documents.openArtifact",
       "chipmate.v2.documents.openArtifactFolder",
       "chipmate.v2.documents.exportDiagnostics",
-      "chipmate.v2.agentTerminal.open",
       "chipmate.v2.autocomplete.generateSuggestions",
       "chipmate.v2.autocomplete.cancelSuggestions",
       "chipmate.v2.qwenAutocomplete.showLogs",
@@ -65,6 +64,11 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.generateTerminalCommand",
       "chipmate.v2.generateCommentsForCurrentFunction",
       "chipmate.v2.generateCommentsForSelectedFunctions",
+      "chipmate.v2.generateCommentsForCurrentCodeTarget",
+      "chipmate.v2.generateCommentsForSelectedCodeTargets",
+      "chipmate.v2.generateCommentsForCurrentFileHeader",
+      "chipmate.v2.generateCommentsForCurrentFile",
+      "chipmate.v2.generateCommentsForSelectedLogicBlock",
       "chipmate.v2.applyCodeCommentPreview",
       "chipmate.v2.discardCodeCommentPreview",
       "chipmate.v2.terminalAddToContext",
@@ -80,7 +84,6 @@ suite("Extension Test Suite", () => {
 
     assert.strictEqual(config.get("chipmate.v2.documents.artifacts.root"), ".chipmate-v2/artifacts")
     assert.strictEqual(config.get("chipmate.v2.documents.tools.enabled"), true)
-    assert.ok(!config.has("chipmate.v2.agentTerminal.enabled"))
     assert.strictEqual(config.get("chipmate.v2.autocomplete.enabled"), false)
     assert.strictEqual(config.get("chipmate.v2.autocomplete.provider"), "")
     assert.ok(!config.has("chipmate.v2.autocomplete.qwen.endpoint"))
@@ -89,7 +92,7 @@ suite("Extension Test Suite", () => {
     assert.ok(config.has("chipmate.v2.documents.wordRender.remoteEndpoint"))
     assert.strictEqual(config.get("chipmate.v2.indexing.showButtonWhenDisabled"), true)
     assert.strictEqual(config.get("chipmate.v2.chat.shiftTabCyclesVariant"), true)
-    assert.strictEqual(config.get("chipmate.v2.showTokenThroughput"), false)
+    assert.strictEqual(config.get("chipmate.v2.showTokenThroughput"), true)
     assert.strictEqual(config.get("chipmate.v2.languageCommitMessage"), "sync")
   })
 
@@ -119,7 +122,7 @@ suite("Extension Test Suite", () => {
     }
   })
 
-  test("keeps native ChipMate contributions present while adding the standalone Agent Console command", () => {
+  test("keeps native ChipMate contributions present", () => {
     const extension = vscode.extensions.getExtension("chipmate.chipmate")
     assert.ok(extension, "chipmate.chipmate extension must be discoverable")
 
@@ -132,7 +135,6 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.settingsButtonClicked",
       "chipmate.v2.generateTerminalCommand",
       "chipmate.v2.documents.openArtifact",
-      "chipmate.v2.agentTerminal.open",
       "chipmate.v2.qwenAutocomplete.exportDiagnostics",
       "chipmate.v2.applyCodeCommentPreview",
       "chipmate.v2.discardCodeCommentPreview",
@@ -169,6 +171,70 @@ suite("Extension Test Suite", () => {
       "chipmate.v2.languageCommitMessage",
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(properties, key), `${key} must remain contributed`)
+    }
+  })
+
+  test("keeps code tabs, dirty documents, and selections unchanged after Settings closes", async function () {
+    this.timeout(20_000)
+    const id = randomUUID()
+    const uris = ["one", "two", "three"].map((name) =>
+      vscode.Uri.file(`${tmpdir()}/chipmate-settings-${id}-${name}.ts`),
+    )
+    const isTargetTextTab = (tab: vscode.Tab): tab is vscode.Tab & { input: vscode.TabInputText } => {
+      const input = tab.input
+      return input instanceof vscode.TabInputText && uris.some((uri) => input.uri.path === uri.path)
+    }
+    await Promise.all(
+      uris.map((uri, index) => vscode.workspace.fs.writeFile(uri, Buffer.from(`const value = ${index}\n`))),
+    )
+
+    const documents: vscode.TextDocument[] = []
+    try {
+      for (const [index, uri] of uris.entries()) {
+        const document = await vscode.workspace.openTextDocument(uri)
+        documents.push(document)
+        const editor = await vscode.window.showTextDocument(document, {
+          preview: false,
+          viewColumn: index === 2 ? vscode.ViewColumn.Two : vscode.ViewColumn.One,
+        })
+        await editor.edit((edit) => edit.insert(new vscode.Position(0, 0), `// 未保存 ${index}\n`))
+      }
+
+      const sourceEditor = await vscode.window.showTextDocument(documents[0], {
+        preview: false,
+        viewColumn: vscode.ViewColumn.One,
+      })
+      sourceEditor.selection = new vscode.Selection(1, 6, 1, 11)
+      const before = vscode.window.tabGroups.all.map((group) =>
+        group.tabs.filter(isTargetTextTab).map((tab) => tab.input.uri.toString()),
+      )
+
+      await vscode.commands.executeCommand("chipmate.v2.settingsButtonClicked")
+      const settings = await waitForTab(
+        (tab) => tab.input instanceof vscode.TabInputWebview && tab.label === "ChipMate Settings",
+      )
+      await vscode.window.tabGroups.close(settings)
+
+      const after = vscode.window.tabGroups.all.map((group) =>
+        group.tabs.filter(isTargetTextTab).map((tab) => tab.input.uri.toString()),
+      )
+      assert.deepStrictEqual(after, before, "closing Settings must not move or reorder code tabs")
+      assert.ok(
+        documents.every((document) => document.isDirty),
+        "closing Settings must preserve unsaved content",
+      )
+      assert.deepStrictEqual(
+        sourceEditor.selection,
+        new vscode.Selection(1, 6, 1, 11),
+        "closing Settings must preserve the code selection",
+      )
+    } finally {
+      await Promise.all(documents.map((document) => document.save()))
+      const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs).filter(isTargetTextTab)
+      if (tabs.length > 0) await vscode.window.tabGroups.close(tabs)
+      await Promise.all(
+        uris.map((uri) => vscode.workspace.fs.delete(uri, { useTrash: false }).then(undefined, () => undefined)),
+      )
     }
   })
 

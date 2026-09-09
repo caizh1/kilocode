@@ -4,7 +4,11 @@ import { useSession } from "../../context/session"
 import { terminal, type TerminalState } from "../../context/session-outcome"
 import { useLanguage } from "../../context/language"
 
-export const TurnOutcome: Component = () => {
+interface TurnOutcomeProps {
+  hidden?: boolean
+}
+
+export const TurnOutcome: Component<TurnOutcomeProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
   const state = createMemo(() =>
@@ -28,7 +32,7 @@ export const TurnOutcome: Component = () => {
   }
 
   return (
-    <Show when={session.status() === "idle" && state()}>
+    <Show when={!props.hidden && session.status() === "idle" && state()}>
       {(value) => (
         <div
           class="vscode-session-turn"

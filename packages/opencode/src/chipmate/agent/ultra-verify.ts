@@ -14,7 +14,6 @@ export namespace UltraVerify {
     phase: Phase
     kind?: Kind
     attempts: number
-    premature: number
     baseline?: string
     answer?: string
     hash?: string
@@ -42,6 +41,10 @@ export namespace UltraVerify {
     return new Bun.CryptoHasher("sha256").update(input).digest("hex")
   }
 
+  export function isKind(input: unknown): input is Kind {
+    return input === "analysis" || input === "review" || input === "implementation"
+  }
+
   function saved(part: SessionV1.ToolPart) {
     if (part.tool !== TOOL || !("output" in part.state) || typeof part.state.output !== "string") return undefined
     const marker = "ULTRA_VERIFY_RESULT\n"
@@ -49,6 +52,7 @@ export namespace UltraVerify {
     if (offset < 0) return undefined
     try {
       const data = JSON.parse(part.state.output.slice(offset + marker.length)) as {
+        kind?: unknown
         baseline?: unknown
         answer?: unknown
         sessions?: unknown
@@ -56,6 +60,7 @@ export namespace UltraVerify {
       if (typeof data.baseline !== "string" || !data.baseline.trim()) return undefined
       if (typeof data.answer !== "string" || !data.answer.trim()) return undefined
       return {
+        kind: isKind(data.kind) ? data.kind : undefined,
         baseline: data.baseline,
         answer: data.answer,
         sessions: Array.isArray(data.sessions)
@@ -95,19 +100,19 @@ export namespace UltraVerify {
         return (item as Snapshot).version === 1 && (item as Snapshot).messageID === input.messageID
       })
     const last = snapshots.at(-1)
+    const requestKind = result?.kind ?? last?.kind
     const state: State = {
       sessionID: input.sessionID,
       messageID: input.messageID,
       phase: result
-        ? last?.kind === "implementation"
+        ? requestKind === "implementation"
           ? "ready"
           : "complete"
         : last?.phase === "running"
           ? "failed"
           : (last?.phase ?? "pending"),
-      kind: last?.kind,
+      kind: requestKind,
       attempts: last?.attempts ?? 0,
-      premature: 0,
       baseline: result?.baseline,
       answer: result?.answer,
       hash: result ? digest(result.answer) : last?.hash,
@@ -138,21 +143,20 @@ export namespace UltraVerify {
     }
   }
 
-  export function begin(state: State, kind: Kind) {
+  export function begin(state: State) {
     if (state.phase !== "pending") return "The Ultra verification pipeline has already started."
     state.phase = "running"
-    state.kind = kind
     state.attempts++
-    state.premature = 0
     state.reason = "The Ultra verification pipeline was interrupted before producing a complete answer."
     return undefined
   }
 
-  export function complete(state: State, input: { baseline: string; answer: string; sessions: string[] }) {
+  export function complete(state: State, input: { kind: Kind; baseline: string; answer: string; sessions: string[] }) {
     const baseline = input.baseline.trim()
     const answer = input.answer.trim()
     if (!baseline || !answer) return fail(state, "The Code baseline or synthesized answer was empty.")
-    state.phase = state.kind === "implementation" ? "ready" : "complete"
+    state.kind = input.kind
+    state.phase = input.kind === "implementation" ? "ready" : "complete"
     state.baseline = baseline
     state.answer = answer
     state.hash = digest(answer)
@@ -178,13 +182,22 @@ export namespace UltraVerify {
     return state.phase === "pending" || state.phase === "running"
   }
 
+  export function dispatch(state: State) {
+    if (state.phase !== "pending") return undefined
+    return {
+      id: `call_ultra_verify_${digest(`${state.sessionID}\u0000${state.messageID}`).slice(0, 24)}`,
+      name: TOOL,
+      input: {},
+    }
+  }
+
   export function reminder(state: State) {
     if (state.phase === "pending") {
       return [
         "Ultra verification runtime contract:",
-        `- Call ${TOOL} exactly once before answering or changing files.`,
+        `- The runtime starts ${TOOL} locally exactly once before any parent-model request.`,
         "- The runtime freezes one normal read-only Code answer, launches three independent read-only Explore verifiers in parallel, then launches one independent Ask synthesizer.",
-        "- Do not call ordinary task, write a competing draft, or expose hidden benchmark material.",
+        "- Do not invoke another tool, write a competing draft, or expose hidden benchmark material.",
       ].join("\n")
     }
     if (state.phase === "running") {
@@ -237,10 +250,14 @@ export namespace UltraVerify {
 
   export function gate(state: State, outcome: "break" | "continue", failed: boolean, finish?: string) {
     if (!stopping(outcome, finish)) return outcome
-    if (failed || !required(state)) return "break" as const
-    state.premature++
-    if (state.premature < 4) return "continue" as const
-    fail(state, "The provider repeatedly ended the turn without calling the mandatory verification tool.")
+    if (!required(state)) return "break" as const
+    fail(
+      state,
+      failed
+        ? "The local Ultra verification dispatch failed before producing a complete answer."
+        : "The local Ultra verification dispatch ended without completing the mandatory verification tool.",
+    )
+    if (failed) return "break" as const
     return "continue" as const
   }
 

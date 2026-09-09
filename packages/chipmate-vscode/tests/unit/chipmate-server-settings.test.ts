@@ -19,7 +19,10 @@ describe("ChipMate Server settings flow", () => {
     expect(source).toContain("delete next[message.key]")
     expect(source).toContain('message.type !== "settingUpdateFailed"')
     expect(source).toContain("setPendingSettings(new Set<string>())")
-    expect(source).toContain("setSaveError({ message: message.message })")
+    expect(source).toContain("stopSaving({ message: message.message })")
+    expect(source).toContain('message.reason === "protocol-mismatch"')
+    expect(source).toContain('language.t("settings.saveBar.protocolMismatch")')
+    expect(source).not.toContain("function stopSaving(error: SaveError) {\n    setDraft({})")
   })
 
   it("accepts only the latest connection-test response", () => {

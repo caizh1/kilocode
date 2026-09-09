@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { cycle, next, sequence, variants } from "../../../chipmate-ui/src/components/spinner-sequence"
+import { resolveReducedMotion } from "../../../chipmate-ui/src/hooks/use-reduced-motion"
 
 const root = path.resolve(import.meta.dir, "../../..")
 const component = fs.readFileSync(path.join(root, "chipmate-ui/src/components/dynamic-spinner.tsx"), "utf8")
@@ -100,6 +101,13 @@ describe("dynamic spinner sequence", () => {
 })
 
 describe("dynamic spinner component contract", () => {
+  it("uses the VS Code effective motion preference before the raw OS media query", () => {
+    expect(resolveReducedMotion(true, undefined)).toBe(true)
+    expect(resolveReducedMotion(false, undefined)).toBe(false)
+    expect(resolveReducedMotion(true, false)).toBe(false)
+    expect(resolveReducedMotion(false, true)).toBe(true)
+  })
+
   it("keeps existing spinner hooks and supports explicit variants", () => {
     expect(component).toContain('data-component="spinner"')
     expect(component).toContain("data-spinner-variant")
@@ -117,6 +125,8 @@ describe("dynamic spinner component contract", () => {
     expect(component).not.toContain("<svg")
     expect(styles).toContain("display: inline-grid")
     expect(styles).not.toContain("position: absolute")
+    expect(styles).toContain("body.vscode-reduce-motion")
+    expect(styles).toContain("body:not([data-vscode-theme-id])")
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)")
     expect(styles).toContain("@media (forced-colors: active)")
   })
@@ -163,6 +173,7 @@ describe("dynamic spinner component contract", () => {
     expect(component).toContain("!reduced() && !failed()")
     expect(component).toContain("onError={() => setStillFailed(true)}")
     expect(component).toContain("setFailed(true)")
+    expect(component).toContain("failed() && !reduced()")
   })
 
   it("uses compositor motion for Orbital, Signal, and Prism", () => {

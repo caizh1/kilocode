@@ -122,7 +122,6 @@ export function useSessionEffects(deps: {
     deps.sdk.client.pty
       .update({
         ptyID: pty,
-        sessionID: sessionID ?? null,
         ...(s?.title ? { title: s.title } : {}),
       })
       .catch(() => {})

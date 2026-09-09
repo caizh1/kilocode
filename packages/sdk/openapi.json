@@ -4786,17 +4786,6 @@
                     },
                     "required": ["rows", "cols"],
                     "additionalProperties": false
-                  },
-                  "sessionID": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "pattern": "^ses"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   }
                 },
                 "additionalProperties": false
@@ -6170,7 +6159,7 @@
             }
           }
         },
-        "description": "Retrieve the current status of all sessions, including active, idle, and completed states.",
+        "description": "Retrieve non-idle active session states. Missing sessions are idle.",
         "summary": "Get session status",
         "x-codeSamples": [
           {
@@ -7271,6 +7260,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     }
                   ]
                 }
@@ -7283,6 +7275,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError | SessionBusyError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionBusyError"
+                    }
+                  ]
                 }
               }
             }
@@ -7299,6 +7308,15 @@
                   "messageID": {
                     "type": "string",
                     "pattern": "^msg"
+                  },
+                  "afterMessageID": {
+                    "type": "string",
+                    "pattern": "^msg"
+                  },
+                  "operationID": {
+                    "type": "string",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+                    "format": "uuid"
                   }
                 },
                 "additionalProperties": false
@@ -11409,6 +11427,879 @@
           {
             "lang": "js",
             "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.branchName.generate({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/session/{sessionID}/turn-changes/{messageID}": {
+      "get": {
+        "tags": ["turn-changes"],
+        "operationId": "turnChanges.get",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "required": true
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msg.*"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "directory": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "messageID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": ["running", "stopping", "settling", "ready", "unavailable"]
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": ["completed", "interrupted", "error"]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "file": {
+                                "type": "string"
+                              },
+                              "oldFile": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["added", "deleted", "modified", "renamed"]
+                              },
+                              "additions": {
+                                "type": "integer"
+                              },
+                              "deletions": {
+                                "type": "integer"
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              },
+                              "undone": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": ["kept", "partial", "reverted"]
+                              }
+                            },
+                            "required": ["id", "file", "status", "additions", "deletions", "binary", "undone", "state"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "canRevert": {
+                          "type": "boolean"
+                        },
+                        "canRestore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "directory",
+                        "sessionID",
+                        "messageID",
+                        "revision",
+                        "phase",
+                        "outcome",
+                        "files",
+                        "canRevert",
+                        "canRestore"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "detail": {
+                      "type": "object",
+                      "properties": {
+                        "fileID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "patch": {
+                          "type": "string"
+                        },
+                        "hunks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "patch": {
+                                "type": "string"
+                              },
+                              "line": {
+                                "type": "integer"
+                              },
+                              "undone": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["id", "patch", "line", "undone"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["fileID", "revision", "patch", "hunks"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "读取本轮修改清单",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.turnChanges.get({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["turn-changes"],
+        "operationId": "turnChanges.mutate",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "required": true
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msg.*"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "directory": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "messageID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": ["running", "stopping", "settling", "ready", "unavailable"]
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": ["completed", "interrupted", "error"]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "file": {
+                                "type": "string"
+                              },
+                              "oldFile": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["added", "deleted", "modified", "renamed"]
+                              },
+                              "additions": {
+                                "type": "integer"
+                              },
+                              "deletions": {
+                                "type": "integer"
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              },
+                              "undone": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": ["kept", "partial", "reverted"]
+                              }
+                            },
+                            "required": ["id", "file", "status", "additions", "deletions", "binary", "undone", "state"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "canRevert": {
+                          "type": "boolean"
+                        },
+                        "canRestore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "directory",
+                        "sessionID",
+                        "messageID",
+                        "revision",
+                        "phase",
+                        "outcome",
+                        "files",
+                        "canRevert",
+                        "canRestore"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "detail": {
+                      "type": "object",
+                      "properties": {
+                        "fileID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "patch": {
+                          "type": "string"
+                        },
+                        "hunks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "patch": {
+                                "type": "string"
+                              },
+                              "line": {
+                                "type": "integer"
+                              },
+                              "undone": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["id", "patch", "line", "undone"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["fileID", "revision", "patch", "hunks"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "撤销或恢复本轮修改",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "requestID": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": ["revert", "restore"]
+                  },
+                  "fileID": {
+                    "type": "string"
+                  },
+                  "hunkID": {
+                    "type": "string"
+                  }
+                },
+                "required": ["revision", "requestID", "action"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.turnChanges.mutate({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/session/{sessionID}/turn-changes/{messageID}/file/{fileID}": {
+      "get": {
+        "tags": ["turn-changes"],
+        "operationId": "turnChanges.detail",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "required": true
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msg.*"
+            },
+            "required": true
+          },
+          {
+            "name": "fileID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "directory": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "messageID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": ["running", "stopping", "settling", "ready", "unavailable"]
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": ["completed", "interrupted", "error"]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "file": {
+                                "type": "string"
+                              },
+                              "oldFile": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["added", "deleted", "modified", "renamed"]
+                              },
+                              "additions": {
+                                "type": "integer"
+                              },
+                              "deletions": {
+                                "type": "integer"
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              },
+                              "undone": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": ["kept", "partial", "reverted"]
+                              }
+                            },
+                            "required": ["id", "file", "status", "additions", "deletions", "binary", "undone", "state"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "canRevert": {
+                          "type": "boolean"
+                        },
+                        "canRestore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "directory",
+                        "sessionID",
+                        "messageID",
+                        "revision",
+                        "phase",
+                        "outcome",
+                        "files",
+                        "canRevert",
+                        "canRestore"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "detail": {
+                      "type": "object",
+                      "properties": {
+                        "fileID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "patch": {
+                          "type": "string"
+                        },
+                        "hunks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "patch": {
+                                "type": "string"
+                              },
+                              "line": {
+                                "type": "integer"
+                              },
+                              "undone": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["id", "patch", "line", "undone"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["fileID", "revision", "patch", "hunks"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "审阅本轮文件和差异块",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.turnChanges.detail({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/turn-changes/external": {
+      "post": {
+        "tags": ["turn-changes"],
+        "operationId": "turnChanges.external",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "directory": {
+                          "type": "string"
+                        },
+                        "sessionID": {
+                          "type": "string"
+                        },
+                        "messageID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": ["running", "stopping", "settling", "ready", "unavailable"]
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": ["completed", "interrupted", "error"]
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "file": {
+                                "type": "string"
+                              },
+                              "oldFile": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["added", "deleted", "modified", "renamed"]
+                              },
+                              "additions": {
+                                "type": "integer"
+                              },
+                              "deletions": {
+                                "type": "integer"
+                              },
+                              "binary": {
+                                "type": "boolean"
+                              },
+                              "undone": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": ["kept", "partial", "reverted"]
+                              }
+                            },
+                            "required": ["id", "file", "status", "additions", "deletions", "binary", "undone", "state"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "canRevert": {
+                          "type": "boolean"
+                        },
+                        "canRestore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "directory",
+                        "sessionID",
+                        "messageID",
+                        "revision",
+                        "phase",
+                        "outcome",
+                        "files",
+                        "canRevert",
+                        "canRestore"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "detail": {
+                      "type": "object",
+                      "properties": {
+                        "fileID": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "patch": {
+                          "type": "string"
+                        },
+                        "hunks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "patch": {
+                                "type": "string"
+                              },
+                              "line": {
+                                "type": "integer"
+                              },
+                              "undone": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["id", "patch", "line", "undone"],
+                            "additionalProperties": false
+                          }
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["fileID", "revision", "patch", "hunks"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "记录执行期间的人工编辑",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  }
+                },
+                "required": ["file"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.turnChanges.external({\n  ...\n})"
           }
         ]
       }
@@ -17187,6 +18078,58 @@
                         "cost": {
                           "type": "number"
                         },
+                        "billing": {
+                          "type": "object",
+                          "properties": {
+                            "amountCNY": {
+                              "type": "number"
+                            },
+                            "settledSteps": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pendingSteps": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unavailableSteps": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "otherCostUSD": {
+                              "type": "number"
+                            },
+                            "groups": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "steps": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "amountCNY": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["name", "steps", "amountCNY"],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "amountCNY",
+                            "settledSteps",
+                            "pendingSteps",
+                            "unavailableSteps",
+                            "otherCostUSD",
+                            "groups"
+                          ],
+                          "additionalProperties": false
+                        },
                         "tokens": {
                           "type": "object",
                           "properties": {
@@ -17222,7 +18165,7 @@
                           "additionalProperties": false
                         }
                       },
-                      "required": ["steps", "cost", "tokens"],
+                      "required": ["steps", "cost", "billing", "tokens"],
                       "additionalProperties": false
                     },
                     "models": {
@@ -17242,6 +18185,58 @@
                           },
                           "cost": {
                             "type": "number"
+                          },
+                          "billing": {
+                            "type": "object",
+                            "properties": {
+                              "amountCNY": {
+                                "type": "number"
+                              },
+                              "settledSteps": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "pendingSteps": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "unavailableSteps": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "otherCostUSD": {
+                                "type": "number"
+                              },
+                              "groups": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "steps": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "amountCNY": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": ["name", "steps", "amountCNY"],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "amountCNY",
+                              "settledSteps",
+                              "pendingSteps",
+                              "unavailableSteps",
+                              "otherCostUSD",
+                              "groups"
+                            ],
+                            "additionalProperties": false
                           },
                           "tokens": {
                             "type": "object",
@@ -17278,7 +18273,7 @@
                             "additionalProperties": false
                           }
                         },
-                        "required": ["providerID", "modelID", "steps", "cost", "tokens"],
+                        "required": ["providerID", "modelID", "steps", "cost", "billing", "tokens"],
                         "additionalProperties": false
                       }
                     }
@@ -17317,6 +18312,281 @@
           {
             "lang": "js",
             "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.chipmate.sessionModelUsage({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/chipmate/session/{sessionID}/export": {
+      "get": {
+        "tags": ["chipmate"],
+        "operationId": "chipmate.sessionExport",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete raw ChipMate QA session transcript",
+            "content": {
+              "text/markdown; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SessionExportBusyError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionExportBusyError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Export the routed local ChipMate QA root session and all descendants from a stable raw database snapshot.",
+        "summary": "Export a raw QA session tree",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.chipmate.sessionExport({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/chipmate/history-migration/prepare": {
+      "post": {
+        "tags": ["chipmate"],
+        "operationId": "chipmate.historyMigration.prepare",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "History migration maintenance gate status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "active": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "directoryID": {
+                            "type": "string"
+                          },
+                          "sessions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sessionID": {
+                                  "type": "string",
+                                  "pattern": "^ses"
+                                },
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["sessionID", "status"],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": ["directoryID", "sessions"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": ["locked", "active"]
+                    }
+                  },
+                  "required": ["ready", "token", "expiresAt", "active", "reason"],
+                  "additionalProperties": false,
+                  "description": "History migration maintenance gate status"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Acquire a short-lived maintenance gate only when all loaded workspaces are idle.",
+        "summary": "Prepare local chat history migration",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.chipmate.historyMigration.prepare({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/chipmate/history-migration/release": {
+      "post": {
+        "tags": ["chipmate"],
+        "operationId": "chipmate.historyMigration.release",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Maintenance gate released",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Maintenance gate released"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Release local chat history migration gate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": ["token"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.chipmate.historyMigration.release({\n  ...\n})"
           }
         ]
       }
@@ -17801,6 +19071,1277 @@
           {
             "lang": "js",
             "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.network.reject({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.scan",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Scan workspace for patent candidates",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cutoffDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "serverBaseUrl": {
+                    "type": "string"
+                  },
+                  "analysisModel": {
+                    "type": "object",
+                    "properties": {
+                      "providerID": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "modelID": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      }
+                    },
+                    "required": ["providerID", "modelID"],
+                    "additionalProperties": false
+                  },
+                  "scope": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["workspace"]
+                          }
+                        },
+                        "required": ["kind"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["module"]
+                          },
+                          "moduleId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "corePaths": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2000
+                            },
+                            "minItems": 1,
+                            "maxItems": 200
+                          },
+                          "expansionPolicy": {
+                            "type": "string",
+                            "enum": ["quality-first", "balanced"]
+                          }
+                        },
+                        "required": ["kind", "corePaths", "expansionPolicy"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "confirmLargeClosure": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.scan({\n  ...\n})"
+          }
+        ]
+      },
+      "get": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Patent Radar runs",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/scopes/preview": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.previewScope",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Preview a Patent Radar scope",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": ["workspace"]
+                      }
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": ["module"]
+                      },
+                      "moduleId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "corePaths": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        },
+                        "minItems": 1,
+                        "maxItems": 200
+                      },
+                      "expansionPolicy": {
+                        "type": "string",
+                        "enum": ["quality-first", "balanced"]
+                      }
+                    },
+                    "required": ["kind", "corePaths", "expansionPolicy"],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.previewScope({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/modules": {
+      "get": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.listModules",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "List saved Patent Radar modules",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.listModules({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.saveModule",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save a Patent Radar module",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "corePaths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "minItems": 1,
+                    "maxItems": 200
+                  },
+                  "expansionPolicy": {
+                    "type": "string",
+                    "enum": ["quality-first", "balanced"]
+                  },
+                  "autoScan": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["name", "corePaths", "expansionPolicy"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.saveModule({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/modules/{moduleID}": {
+      "delete": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.deleteModule",
+        "parameters": [
+          {
+            "name": "moduleID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete a Patent Radar module",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.deleteModule({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}": {
+      "get": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.get",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Patent Radar run",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/evidence": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.evidence",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Patent Radar evidence by ID",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "evidenceIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "maxItems": 200
+                  }
+                },
+                "required": ["evidenceIds"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.evidence({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/cancel": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.cancel",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Cancel Patent Radar run",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.cancel({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/resume": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.resume",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Resume Patent Radar run",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.resume({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/research": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.research",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Research one Patent Radar run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "serverBaseUrl": {
+                    "type": "string"
+                  },
+                  "candidateId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.research({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/reviews": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.review",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Add Patent Radar review",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "candidateId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "reviewer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": ["worthy", "reject", "needs-arbitration"]
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 4000
+                  }
+                },
+                "required": ["candidateId", "reviewer", "decision", "note"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.review({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/reviews/import": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.importReviews",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Import blind Patent Radar reviews",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "schemaVersion": {
+                    "type": "number",
+                    "enum": [2]
+                  },
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "sourceFingerprint": {
+                    "type": "string"
+                  },
+                  "methodVersion": {
+                    "type": "string"
+                  },
+                  "reviews": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "candidateId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "reviewer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "decision": {
+                          "type": "string",
+                          "enum": ["worthy", "reject", "needs-arbitration"]
+                        },
+                        "note": {
+                          "type": "string",
+                          "maxLength": 4000
+                        }
+                      },
+                      "required": ["candidateId", "reviewer", "decision", "note"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["schemaVersion", "runId", "sourceFingerprint", "methodVersion", "reviews"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.importReviews({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/patent-radar/runs/{runID}/export": {
+      "post": {
+        "tags": ["patent-radar"],
+        "operationId": "patentRadar.export",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patent Radar result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Export Patent Radar evidence package",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.patentRadar.export({\n  ...\n})"
           }
         ]
       }
@@ -27293,6 +29834,9 @@
             "$ref": "#/components/schemas/EventSessionQueueChanged"
           },
           {
+            "$ref": "#/components/schemas/EventSessionTurnChanges"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNetworkAsked"
           },
           {
@@ -30547,6 +33091,117 @@
           "vercelID": {
             "type": "string"
           },
+          "billing": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["pending"]
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": ["new-api-log"]
+                  },
+                  "requestID": {
+                    "type": "string"
+                  }
+                },
+                "required": ["status", "source", "requestID"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["settled"]
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": ["new-api-log"]
+                  },
+                  "requestID": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": ["CNY"]
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "quota": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "quotaPerUnit": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "exchangeRate": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "group": {
+                    "type": "string"
+                  },
+                  "modelName": {
+                    "type": "string"
+                  },
+                  "settledAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "status",
+                  "source",
+                  "requestID",
+                  "currency",
+                  "amount",
+                  "quota",
+                  "quotaPerUnit",
+                  "exchangeRate",
+                  "group",
+                  "modelName",
+                  "settledAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["unavailable"]
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": ["new-api-log"]
+                  },
+                  "requestID": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "credentials",
+                      "unsupported-url",
+                      "request-log-missing",
+                      "network",
+                      "invalid-response",
+                      "model-mismatch"
+                    ]
+                  }
+                },
+                "required": ["status", "source", "requestID", "reason"],
+                "additionalProperties": false
+              }
+            ]
+          },
           "metrics": {
             "type": "object",
             "properties": {
@@ -30555,6 +33210,10 @@
               },
               "generation": {
                 "type": "number"
+              },
+              "ttftMs": {
+                "type": "number",
+                "minimum": 0
               },
               "source": {
                 "type": "string",
@@ -30892,17 +33551,6 @@
           "exitCode": {
             "type": "integer",
             "minimum": 0
-          },
-          "sessionID": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": ["id", "title", "command", "args", "cwd", "status", "pid"],
@@ -31255,6 +33903,9 @@
               },
               {
                 "$ref": "#/components/schemas/EventSessionQueueChanged"
+              },
+              {
+                "$ref": "#/components/schemas/EventSessionTurnChanges"
               },
               {
                 "$ref": "#/components/schemas/EventSessionNetworkAsked"
@@ -38909,6 +41560,40 @@
         "required": ["id", "slug", "projectID", "directory", "title", "version", "time"],
         "additionalProperties": false
       },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ConflictError"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
+      "SessionBusyError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["SessionBusyError"]
+          },
+          "sessionID": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "sessionID", "message"],
+        "additionalProperties": false
+      },
       "Session6": {
         "type": "object",
         "properties": {
@@ -39401,23 +42086,6 @@
           }
         },
         "required": ["type", "prompt", "description", "agent"],
-        "additionalProperties": false
-      },
-      "SessionBusyError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["SessionBusyError"]
-          },
-          "sessionID": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "sessionID", "message"],
         "additionalProperties": false
       },
       "Session8": {
@@ -41713,23 +44381,6 @@
         "required": ["defaultModel", "models", "aliases"],
         "additionalProperties": false
       },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["ConflictError"]
-          },
-          "message": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
-        "additionalProperties": false
-      },
       "InteractiveTerminalSnapshot": {
         "type": "object",
         "properties": {
@@ -42620,6 +45271,20 @@
           }
         },
         "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "SessionExportBusyError": {
+        "type": "object",
+        "properties": {
+          "sessionIDs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^ses"
+            }
+          }
+        },
+        "required": ["sessionIDs"],
         "additionalProperties": false
       },
       "AnacondaDesktopStatus": {
@@ -43990,6 +46655,33 @@
               }
             },
             "required": ["sessionID", "queued"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionTurnChanges": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.turn.changes"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string"
+              },
+              "messageID": {
+                "type": "string"
+              }
+            },
+            "required": ["sessionID", "messageID"],
             "additionalProperties": false
           }
         },
@@ -62118,6 +64810,9 @@
       "description": "ChipMate branch name routes."
     },
     {
+      "name": "turn-changes"
+    },
+    {
       "name": "commit-message",
       "description": "ChipMate commit message routes."
     },
@@ -62160,6 +64855,10 @@
     {
       "name": "network",
       "description": "ChipMate network routes."
+    },
+    {
+      "name": "patent-radar",
+      "description": "本地源码与设计文档专利候选预检。"
     },
     {
       "name": "remote",

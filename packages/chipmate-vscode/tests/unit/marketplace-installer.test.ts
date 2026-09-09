@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach } from "bun:test"
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
-import { createHash } from "crypto"
+import { createHash, randomUUID } from "crypto"
+import { createCanonicalArchive, validateSkillArchive } from "@chipmate/skill-spec"
 import { MarketplaceInstaller } from "../../src/services/marketplace/installer"
 import { MarketplacePaths } from "../../src/services/marketplace/paths"
 import type { AgentMarketplaceItem } from "../../src/services/marketplace/types"
-import { exec } from "../../src/util/process"
 import * as yaml from "yaml"
 
 const tmpDir = path.join(os.tmpdir(), `chipmate-test-${Date.now()}`)
@@ -63,23 +63,18 @@ async function archive(
   name = "test-skill",
   content = "# Test Skill\n",
   files: Record<string, string> = {},
+  manifestName = name,
 ): Promise<Buffer> {
-  const root = path.join(tmpDir, "archive")
-  const source = path.join(root, "source")
-  const dir = path.join(source, name)
-  const tarball = path.join(root, "skill.tar.gz")
-  await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(
-    path.join(dir, "SKILL.md"),
-    `---\nname: ${name}\ndescription: ${name} fixture\n---\n\n${content}`,
-  )
-  for (const [file, value] of Object.entries(files)) {
-    const target = path.join(dir, file)
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, value)
-  }
-  await exec("tar", ["-czf", tarball, "-C", source, name])
-  return fs.readFile(tarball)
+  const included = { "skill.json": `${JSON.stringify({ id: name, category: "general", tags: [] }, null, 2)}\n`, ...files }
+  return createCanonicalArchive(name, [
+    {
+      path: "SKILL.md",
+      data: Buffer.from(
+        `---\nname: ${manifestName}\ndescription: ${manifestName} fixture\n---\n\n${content}\n请将此技能用于可重复验证的项目流程。\n`,
+      ),
+    },
+    ...Object.entries(included).map(([file, value]) => ({ path: file, data: Buffer.from(value) })),
+  ])
 }
 
 afterEach(async () => {
@@ -359,9 +354,9 @@ describe("MarketplaceInstaller skills", () => {
     const result = await installer.installSkill(skill(url), "project", tmpDir)
 
     expect(result.success).toBe(true)
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf-8")).toContain(
-      "# Test Skill\n",
-    )
+    expect(
+      await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf-8"),
+    ).toContain("# Test Skill\n")
     expect(
       (await fs.readdir(paths.skillsDir("project", tmpDir))).filter((name) => name.startsWith(".staging-")),
     ).toEqual([])
@@ -415,28 +410,28 @@ describe("MarketplaceInstaller skills", () => {
     })
 
     expect((await installer.installVerifiedSkill(payload(first, 1), "project", tmpDir)).success).toBe(true)
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
-      "# First\n",
-    )
+    expect(
+      await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8"),
+    ).toContain("# First\n")
 
     const second = await archive("test-skill", "# Second\n")
     expect((await installer.installVerifiedSkill(payload(second, 2), "project", tmpDir)).success).toBe(true)
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
-      "# Second\n",
-    )
+    expect(
+      await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8"),
+    ).toContain("# Second\n")
 
     const rejected = await installer.installVerifiedSkill(payload(second, 3, "0".repeat(64)), "project", tmpDir)
     expect(rejected.error).toBe("Skill archive SHA-256 mismatch")
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
-      "# Second\n",
-    )
+    expect(
+      await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8"),
+    ).toContain("# Second\n")
 
     const wrong = await archive("unexpected-root", "# Unsafe\n")
     const unsafe = await installer.installVerifiedSkill(payload(wrong, 3), "project", tmpDir)
     expect(unsafe.error).toContain("unexpected root")
-    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8")).toContain(
-      "# Second\n",
-    )
+    expect(
+      await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "test-skill", "SKILL.md"), "utf8"),
+    ).toContain("# Second\n")
   })
 
   it("installs a canonical skill whose archive includes an examples resource directory", async () => {
@@ -457,9 +452,377 @@ describe("MarketplaceInstaller skills", () => {
     )
 
     expect(result.success).toBe(true)
-    expect(await fs.readFile(path.join(new TestPaths().skillsDir("project", tmpDir), "uml", "examples/sequence.puml"), "utf8")).toContain(
-      "Alice -> Bob",
+    expect(
+      await fs.readFile(
+        path.join(new TestPaths().skillsDir("project", tmpDir), "uml", "examples/sequence.puml"),
+        "utf8",
+      ),
+    ).toContain("Alice -> Bob")
+  })
+
+  it("returns a structured identity error without changing the installed skill", async () => {
+    const paths = new TestPaths()
+    const installer = new MarketplaceInstaller(paths)
+    const payload = (buffer: Buffer, revision: number) => ({
+      id: "examples",
+      revision,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+    })
+    const malformed = await archive("examples", "# UML\n", {}, "uml")
+
+    const rejected = await installer.installVerifiedSkill(payload(malformed, 1), "project", tmpDir)
+
+    expect(rejected).toMatchObject({
+      success: false,
+      slug: "examples",
+      errorCode: "skill-identity-mismatch",
+    })
+    expect(rejected.error).toContain("未安装任何文件")
+    expect(await fs.readdir(paths.skillsDir("project", tmpDir))).toEqual([])
+
+    const existing = await archive("examples", "# Existing\n")
+    expect((await installer.installVerifiedSkill(payload(existing, 1), "project", tmpDir)).success).toBe(true)
+    const update = await installer.installVerifiedSkill(payload(malformed, 2), "project", tmpDir)
+
+    expect(update.errorCode).toBe("skill-identity-mismatch")
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "examples", "SKILL.md"), "utf8")).toContain(
+      "# Existing",
     )
+    expect(
+      (await fs.readdir(paths.skillsDir("project", tmpDir))).filter(
+        (name) => name.startsWith(".staging-") || name.startsWith(".backup-"),
+      ),
+    ).toEqual([])
+  })
+
+  it("installs on Windows without using directory rename even when rename permanently returns EPERM", async () => {
+    const paths = new TestPaths()
+    const buffer = await archive("uml", "# UML\n")
+    const state = { attempts: 0 }
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      wait: async () => undefined,
+      rename: async () => {
+        state.attempts += 1
+        const err = new Error("directory rename is not permitted") as NodeJS.ErrnoException
+        err.code = "EPERM"
+        throw err
+      },
+    })
+
+    const result = await installer.installVerifiedSkill(
+      {
+        id: "uml",
+        revision: 1,
+        sha256: createHash("sha256").update(buffer).digest("hex"),
+        url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+      },
+      "project",
+      tmpDir,
+    )
+
+    expect(result.success).toBe(true)
+    expect(state.attempts).toBe(0)
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "SKILL.md"), "utf8")).toContain(
+      "# UML",
+    )
+    const transactions = path.join(path.dirname(paths.skillsDir("project", tmpDir)), ".skill-install-transactions")
+    expect((await fs.readdir(transactions)).filter((entry) => entry !== ".locks")).toEqual([])
+    expect(await fs.readdir(path.join(transactions, ".locks"))).toEqual([])
+  })
+
+  it("verifies canonical snapshots when Windows reports synthesized 0666 file modes", async () => {
+    const paths = new TestPaths()
+    const buffer = await archive("uml", "# UML\n", {
+      "examples/sequence.puml": "@startuml\n@enduml",
+      "scripts/render.sh": "#!/bin/sh\nprintf 'uml\\n'\n",
+    })
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      writeFile: async (file, data) => {
+        await fs.writeFile(file, data)
+        await fs.chmod(file, 0o666)
+      },
+    })
+
+    const result = await installer.installVerifiedSkill(
+      {
+        id: "uml",
+        revision: 1,
+        sha256: createHash("sha256").update(buffer).digest("hex"),
+        url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+      },
+      "project",
+      tmpDir,
+    )
+
+    expect(result.success).toBe(true)
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "SKILL.md"), "utf8")).toContain(
+      "# UML",
+    )
+    expect(
+      await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "examples/sequence.puml"), "utf8"),
+    ).toContain("@startuml")
+  })
+
+  it("cleans Windows staging when the initial snapshot verification fails", async () => {
+    const paths = new TestPaths()
+    const buffer = await archive("uml", "# UML\n", { "examples/sequence.puml": "expected" })
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      writeFile: async (file, data, mode) => {
+        const written = file.endsWith(path.join("examples", "sequence.puml")) ? Buffer.from("modified") : data
+        await fs.writeFile(file, written, { mode: mode ?? 0o644 })
+      },
+    })
+
+    const result = await installer.installVerifiedSkill(
+      {
+        id: "uml",
+        revision: 1,
+        sha256: createHash("sha256").update(buffer).digest("hex"),
+        url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+      },
+      "project",
+      tmpDir,
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("snapshot SHA-256 mismatch")
+    expect(await fs.readdir(paths.skillsDir("project", tmpDir))).toEqual([])
+    const transactions = path.join(path.dirname(paths.skillsDir("project", tmpDir)), ".skill-install-transactions")
+    expect((await fs.readdir(transactions)).filter((entry) => entry !== ".locks")).toEqual([])
+    expect(await fs.readdir(path.join(transactions, ".locks"))).toEqual([])
+  })
+
+  it("updates on Windows by copying manifest last and removes stale files without directory rename", async () => {
+    const paths = new TestPaths()
+    const first = await archive("uml", "# Existing UML\n", { "obsolete.txt": "old" })
+    const payload = (buffer: Buffer, revision: number) => ({
+      id: "uml",
+      revision,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+    })
+    const state = { attempts: 0 }
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      wait: async () => undefined,
+      rename: async () => {
+        state.attempts += 1
+        const err = new Error("directory rename is forbidden") as NodeJS.ErrnoException
+        err.code = "EPERM"
+        throw err
+      },
+    })
+    expect((await installer.installVerifiedSkill(payload(first, 1), "project", tmpDir)).success).toBe(true)
+    const second = await archive("uml", "# Updated UML\n", { "examples/sequence.puml": "@startuml\n@enduml" })
+
+    const result = await installer.installVerifiedSkill(payload(second, 2), "project", tmpDir)
+
+    expect(result.success).toBe(true)
+    expect(state.attempts).toBe(0)
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "SKILL.md"), "utf8")).toContain(
+      "# Updated UML",
+    )
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "examples/sequence.puml"), "utf8")).toContain(
+      "@startuml",
+    )
+    expect(await fs.stat(path.join(paths.skillsDir("project", tmpDir), "uml", "obsolete.txt")).catch(() => undefined)).toBeUndefined()
+  })
+
+  it("restores an existing Windows skill when copying the update is interrupted", async () => {
+    const paths = new TestPaths()
+    const existing = await archive("uml", "# Existing UML\n")
+    const payload = (buffer: Buffer, revision: number) => ({
+      id: "uml",
+      revision,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+    })
+    expect(
+      (await new MarketplaceInstaller(paths, { platform: "win32" }).installVerifiedSkill(payload(existing, 1), "project", tmpDir)).success,
+    ).toBe(true)
+
+    const update = await archive("uml", "# Updated UML\n", { "examples/sequence.puml": "new" })
+    const state = { copying: false, failed: false }
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      onTransactionPhase: async (phase) => {
+        if (phase === "copying") state.copying = true
+      },
+      writeFile: async (file, data, mode) => {
+        if (state.copying && !state.failed && file.endsWith(path.join("examples", "sequence.puml"))) {
+          state.failed = true
+          throw new Error("injected copy interruption")
+        }
+        await fs.writeFile(file, data, { mode: mode ?? 0o644 })
+      },
+    })
+
+    const result = await installer.installVerifiedSkill(payload(update, 2), "project", tmpDir)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("injected copy interruption")
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "SKILL.md"), "utf8")).toContain(
+      "# Existing UML",
+    )
+    expect(await fs.readdir(paths.skillsDir("project", tmpDir))).toEqual(["uml"])
+  })
+
+  it("keeps the existing Windows skill unchanged when backup copying is interrupted", async () => {
+    const paths = new TestPaths()
+    const existing = await archive("uml", "# Existing UML\n", { "examples/old.puml": "old" })
+    const payload = (buffer: Buffer, revision: number) => ({
+      id: "uml",
+      revision,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+    })
+    expect(
+      (await new MarketplaceInstaller(paths, { platform: "win32" }).installVerifiedSkill(payload(existing, 1), "project", tmpDir)).success,
+    ).toBe(true)
+
+    const update = await archive("uml", "# Updated UML\n")
+    const state = { prepared: false, failed: false }
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      onTransactionPhase: async (phase) => {
+        if (phase === "prepared") state.prepared = true
+      },
+      writeFile: async (file, data, mode) => {
+        if (state.prepared && !state.failed && file.includes(`${path.sep}backup-`)) {
+          state.failed = true
+          throw new Error("injected backup interruption")
+        }
+        await fs.writeFile(file, data, { mode: mode ?? 0o644 })
+      },
+    })
+
+    const result = await installer.installVerifiedSkill(payload(update, 2), "project", tmpDir)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain("injected backup interruption")
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "SKILL.md"), "utf8")).toContain(
+      "# Existing UML",
+    )
+    expect(await fs.readFile(path.join(paths.skillsDir("project", tmpDir), "uml", "examples/old.puml"), "utf8")).toBe(
+      "old",
+    )
+    const transactions = path.join(path.dirname(paths.skillsDir("project", tmpDir)), ".skill-install-transactions")
+    expect((await fs.readdir(transactions)).filter((entry) => entry !== ".locks")).toEqual([])
+  })
+
+  it("keeps a partial Windows copy undiscoverable until SKILL.md is written last", async () => {
+    const paths = new TestPaths()
+    const buffer = await archive("uml", "# UML workflow\n", { "examples/sequence.puml": "example" })
+    const observed: boolean[] = []
+    const target = path.join(paths.skillsDir("project", tmpDir), "uml", "SKILL.md")
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      onTransactionPhase: async (phase) => {
+        if (phase === "copying") observed.push(await fs.access(target).then(() => true).catch(() => false))
+      },
+    })
+
+    const result = await installer.installVerifiedSkill(
+      {
+        id: "uml",
+        revision: 1,
+        sha256: createHash("sha256").update(buffer).digest("hex"),
+        url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+      },
+      "project",
+      tmpDir,
+    )
+
+    expect(result.success).toBe(true)
+    expect(observed).toEqual([false])
+    expect(await fs.access(target).then(() => true)).toBe(true)
+  })
+
+  it("serializes concurrent Windows installs for the same scope and Skill", async () => {
+    const paths = new TestPaths()
+    const buffer = await archive("uml", "# UML workflow\n")
+    const payload = {
+      id: "uml",
+      revision: 1,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      url: `data:application/gzip;base64,${buffer.toString("base64")}`,
+    }
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const state = { prepared: 0, active: 0, maximum: 0 }
+    const installer = new MarketplaceInstaller(paths, {
+      platform: "win32",
+      onTransactionPhase: async (phase) => {
+        if (phase === "prepared") {
+          state.prepared += 1
+          state.active += 1
+          state.maximum = Math.max(state.maximum, state.active)
+          if (state.prepared === 1) {
+            started.resolve()
+            await release.promise
+          }
+        }
+        if (phase === "committed") state.active -= 1
+      },
+    })
+
+    const first = installer.installVerifiedSkill(payload, "project", tmpDir)
+    await started.promise
+    const second = installer.installVerifiedSkill(payload, "project", tmpDir)
+    release.resolve()
+    const results = await Promise.all([first, second])
+
+    expect(results.every((result) => result.success)).toBe(true)
+    expect(state.maximum).toBe(1)
+    expect(state.prepared).toBe(2)
+  })
+
+  it("recovers an interrupted Windows update after extension restart", async () => {
+    const paths = new TestPaths()
+    const existing = await archive("uml", "# Existing UML\n")
+    const installer = new MarketplaceInstaller(paths, { platform: "win32" })
+    const payload = {
+      id: "uml",
+      revision: 1,
+      sha256: createHash("sha256").update(existing).digest("hex"),
+      url: `data:application/gzip;base64,${existing.toString("base64")}`,
+    }
+    expect((await installer.installVerifiedSkill(payload, "project", tmpDir)).success).toBe(true)
+
+    const base = paths.skillsDir("project", tmpDir)
+    const home = path.join(path.dirname(base), ".skill-install-transactions", "uml")
+    const backup = path.join(home, `backup-${randomUUID()}`)
+    const staging = path.join(home, `staging-${randomUUID()}`)
+    await fs.cp(path.join(base, "uml"), backup, { recursive: true })
+    await fs.mkdir(staging, { recursive: true })
+    await fs.rm(path.join(base, "uml", "SKILL.md"))
+    await fs.writeFile(path.join(base, "uml", "partial.txt"), "partial")
+    await fs.writeFile(
+      path.join(home, "record.json"),
+      `${JSON.stringify({
+        version: 1,
+        id: "uml",
+        scope: "project",
+        target: path.join(base, "uml"),
+        staging,
+        backup,
+        sourceSha256: payload.sha256,
+        snapshotSha256: validateSkillArchive(existing).snapshotSha256,
+        previousExists: true,
+        phase: "copying",
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    )
+
+    await new MarketplaceInstaller(paths, { platform: "win32" }).recoverSkillTransactions("project", tmpDir)
+
+    expect(await fs.readFile(path.join(base, "uml", "SKILL.md"), "utf8")).toContain("# Existing UML")
+    expect(await fs.access(path.join(base, "uml", "partial.txt")).then(() => true).catch(() => false)).toBe(false)
+    expect(await fs.access(home).then(() => true).catch(() => false)).toBe(false)
   })
 })
 

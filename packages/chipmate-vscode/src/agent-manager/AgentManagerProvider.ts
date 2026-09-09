@@ -43,6 +43,7 @@ import { stopSessionProcesses } from "../chipmate-provider/background-process"
 import { sandboxSessionMetadata } from "../shared/sandbox-session"
 import { AgentManagerOrchestrationBridge } from "./orchestration-bridge"
 import { pruneSubagents } from "./prune-subagents"
+import type { SessionForkCoordinator } from "../services/session-fork/coordinator"
 
 import { startSession } from "./mcp-warmup"
 import { readTerminalFont, watchTerminalFont } from "./terminal-font"
@@ -82,6 +83,7 @@ export class AgentManagerProvider implements Disposable {
   private closing: Promise<void> | undefined
   private onVisibilityChange: ((visible: boolean) => void) | undefined
   private readonly internal = isInternalOfflineBuild()
+  private readonly sessionForkSubscription?: Disposable
   // Tracks sessions owned by this panel until they are explicitly closed.
   private panelSessions = new Set<string>()
 
@@ -95,8 +97,26 @@ export class AgentManagerProvider implements Disposable {
   constructor(
     private readonly host: Host,
     private readonly connectionService: ChipMateConnectionService,
+    private readonly sessionForks?: SessionForkCoordinator,
   ) {
     this.outputChannel = host.createOutput("ChipMate Agent Manager")
+    this.sessionForkSubscription = this.sessionForks?.subscribe((event) => {
+      if (event.type !== "complete" || event.operation.ownerID !== "agent-manager") return
+      if (!this.sessionForks?.claim(event.session.id, "agent-manager")) return
+      const state = this.getStateManager()
+      if (event.operation.worktreeID && state) {
+        state.addSession(event.session.id, event.operation.worktreeID)
+        if (event.operation.directory) this.registerWorktreeSession(event.session.id, event.operation.directory)
+      }
+      this.pushState()
+      this.postToWebview({
+        type: "agentManager.sessionForked",
+        sessionId: event.session.id,
+        forkedFromId: event.operation.sourceSessionID,
+        worktreeId: event.operation.worktreeID,
+      })
+      this.panel?.sessions.registerSession(event.session)
+    })
     this.terminalManager = new SessionTerminalManager(
       (msg) => this.outputChannel.appendLine(`[SessionTerminal] ${msg}`),
       createTerminalHost(),
@@ -459,7 +479,8 @@ export class AgentManagerProvider implements Disposable {
     if (m.type === "agentManager.removeStaleWorktree") return this.onRemoveStaleWorktree(m.worktreeId)
     if (m.type === "agentManager.promoteSession") return this.onPromoteSession(m.sessionId)
     if (m.type === "agentManager.addSessionToWorktree") return this.onAddSessionToWorktree(m.worktreeId, m.sessionId)
-    if (m.type === "agentManager.forkSession") return this.onForkSession(m.sessionId, m.worktreeId, m.messageId)
+    if (m.type === "agentManager.forkSession")
+      return this.onForkSession(m.sessionId, m.worktreeId, m.afterMessageId ?? m.messageId)
     if (m.type === "agentManager.closeSession") return this.onCloseSession(m.sessionId)
   }
 
@@ -1199,29 +1220,56 @@ export class AgentManagerProvider implements Disposable {
     return null
   }
 
-  private onForkSession(sessionId: string, worktreeId?: string, messageId?: string) {
-    return forkSession(
-      {
-        getClient: () => this.connectionService.getClient(),
-        state: this.getStateManager(),
-        directory: this.getRoot(),
-        postError: (msg) => this.postToWebview({ type: "error", message: msg }),
-        registerWorktreeSession: (sid, dir) => this.registerWorktreeSession(sid, dir),
-        pushState: () => this.pushState(),
-        notifyForked: (s, from, wt) =>
-          this.postToWebview({
-            type: "agentManager.sessionForked",
-            sessionId: s.id,
-            forkedFromId: from,
-            worktreeId: wt,
-          }),
-        registerSession: (s) => this.panel?.sessions.registerSession(s),
-        log: (...args) => this.log(...args),
-      },
-      sessionId,
-      worktreeId,
-      messageId,
+  private async onForkSession(sessionId: string, worktreeId?: string, messageId?: string): Promise<null> {
+    this.postToWebview({ type: "sessionForkState", sessionID: sessionId, afterMessageID: messageId, state: "pending" })
+    const slow = setTimeout(
+      () =>
+        this.postToWebview({ type: "sessionForkState", sessionID: sessionId, afterMessageID: messageId, state: "slow" }),
+      10_000,
     )
+    try {
+      const forked = await forkSession(
+        {
+          getClient: () => this.connectionService.getClient(),
+          state: this.getStateManager(),
+          directory: this.getRoot(),
+          postError: (msg) => this.postToWebview({ type: "error", message: msg }),
+          registerWorktreeSession: (sid, dir) => this.registerWorktreeSession(sid, dir),
+          pushState: () => this.pushState(),
+          notifyForked: (s, from, wt) =>
+            this.postToWebview({
+              type: "agentManager.sessionForked",
+              sessionId: s.id,
+              forkedFromId: from,
+              worktreeId: wt,
+            }),
+          registerSession: (s) => this.panel?.sessions.registerSession(s),
+          log: (...args) => this.log(...args),
+          coordinator: this.sessionForks,
+          ownerID: "agent-manager",
+        },
+        sessionId,
+        worktreeId,
+        messageId,
+      )
+      this.postToWebview({
+        type: "sessionForkState",
+        sessionID: sessionId,
+        afterMessageID: messageId,
+        state: forked ? "complete" : "error",
+      })
+    } catch (error) {
+      this.postToWebview({
+        type: "sessionForkState",
+        sessionID: sessionId,
+        afterMessageID: messageId,
+        state: "error",
+        message: getErrorMessage(error),
+      })
+    } finally {
+      clearTimeout(slow)
+    }
+    return null
   }
 
   /** Stop a session and remove it from Agent Manager. */
@@ -1932,6 +1980,7 @@ export class AgentManagerProvider implements Disposable {
     this.unsubTool?.()
     this.unsubStatus?.()
     this.unsubFont?.()
+    this.sessionForkSubscription?.dispose()
     this.orchestration.dispose()
     this.visiblePresence.clear()
     this.diffs.stop()

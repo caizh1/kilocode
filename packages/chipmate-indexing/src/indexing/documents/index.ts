@@ -1,4 +1,5 @@
 export { DocumentIndexService } from "./service"
+export { extractDocument } from "./extractors"
 export { classifyDocumentIssue, DocumentExtractionError, sanitizeDocumentDiagnostic } from "./diagnostics"
 export {
   extractDocxPlantUml,

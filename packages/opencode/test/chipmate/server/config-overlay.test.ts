@@ -5,6 +5,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { Global } from "@opencode-ai/core/global"
 import { Server } from "../../../src/server/server"
 import { Config } from "../../../src/config/config"
+import { GlobalBus, type GlobalEvent } from "../../../src/bus/global"
 import { ConfigParse } from "../../../src/config/parse"
 import { ChipMateConfigOverlay } from "../../../src/chipmate/config/overlay"
 import { ChipMateConfigWriter } from "../../../src/chipmate/config/writer"
@@ -28,7 +29,9 @@ type Overlay = {
   fields: Record<string, { source: string; inherited: boolean; overridden: boolean; value?: unknown }>
   collections: Record<string, Array<{ key: string; source: string; inherited: boolean; local?: unknown }>>
   targets: { project: Target; global: Target; active: Target }
-  effective?: Config.Info
+  effective: Config.Info
+  global: Config.Info
+  project: Config.Info
 }
 type Agent = {
   name: string
@@ -141,6 +144,33 @@ describe("config overlay routes", () => {
     expect(saved.indexing.enabled).toBeUndefined()
     expect(saved.indexing.provider).toBe("ollama")
     expect(saved.indexing.ollama.baseUrl).toBe("http://127.0.0.1:11434")
+  })
+
+  test("clears task subagent defaults and returns the authoritative config triplet", async () => {
+    await using global = await tmpdir()
+    await using project = await tmpdir()
+    ;(Global.Path as { config: string }).config = global.path
+    await config(global.path, { subagent_model: "test/small", subagent_variant: "low" })
+
+    const result = await json<Overlay>(
+      await req(project.path, "/config/overlay", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scope: "global",
+          set: {},
+          unset: [["subagent_model"], ["subagent_variant"]],
+        }),
+      }),
+    )
+
+    expect(result.global.subagent_model).toBeUndefined()
+    expect(result.global.subagent_variant).toBeUndefined()
+    expect(result.project.subagent_model).toBeUndefined()
+    expect(result.project.subagent_variant).toBeUndefined()
+    expect(result.effective.subagent_model).toBeUndefined()
+    expect(result.effective.subagent_variant).toBeUndefined()
+    expect(await Bun.file(path.join(global.path, "chipmate.json")).json()).not.toHaveProperty("subagent_model")
   })
 
   test("returns exact raw target data and a stable missing-file revision", async () => {
@@ -558,6 +588,125 @@ describe("config overlay routes", () => {
     })
     expect(body.fields["indexing.enabled"]).toMatchObject({ source: "project", value: false })
     expect(body.fields["indexing.provider"]).toMatchObject({ source: "project", value: "ollama" })
+  })
+
+  test.serial("emits one hot indexing event for a changed project overlay and none for a no-op", async () => {
+    await using project = await tmpdir()
+    const events: GlobalEvent[] = []
+    const listener = (event: GlobalEvent) => {
+      if (event.directory === project.path) events.push(event)
+    }
+    GlobalBus.on("event", listener)
+
+    try {
+      const patch = {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "project", set: { indexing: { model: "working-model" } } }),
+      }
+      expect((await req(project.path, "/config/overlay", patch)).status).toBe(200)
+      await Bun.sleep(50)
+      const updated = events.filter((event) => event.payload?.type === "global.config.updated")
+      expect(updated).toHaveLength(1)
+      expect(updated[0]?.payload?.properties).toMatchObject({ indexing: true, sandbox: false })
+      expect(events.some((event) => event.payload?.type === "server.instance.disposed")).toBe(false)
+
+      events.length = 0
+      expect((await req(project.path, "/config/overlay", patch)).status).toBe(200)
+      expect(events).toHaveLength(0)
+    } finally {
+      GlobalBus.off("event", listener)
+    }
+  })
+
+  test.serial("does not classify mixed project changes as indexing-only", async () => {
+    await using project = await tmpdir()
+    const events: GlobalEvent[] = []
+    const listener = (event: GlobalEvent) => {
+      if (event.directory === project.path) events.push(event)
+    }
+    GlobalBus.on("event", listener)
+
+    try {
+      const response = await req(project.path, "/config/overlay", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scope: "project",
+          set: { indexing: { model: "working-model" }, permission: { edit: "allow" } },
+        }),
+      })
+      expect(response.status).toBe(200)
+      expect(
+        events.some(
+          (event) =>
+            event.payload?.type === "global.config.updated" && !("indexing" in event.payload.properties),
+        ),
+      ).toBe(true)
+    } finally {
+      GlobalBus.off("event", listener)
+    }
+  })
+
+  test.serial("emits a global indexing hot-reload event without a global disposal event", async () => {
+    await using global = await tmpdir()
+    await using project = await tmpdir()
+    ;(Global.Path as { config: string }).config = global.path
+    const events: GlobalEvent[] = []
+    const listener = (event: GlobalEvent) => events.push(event)
+    GlobalBus.on("event", listener)
+
+    try {
+      const response = await req(project.path, "/config/overlay", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "global", set: { indexing: { model: "working-model" } } }),
+      })
+      expect(response.status).toBe(200)
+      expect(
+        events.some(
+          (event) =>
+            event.directory === "global" &&
+            event.payload?.type === "global.config.updated" &&
+            event.payload?.properties?.indexing === true,
+        ),
+      ).toBe(true)
+      expect(events.some((event) => event.payload?.type === "global.disposed")).toBe(false)
+    } finally {
+      GlobalBus.off("event", listener)
+    }
+  })
+
+  test.serial("keeps the global disposal lifecycle for mixed indexing and non-indexing changes", async () => {
+    await using global = await tmpdir()
+    await using project = await tmpdir()
+    ;(Global.Path as { config: string }).config = global.path
+    const events: GlobalEvent[] = []
+    const listener = (event: GlobalEvent) => events.push(event)
+    GlobalBus.on("event", listener)
+
+    try {
+      const response = await req(project.path, "/config/overlay", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          scope: "global",
+          set: { indexing: { model: "working-model" }, permission: { edit: "allow" } },
+        }),
+      })
+      expect(response.status).toBe(200)
+      expect(
+        events.some(
+          (event) =>
+            event.directory === "global" &&
+            event.payload?.type === "global.config.updated" &&
+            !("indexing" in event.payload.properties),
+        ),
+      ).toBe(true)
+      expect(events.some((event) => event.payload?.type === "global.disposed")).toBe(true)
+    } finally {
+      GlobalBus.off("event", listener)
+    }
   })
 
   test.serial("removes local scalar override and falls back to global", async () => {

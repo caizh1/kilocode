@@ -1,3 +1,4 @@
+import { bindAppearance } from "../appearance"
 import * as vscode from "vscode"
 import type { ChipMateConnectionService } from "../services/cli-backend"
 import { appendOutput, getWorkspaceRoot, openWorkspaceRelativeFile } from "../review-utils"
@@ -108,6 +109,7 @@ export class DiffViewerProvider implements vscode.Disposable {
       light: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-light.svg"),
       dark: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-dark.svg"),
     }
+    bindAppearance(panel)
     panel.webview.html = this.getHtml(panel.webview)
     this.panel = panel
 

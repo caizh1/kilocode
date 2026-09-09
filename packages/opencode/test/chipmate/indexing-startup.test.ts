@@ -266,7 +266,7 @@ describe("indexing startup degradation", () => {
     }
   })
 
-  test("hot-reloads indexing config in the current directory without replacing its worker", async () => {
+  test("hot-reloads a changed indexing profile by replacing only its worker", async () => {
     const enabled: boolean[] = []
     const done: ChipMateIndexing.Status = {
       state: "Complete",
@@ -314,7 +314,7 @@ describe("indexing startup degradation", () => {
         }
 
         expect(enabled).toEqual([true, false])
-        expect(created).toBe(1)
+        expect(created).toBe(2)
       },
     })
   })
@@ -427,6 +427,7 @@ describe("indexing startup degradation", () => {
     const enabled: boolean[] = []
     const blocked = Promise.withResolvers<void>()
     const started = Promise.withResolvers<void>()
+    const disposed: number[] = []
     const done: ChipMateIndexing.Status = {
       state: "Complete",
       message: "Indexing complete.",
@@ -434,24 +435,31 @@ describe("indexing startup degradation", () => {
       totalFiles: 0,
       percent: 100,
     }
-    IndexingWorker.override(() => ({
-      async init(input) {
-        enabled.push(input.enabled)
-        return done
-      },
-      async updateConfig(input) {
-        enabled.push(input.enabled)
-        if (!input.enabled && enabled.filter((value) => !value).length === 1) {
-          started.resolve()
-          await blocked.promise
-        }
-        return done
-      },
-      async search() {
-        return []
-      },
-      async dispose() {},
-    }))
+    let created = 0
+    IndexingWorker.override(() => {
+      const id = ++created
+      return {
+        async init(input) {
+          enabled.push(input.enabled)
+          if (!input.enabled) {
+            started.resolve()
+            await blocked.promise
+          }
+          return done
+        },
+        async updateConfig(input) {
+          enabled.push(input.enabled)
+          return done
+        },
+        async search() {
+          return []
+        },
+        async dispose() {
+          disposed.push(id)
+          if (id === 2) blocked.reject(new Error("superseded worker disposed"))
+        },
+      }
+    })
 
     await using tmp = await tmpdir({ git: true, config: cfg })
     process.env["CHIPMATE_CONFIG_DIR"] = tmp.path
@@ -464,13 +472,14 @@ describe("indexing startup degradation", () => {
         await updateIndexing(tmp.path, false)
         await started.promise
         await updateIndexing(tmp.path, true)
-        blocked.resolve()
 
         for (const _ of Array.from({ length: 100 })) {
           if (enabled.at(-1) === true && enabled.length >= 3) break
           await new Promise((resolve) => setTimeout(resolve, 10))
         }
         expect(enabled).toEqual([true, false, true])
+        expect(disposed).toEqual([1, 2])
+        expect(created).toBe(3)
       },
     })
   })

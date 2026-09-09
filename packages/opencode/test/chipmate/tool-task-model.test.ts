@@ -206,7 +206,8 @@ function run(input: {
   state?: unknown
   client?: string
   variant?: string
-  config?: Pick<Config.Info, "subagent_model" | "subagent_variant" | "subagent_variant_overrides">
+  config?: Pick<Config.Info, "small_model" | "subagent_model" | "subagent_variant" | "subagent_variant_overrides">
+  workflow?: { model: typeof parent; variant?: string }
 }) {
   return provideTmpdirInstance(
     () =>
@@ -231,7 +232,11 @@ function run(input: {
             messageID: assistant.id,
             agent: "build",
             abort: new AbortController().signal,
-            extra: { promptOps, bypassAgentCheck: true },
+            extra: {
+              promptOps,
+              bypassAgentCheck: true,
+              workflow: input.workflow,
+            },
             messages: [],
             metadata: () => Effect.void,
             ask: () => Effect.void,
@@ -579,4 +584,41 @@ describe("tool.task model resolution", () => {
       ),
     ),
   )
+
+  it.live("VS Code task subagents ignore small_model and inherit the parent", () =>
+    run({
+      agent: "worker",
+      client: "vscode",
+      variant: inherited,
+      config: { small_model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(parent)
+          expect(result.variant).toEqual(inherited)
+          expect(result.model).toEqual(parent)
+          expect(result.metadataVariant).toEqual(inherited)
+        }),
+      ),
+    ),
+  )
+
+  it.live("workflow model remains above per-agent and subagent defaults", () =>
+    run({
+      agent: "pinned",
+      client: "vscode",
+      config: { subagent_model: "sub-provider/sub-model", subagent_variant: subVariant },
+      workflow: { model: parent, variant: inherited },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(parent)
+          expect(result.variant).toEqual(inherited)
+          expect(result.model).toEqual(parent)
+          expect(result.metadataVariant).toEqual(inherited)
+        }),
+      ),
+    ),
+  )
+
 })

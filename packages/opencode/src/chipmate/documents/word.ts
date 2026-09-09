@@ -3060,7 +3060,7 @@ function pageNumber(file: string): number {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
 }
 
-async function summarizePagePng(bytes: Uint8Array): Promise<{ summary?: Record<string, unknown>; error?: string }> {
+export async function summarizePagePng(bytes: Uint8Array): Promise<{ summary?: Record<string, unknown>; error?: string }> {
   const loaded = await photon()
   if ("error" in loaded) return { error: loaded.error instanceof Error ? loaded.error.message : String(loaded.error) }
   try {

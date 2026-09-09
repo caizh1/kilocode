@@ -31,9 +31,10 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
-      yield* configSvc.update(ctx.payload)
       // chipmate_change start - indexing settings are consumed by the indexing hot-reload path
-      if (!isIndexingOnlyConfig(ctx.payload)) {
+      const hot = isIndexingOnlyConfig(ctx.payload)
+      yield* configSvc.update(ctx.payload, { indexing: hot })
+      if (!hot) {
         yield* markInstanceForDisposal(yield* InstanceState.context)
       }
       // chipmate_change end

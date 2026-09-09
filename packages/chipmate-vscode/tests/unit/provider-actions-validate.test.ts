@@ -18,6 +18,20 @@ describe("computeDefaultSelection", () => {
     })
   })
 
+  it("lets a saved Qwen global model override the packaged DeepSeek fallback", () => {
+    expect(computeDefaultSelection({ config: { model: "chipmate/qwen" } }, "chipmate", "deepseek")).toEqual({
+      providerID: "chipmate",
+      modelID: "qwen",
+    })
+  })
+
+  it("uses packaged DeepSeek only when the user has no global model", () => {
+    expect(computeDefaultSelection({ config: {} }, "chipmate", "deepseek")).toEqual({
+      providerID: "chipmate",
+      modelID: "deepseek",
+    })
+  })
+
   it("uses a complete explicit VS Code selection", () => {
     expect(computeDefaultSelection(null, "anthropic", "claude-sonnet-4")).toEqual({
       providerID: "anthropic",

@@ -12,8 +12,10 @@ import { Diff } from "@chipmate/chipmate-ui/diff"
 import { File } from "@chipmate/chipmate-ui/file"
 import { Toast } from "@chipmate/chipmate-ui/toast"
 import { VSCodeProvider } from "../src/context/vscode"
+import { SessionSurfaceProvider } from "../src/context/session-surface"
 import { ServerProvider } from "../src/context/server"
 import { ProviderProvider } from "../src/context/provider"
+import { DeepSeekHarnessProvider } from "../src/context/deepseek-harness"
 import { ConfigProvider } from "../src/context/config"
 import { DisplayProvider } from "../src/context/display"
 import { ChipMateEmbeddingModelsProvider } from "../src/context/chipmate-embedding-models"
@@ -35,48 +37,52 @@ export const AgentManagerApp: Component = () => {
     <ThemeProvider defaultTheme="chipmate-vscode">
       <DialogProvider>
         <VSCodeProvider>
-          <MermaidDownloadBridge />
-          <PlantUmlBridge />
-          <ServerProvider>
-            <LanguageBridge>
-              <MarkedProvider>
-                <DiffComponentProvider component={Diff}>
-                  <CodeComponentProvider component={Code}>
-                    <FileComponentProvider component={File}>
-                      <ProviderProvider>
-                        <ConfigProvider>
-                          <SpeechToTextPrewarm />
-                          <DisplayProvider>
-                            <IndexingProvider>
-                              <ChipMateEmbeddingModelsProvider>
-                                <ImageModelsProvider>
-                                  <NotificationsProvider>
-                                    <SessionProvider>
-                                      <AgentRequirementsProvider>
-                                        <MemoryProvider>
-                                          <FeedbackProvider>
-                                            <WorktreeModeProvider>
-                                              <DataBridge>
-                                                <AgentManagerContent />
-                                              </DataBridge>
-                                            </WorktreeModeProvider>
-                                          </FeedbackProvider>
-                                        </MemoryProvider>
-                                      </AgentRequirementsProvider>
-                                    </SessionProvider>
-                                  </NotificationsProvider>
-                                </ImageModelsProvider>
-                              </ChipMateEmbeddingModelsProvider>
-                            </IndexingProvider>
-                          </DisplayProvider>
-                        </ConfigProvider>
-                      </ProviderProvider>
-                    </FileComponentProvider>
-                  </CodeComponentProvider>
-                </DiffComponentProvider>
-              </MarkedProvider>
-            </LanguageBridge>
-          </ServerProvider>
+          <SessionSurfaceProvider unmanaged>
+            <MermaidDownloadBridge />
+            <PlantUmlBridge />
+            <ServerProvider>
+              <LanguageBridge>
+                <MarkedProvider>
+                  <DiffComponentProvider component={Diff}>
+                    <CodeComponentProvider component={Code}>
+                      <FileComponentProvider component={File}>
+                        <ProviderProvider>
+                          <DeepSeekHarnessProvider>
+                            <ConfigProvider>
+                              <SpeechToTextPrewarm />
+                              <DisplayProvider>
+                                <IndexingProvider>
+                                  <ChipMateEmbeddingModelsProvider>
+                                    <ImageModelsProvider>
+                                      <NotificationsProvider>
+                                        <SessionProvider>
+                                          <AgentRequirementsProvider>
+                                            <MemoryProvider>
+                                              <FeedbackProvider>
+                                                <WorktreeModeProvider>
+                                                  <DataBridge>
+                                                    <AgentManagerContent />
+                                                  </DataBridge>
+                                                </WorktreeModeProvider>
+                                              </FeedbackProvider>
+                                            </MemoryProvider>
+                                          </AgentRequirementsProvider>
+                                        </SessionProvider>
+                                      </NotificationsProvider>
+                                    </ImageModelsProvider>
+                                  </ChipMateEmbeddingModelsProvider>
+                                </IndexingProvider>
+                              </DisplayProvider>
+                            </ConfigProvider>
+                          </DeepSeekHarnessProvider>
+                        </ProviderProvider>
+                      </FileComponentProvider>
+                    </CodeComponentProvider>
+                  </DiffComponentProvider>
+                </MarkedProvider>
+              </LanguageBridge>
+            </ServerProvider>
+          </SessionSurfaceProvider>
         </VSCodeProvider>
         <Toast.Region />
       </DialogProvider>

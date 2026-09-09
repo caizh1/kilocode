@@ -40,7 +40,6 @@ describe("internal offline webview gateway UI", () => {
     const config = JSON.parse(content!)
 
     expect(config).toEqual({
-      model: "chipmate/vendor/deepseek",
       provider: {
         chipmate: {
           name: "ChipMate",
@@ -55,6 +54,7 @@ describe("internal offline webview gateway UI", () => {
         },
       },
     })
+    expect(config).not.toHaveProperty("model")
     expect(content).not.toContain("apiKey")
     expect(content).not.toContain("secret")
     expect(content).not.toContain("embedding")

@@ -1,3 +1,4 @@
+import "../appearance"
 import { render } from "solid-js/web"
 import "@chipmate/chipmate-ui/styles"
 import "@vscode/codicons/dist/codicon.css"

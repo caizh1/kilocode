@@ -10,14 +10,12 @@ let controlId = ""
 const required = [
   "chipmate.v2.plusButtonClicked",
   "chipmate.v2.agentManagerOpen",
-  "chipmate.v2.sidebarTitle.agentTerminalOpen",
   "chipmate.v2.settingsButtonClicked",
   "chipmate.v2.openInTab",
   "chipmate.v2.showMemory",
   "chipmate.v2.documents.openArtifact",
   "chipmate.v2.documents.openArtifactFolder",
   "chipmate.v2.documents.exportDiagnostics",
-  "chipmate.v2.agentTerminal.open",
   "chipmate.v2.autocomplete.generateSuggestions",
   "chipmate.v2.autocomplete.cancelSuggestions",
   "chipmate.v2.qwenAutocomplete.showLogs",
@@ -96,9 +94,6 @@ async function activate() {
     const views = contributes.views?.["chipmate-v2-activitybar"] ?? []
     if (!views.some((item) => item.id === "chipmate.v2.SidebarProvider"))
       result.errors.push("missing chipmate.v2.SidebarProvider view")
-    const profiles = contributes.terminal?.profiles ?? []
-    if (profiles.some((item) => item.id === "chipmate.v2.agentTerminal"))
-      result.errors.push("legacy chipmate.v2.agentTerminal profile must be absent")
     result.status = result.errors.length ? "FAIL" : "PASS"
   } catch (err) {
     result.errors.push(err instanceof Error ? (err.stack ?? err.message) : String(err))

@@ -3,7 +3,10 @@ import { createRoot } from "solid-js"
 import { useSlashCommand, type SlashCommandEntry } from "../../webview-ui/src/hooks/useSlashCommand"
 import type { ExtensionMessage, SlashCommandInfo, WebviewMessage } from "../../webview-ui/src/types/messages"
 
-function setup(commands: SlashCommandInfo[] = []) {
+function setup(
+  commands: SlashCommandInfo[] = [],
+  compact?: { action: () => void; enabled: () => boolean },
+) {
   const posted: WebviewMessage[] = []
   const handlers = new Set<(message: ExtensionMessage) => void>()
   const cleanup: { run?: () => void } = {}
@@ -12,13 +15,18 @@ function setup(commands: SlashCommandInfo[] = []) {
   }
   const slash = createRoot((root) => {
     cleanup.run = root
-    return useSlashCommand({
-      postMessage: (message) => posted.push(message),
-      onMessage: (handler) => {
-        handlers.add(handler)
-        return () => handlers.delete(handler)
+    return useSlashCommand(
+      {
+        postMessage: (message) => posted.push(message),
+        onMessage: (handler) => {
+          handlers.add(handler)
+          return () => handlers.delete(handler)
+        },
       },
-    })
+      undefined,
+      undefined,
+      compact,
+    )
   })
 
   if (commands.length > 0) emit(commands)
@@ -185,6 +193,30 @@ describe("useSlashCommand selection", () => {
     expect(input.node.value).toBe("保留这段草稿")
     expect(state).toEqual({ text: "保留这段草稿", actions: 1, selected: 1 })
     expect(ctx.slash.show()).toBe(false)
+    ctx.cleanup.run?.()
+  })
+
+  it("routes compact through the injected confirmation action only when available", () => {
+    const state = { allowed: false, actions: 0, text: "" }
+    const ctx = setup([], {
+      action: () => state.actions++,
+      enabled: () => state.allowed,
+    })
+    const input = field("/compact保留草稿", "/compact".length)
+
+    ctx.slash.onInput(input.node.value, "/compact".length)
+    const compact = ctx.slash.results().find((entry) => entry.name === "compact")!
+    ctx.slash.select(compact, input.node, (text) => (state.text = text))
+
+    expect(state.actions).toBe(0)
+    expect(input.node.value).toBe("/compact保留草稿")
+
+    state.allowed = true
+    ctx.slash.select(compact, input.node, (text) => (state.text = text))
+
+    expect(state.actions).toBe(1)
+    expect(input.node.value).toBe("保留草稿")
+    expect(state.text).toBe("保留草稿")
     ctx.cleanup.run?.()
   })
 

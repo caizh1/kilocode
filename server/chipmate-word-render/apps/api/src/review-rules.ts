@@ -2,14 +2,14 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { MarketDb } from "@chipmate/market-db"
-import { Identity, sendIdentityError, type ResolveUser } from "./identity.ts"
+import { Identity, sendIdentityError } from "./identity.ts"
 import { parseRulePack, RulePackValidationError, type ReviewRule, type ReviewRulePack } from "./review-rulepack.ts"
 
 const MAX = 20 * 1024 * 1024
 
 interface Options {
   root: string
-  resolveUser?: ResolveUser
+  identity?: Identity
   now?: () => number
   authorize?: (req: FastifyRequest) => Promise<void>
   publishers?: string[]
@@ -98,7 +98,7 @@ export class ReviewRuleStore {
 
 export function registerReviewRules(app: FastifyInstance, db: MarketDb | undefined, opts: Options) {
   const store = new ReviewRuleStore(opts.root, opts.now)
-  const identity = db ? new Identity(db, opts.resolveUser, opts.now) : undefined
+  const identity = db ? (opts.identity ?? new Identity(db, opts.now ? { now: opts.now } : {})) : undefined
   const authorize = async (req: FastifyRequest) => {
     if (opts.authorize) return opts.authorize(req)
     if (!identity) throw new RuleWriteUnavailableError()

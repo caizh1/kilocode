@@ -15,13 +15,10 @@ Latest refresh:
 - `docs/chipmate-feature-migration-validation-runs/20260708-131846-full-suite-refresh/status.tsv`
 - `docs/chipmate-feature-migration-validation-runs/20260708-131846-full-suite-refresh/C1-opencode-bun-run-test.log`
 - `docs/chipmate-feature-migration-validation-runs/20260708-131846-full-suite-refresh/C3-chipmate-vscode-bun-run-test-unit.log`
-- `docs/chipmate-feature-migration-validation-runs/20260708-131846-full-suite-refresh/C3b-agent-terminal-focused.log`
 
 Latest refresh result:
 
 - C1 `bun run test` did not reach a final suite summary; it hit the controlled `600s` timeout after reaching `460/461`. The visible failed clusters before timeout remained outside the migrated Word/Mermaid/artifact/source-backed sidecars: `server/workspace-proxy.test.ts`, `session/retry.test.ts`, `plugin/xai.test.ts`, `chipmate/session-prompt-queue.test.ts`, `tool/webfetch.test.ts`, and `skill/discovery.test.ts`.
-- C3 `bun run test:unit` completed with `2780 pass`, `62 fail`, and `1 error` across `2842` tests. The failure clusters still center on qwen autocomplete diagnostics/context injection/cache/provider behavior, backend/session/worktree/provider mocks, code action provider expectations, legacy migration mocks, and one broad-suite `agent terminal service` failure.
-- The migration-related Agent Terminal failure was isolated with a focused rerun, `bun test tests/unit/agent-terminal-runtime.test.ts tests/unit/agent-terminal-package-contribution.test.ts --timeout 60000`, which passed `6/6`. This supports treating the broad C3 Agent Terminal row as a broad-suite/mock-order risk, not as proof that the Agent Terminal sidecar is broken.
 - The refresh does not convert C1 or C3 into PASS and does not close S1-S16 installed runtime acceptance.
 
 ## C1: opencode tool tests
@@ -95,7 +92,6 @@ M11 conclusion for C3:
 
 - C3 cannot be marked PASS.
 - C3 does not currently prove that Word/Mermaid/artifact/source-backed migration broke ChipMate QA.
-- The latest C3 refresh still blocks a broad unit-suite green claim. Focused Agent Terminal isolation passed after the broad C3 failure, and focused qwen-direct smoke remains the scoped evidence for autocomplete preservation.
 - C3 does keep autocomplete preservation and broad VS Code unit health in a non-final state until a full rerun passes or the remaining failures are separately accepted.
 
 ## Release-signoff impact

@@ -13,13 +13,13 @@ export class ChipMateActionProvider implements vscode.CodeActionProvider {
     const actions: vscode.CodeAction[] = []
     if (document.languageId === "c" || document.languageId === "cpp") {
       const comments = new vscode.CodeAction(
-        range.isEmpty ? "为当前函数生成高可信注释" : "为选中函数批量生成高可信注释",
+        range.isEmpty ? "为当前源码目标生成高可信注释" : "为选中源码目标生成高可信注释",
         vscode.CodeActionKind.RefactorRewrite,
       )
       comments.command = {
         command: range.isEmpty
-          ? "chipmate.v2.generateCommentsForCurrentFunction"
-          : "chipmate.v2.generateCommentsForSelectedFunctions",
+          ? "chipmate.v2.generateCommentsForCurrentCodeTarget"
+          : "chipmate.v2.generateCommentsForSelectedCodeTargets",
         title: comments.title,
       }
       actions.push(comments)

@@ -15,6 +15,7 @@ import { PlanFile } from "@/chipmate/plan-file"
 import { ChipMateSession } from "@/chipmate/session"
 import { ChipMateSessionMessageOrder } from "@/chipmate/session/message-order"
 import { ChipMateSessionPromptQueue } from "@/chipmate/session/prompt-queue"
+import { ChipMateCompactionStatus } from "@/chipmate/session/compaction-status"
 import { Permission } from "@/permission"
 import { PermissionProvenance } from "@/chipmate/permission/provenance"
 import { Question } from "@/question"
@@ -223,12 +224,24 @@ export namespace ChipMateSessionPrompt {
   export const recoverDanglingAssistant = Effect.fn("ChipMateSessionPrompt.recoverDanglingAssistant")(function* (input: {
     sessionID: SessionID
     status: Pick<SessionStatus.Interface, "get">
-    sessions: Pick<Session.Interface, "messages" | "removeMessage">
+    sessions: Pick<Session.Interface, "messages" | "removeMessage" | "getPart" | "updatePart">
   }) {
     const state = yield* input.status.get(input.sessionID)
     if (state.type !== "idle") return
 
-    const msgs = yield* input.sessions.messages({ sessionID: input.sessionID, limit: 2 })
+    const msgs = yield* input.sessions.messages({ sessionID: input.sessionID, limit: 4 })
+    const stale = msgs.findLast((message) => {
+      if (message.info.role !== "user" || !message.parts.some((part) => part.type === "compaction")) return false
+      const value = ChipMateCompactionStatus.value(ChipMateCompactionStatus.find(message.parts))
+      return value?.state === "running" && Date.now() - value.startedAt >= 10_000
+    })
+    if (stale) {
+      yield* ChipMateCompactionStatus.transition({
+        part: ChipMateCompactionStatus.find(stale.parts),
+        state: "failed",
+        store: input.sessions,
+      })
+    }
     const tail = msgs.at(-1)
     if (!tail || tail.info.role !== "assistant") return
     if (tail.parts.length > 0 || tail.info.finish || tail.info.error) return

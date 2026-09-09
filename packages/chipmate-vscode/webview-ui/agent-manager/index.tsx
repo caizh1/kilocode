@@ -1,3 +1,4 @@
+import "../appearance"
 // Agent Manager SolidJS entry point
 // Shares components and providers with the sidebar webview
 // webviewReady is sent by ServerProvider inside the component tree

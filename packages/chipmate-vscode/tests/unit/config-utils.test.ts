@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test"
 import {
+  ConfigSaveWatchdog,
   deepEqual,
   deepMerge,
   stripNulls,
@@ -79,6 +80,13 @@ describe("scoped config normalization", () => {
       ["indexing", "searchMinScore"],
       ["indexing", "qdrant", "apiKey"],
     ])
+  })
+
+  it("builds an unset-only payload when reverting the task subagent model to default", () => {
+    const patch: Partial<Config> = { subagent_model: null, subagent_variant: null }
+
+    expect(pruneConfigSet(patch)).toEqual({})
+    expect(configUnsetPaths(patch)).toEqual([["subagent_model"], ["subagent_variant"]])
   })
 })
 
@@ -242,6 +250,21 @@ describe("ConfigState", () => {
       expect(Object.keys(s.draft).length).toBe(0)
     })
 
+    it("clears the task subagent model and variant when default is confirmed", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ subagent_model: "test/small", subagent_variant: "low" })
+      s.updateConfig({ subagent_model: null, subagent_variant: null })
+      s.saveConfig("save")
+
+      s.handleConfigUpdated({}, "save")
+
+      expect(s.config.subagent_model).toBeUndefined()
+      expect(s.config.subagent_variant).toBeUndefined()
+      expect(s.dirty).toBe(false)
+      expect(s.saving).toBe(false)
+      expect(Object.keys(s.draft).length).toBe(0)
+    })
+
     it("preserves the null delete sentinel in the pending save payload", () => {
       const s = new ConfigState()
       s.handleConfigLoaded({ default_agent: "code" })
@@ -368,6 +391,62 @@ describe("ConfigState", () => {
     })
   })
 
+  describe("config save timeout", () => {
+    it("unlocks saving, preserves the draft, and ignores a late acknowledgement", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ indexing: { provider: "openai-compatible", model: "broken" } })
+      s.updateConfig({ indexing: { model: "working" } })
+      s.saveConfig("save")
+
+      s.handleConfigSaveTimeout("save")
+
+      expect(s.saving).toBe(false)
+      expect(s.dirty).toBe(true)
+      expect(s.draft.indexing?.model).toBe("working")
+
+      s.handleConfigUpdated({ indexing: { provider: "openai-compatible", model: "broken" } }, "save")
+
+      expect(s.dirty).toBe(true)
+      expect(s.config.indexing?.model).toBe("working")
+    })
+
+    it("ignores a timeout from a different request", () => {
+      const s = new ConfigState()
+      s.handleConfigLoaded({ snapshot: true })
+      s.updateConfig({ snapshot: false })
+      s.saveConfig("save")
+
+      s.handleConfigSaveTimeout("other")
+
+      expect(s.saving).toBe(true)
+      expect(s.request).toBe("save")
+    })
+  })
+
+  describe("ConfigSaveWatchdog", () => {
+    it("cancels the watchdog when a matching save is acknowledged", async () => {
+      const expired: string[] = []
+      const watchdog = new ConfigSaveWatchdog(5)
+      watchdog.start("save", (request) => expired.push(request))
+
+      watchdog.clear()
+      await Bun.sleep(10)
+
+      expect(expired).toEqual([])
+    })
+
+    it("expires only the latest request", async () => {
+      const expired: string[] = []
+      const watchdog = new ConfigSaveWatchdog(5)
+      watchdog.start("old", (request) => expired.push(request))
+      watchdog.start("latest", (request) => expired.push(request))
+
+      await Bun.sleep(10)
+
+      expect(expired).toEqual(["latest"])
+    })
+  })
+
   it("ignores repeated save attempts while a save is already in-flight", () => {
     const s = new ConfigState()
     s.handleConfigLoaded({ snapshot: true })
@@ -405,6 +484,21 @@ describe("ConfigState", () => {
 
     expect(s.config.snapshot).toBe(true)
     expect(s.dirty).toBe(false)
+  })
+
+  it("discardConfig releases an in-flight save and ignores its late acknowledgement", () => {
+    const s = new ConfigState()
+    s.handleConfigLoaded({ snapshot: true })
+    s.updateConfig({ snapshot: false })
+    s.saveConfig("save")
+
+    s.discardConfig()
+    s.handleConfigUpdated({ snapshot: false }, "save")
+
+    expect(s.saving).toBe(false)
+    expect(s.request).toBeUndefined()
+    expect(s.dirty).toBe(false)
+    expect(s.config.snapshot).toBe(true)
   })
 
   // -------------------------------------------------------------------------

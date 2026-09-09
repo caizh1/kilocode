@@ -53,23 +53,55 @@ export function cumulativeSessionDiff(storage: Storage.Interface, id: SessionID 
 // Self-contained Storage runtime so shared callers (Session.fork) can carry fork diffs without taking a
 // legacy Storage dependency in their layer. Mirrors the Database runtime pattern in session/session.ts.
 const runtime = makeRuntime(Storage.Service, AppNodeBuilder.build(Storage.node))
+const snapshotRuntime = makeRuntime(Snapshot.Service, AppNodeBuilder.build(Snapshot.node))
+
+/** 优先使用保留消息区间的快照计算历史分支差异。 */
+export function forkDiffFromSnapshots(input: { from: string; to: string }): Effect.Effect<PortableDiff[]> {
+  return Effect.promise(() => snapshotRuntime.runPromise((snapshot) => snapshot.diffFull(input.from, input.to)))
+}
 
 /**
  * Carry a source session's cumulative diff base onto a freshly forked session, so imported/cumulative
  * diffs survive the fork. Returns a plain Effect with no Storage requirement.
  */
 export function carryForkDiff(sourceID: SessionID | string, targetID: SessionID | string): Effect.Effect<void> {
+  return carryForkDiffAtBoundary(sourceID, targetID)
+}
+
+/**
+ * 写入派生会话在指定历史边界上的累计差异。`local` 省略时用于完整会话复制；
+ * 显式传入时只合并导入基线和保留区间的差异，绝不读取源会话最终差异。
+ */
+export function carryForkDiffAtBoundary(
+  sourceID: SessionID | string,
+  targetID: SessionID | string,
+  local?: PortableDiff[],
+): Effect.Effect<void> {
   return Effect.promise(() =>
     runtime.runPromise((storage) =>
       Effect.gen(function* () {
-        const local = yield* storage
-          .read<PortableDiff[]>(["session_diff", String(sourceID)])
-          .pipe(Effect.orElseSucceed((): PortableDiff[] => []))
-        const base = yield* cumulativeSessionDiff(storage, sourceID, local)
-        if (base.length === 0) return
-        yield* storage.write(baseKey(targetID), base).pipe(Effect.ignore)
-        yield* storage.write(["session_diff", String(targetID)], base).pipe(Effect.ignore)
+        const sourceLocal =
+          local ??
+          (yield* storage
+            .read<PortableDiff[]>(["session_diff", String(sourceID)])
+            .pipe(Effect.orElseSucceed((): PortableDiff[] => [])))
+        const cumulative = yield* cumulativeSessionDiff(storage, sourceID, sourceLocal)
+        if (cumulative.length === 0) return
+        yield* storage.write(baseKey(targetID), cumulative).pipe(Effect.ignore)
+        yield* storage.write(["session_diff", String(targetID)], cumulative).pipe(Effect.ignore)
       }),
+    ),
+  )
+}
+
+/** 清理失败派生操作写入的差异记录。 */
+export function clearForkDiff(targetID: SessionID | string): Effect.Effect<void> {
+  return Effect.promise(() =>
+    runtime.runPromise((storage) =>
+      Effect.all(
+        [storage.remove(baseKey(targetID)), storage.remove(["session_diff", String(targetID)])],
+        { discard: true },
+      ).pipe(Effect.ignore),
     ),
   )
 }

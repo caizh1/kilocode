@@ -1,3 +1,4 @@
+import { acquireAppearanceApi } from "../../appearance/api"
 // ChipMateClaw state context
 //
 // All data arrives from the extension host via postMessage.
@@ -26,9 +27,8 @@ type VSCodeAPI = {
   setState(state: unknown): void
 }
 
-declare function acquireVsCodeApi(): VSCodeAPI
 
-const vscode = acquireVsCodeApi()
+const vscode: VSCodeAPI = acquireAppearanceApi()
 
 type Phase = "loading" | "noInstance" | "needsUpgrade" | "error" | "ready"
 

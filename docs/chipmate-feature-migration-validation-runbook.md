@@ -121,13 +121,11 @@ bun run package
 
 Covers checklist areas:
 
-- Agent Terminal runtime and package contribution unit tests;
 - artifact UI service/view unit tests;
 - qwen-direct autocomplete package contribution smoke;
 - VS Code extension activation path;
 - package contribution validity for new commands/settings/profile;
 - Qwen direct autocomplete contribution preservation;
-- Agent Terminal service type safety;
 - artifact UI type safety;
 - no renderer large dependency bundled by package build.
 
@@ -190,8 +188,6 @@ Smoke matrix:
 | Mermaid | Generate state-machine PNG | `.mmd`, `.png`, diagnostics artifact |
 | Mermaid + Word | Insert Mermaid PNG into Word | New Word artifact with figure |
 | Source-backed detail design | Run on one internal embedded C module | Evidence, diagrams, Word output, quality report |
-| Agent Terminal | Open Agent Terminal | Setting prompt appears if disabled; terminal opens after enable |
-| Agent Terminal danger | Plan/delete temp artifacts | Dangerous command requires explicit confirmation |
 | Autocomplete | Enable qwen-direct and trigger inline completion | Provider still registers and diagnostics commands exist |
 
 Evidence to capture:

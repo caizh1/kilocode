@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises"
 import type { FastifyInstance, FastifyReply } from "fastify"
 import type { ExtensionArtifactItem, MarketDb } from "@chipmate/market-db"
 import { MarketEvents } from "./events.ts"
-import { Identity, sendIdentityError, type ResolveUser } from "./identity.ts"
+import { Identity, sendIdentityError } from "./identity.ts"
 import {
   UPLOAD_MAX_ACTIVE,
   UPLOAD_MAX_BYTES,
@@ -25,7 +25,7 @@ const SOURCES = new Set(["home", "search", "detail", "external", "vscode"])
 interface Options {
   root: string
   events: MarketEvents
-  resolveUser?: ResolveUser
+  identity?: Identity
   now?: () => number
   scanMs?: number
   activeUploads?: number
@@ -288,7 +288,7 @@ export class ExtensionRuntime {
 }
 
 export function registerExtensions(app: FastifyInstance, db: MarketDb, opts: Options): ExtensionRuntime {
-  const identity = new Identity(db, opts.resolveUser, opts.now)
+  const identity = opts.identity ?? new Identity(db, opts.now ? { now: opts.now } : {})
   const gate = new UploadGate({
     root: opts.root,
     active: opts.activeUploads ?? UPLOAD_MAX_ACTIVE,

@@ -16,6 +16,7 @@ export async function seedSessionStatuses(
   map: Map<string, SessionStatus["type"]>,
   post: (msg: unknown) => void,
   reconcile = true,
+  accept: (sessionID: string) => boolean = () => true,
 ): Promise<void> {
   try {
     const result = await client.session.status({ directory: dir })
@@ -24,6 +25,7 @@ export async function seedSessionStatuses(
 
     // Seed/update entries the server knows about
     for (const [sid, info] of Object.entries(active) as [string, SessionStatus][]) {
+      if (!accept(sid)) continue
       map.set(sid, info.type)
       post({
         type: "sessionStatus",
@@ -39,6 +41,7 @@ export async function seedSessionStatuses(
     // for status transitions and the brief HTTP fetch can race with them.
     if (reconcile) {
       for (const [sid, status] of map) {
+        if (!accept(sid)) continue
         if (status !== "idle" && !active[sid]) {
           map.set(sid, "idle")
           post({ type: "sessionStatus", sessionID: sid, status: "idle" })

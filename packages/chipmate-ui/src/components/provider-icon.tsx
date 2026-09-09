@@ -1,1 +1,38 @@
-export * from "@opencode-ai/ui/provider-icon"
+import { ProviderIcon as OpenCodeProviderIcon, type ProviderIconProps } from "@opencode-ai/ui/provider-icon"
+import type { Component } from "solid-js"
+import { splitProps } from "solid-js"
+
+export type { ProviderIconProps }
+
+export const ProviderIcon: Component<ProviderIconProps> = (props) => {
+  const [local, rest] = splitProps(props, ["id"])
+  if (local.id !== "chipmate") return <OpenCodeProviderIcon id={local.id} {...rest} />
+
+  return (
+    <svg
+      data-component="provider-icon"
+      data-provider-brand="chipmate"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      {...rest}
+    >
+      <path
+        d="M8.25 3.75V2.25M12 3.75V2.25M15.75 3.75V2.25M8.25 21.75V20.25M12 21.75V20.25M15.75 21.75V20.25M3.75 8.25H2.25M3.75 12H2.25M3.75 15.75H2.25M21.75 8.25H20.25M21.75 12H20.25M21.75 15.75H20.25"
+        stroke="currentColor"
+        stroke-width="1.45"
+        stroke-linecap="round"
+      />
+      <rect x="4.75" y="4.75" width="14.5" height="14.5" rx="4" stroke="currentColor" stroke-width="1.55" />
+      <path
+        d="M9.15 12.35C10.85 11.8 11.8 10.85 12.35 9.15C12.9 10.85 13.85 11.8 15.55 12.35C13.85 12.9 12.9 13.85 12.35 15.55C11.8 13.85 10.85 12.9 9.15 12.35Z"
+        fill="currentColor"
+      />
+      <path
+        d="M8.2 8.35L8.95 8.05L9.25 7.3L9.55 8.05L10.3 8.35L9.55 8.65L9.25 9.4L8.95 8.65L8.2 8.35Z"
+        fill="currentColor"
+        opacity="0.72"
+      />
+    </svg>
+  )
+}

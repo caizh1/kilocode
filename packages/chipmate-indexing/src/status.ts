@@ -19,6 +19,7 @@ type StatusSource = {
     currentItemUnit: string
     percent?: number
     activePipeline?: "codeGraph" | "rag" | "documents"
+    codePending?: boolean
     notices?: StateIndexingNotice[]
   }
 }
@@ -139,6 +140,36 @@ export function disabledIndexingStatus(message = "Indexing disabled."): Indexing
 }
 
 export function normalizeIndexingStatus(manager: StatusSource): IndexingStatus {
+  const status = normalizeState(manager)
+  const cfg = manager.getCurrentStatus()
+  if (cfg.activePipeline !== "documents") return status
+  const documents = status.pipelines?.documents
+  if (!documents) return status
+  if (cfg.codePending && status.pipelines) {
+    status.pipelines.codeGraph = standbyPipeline(
+      "等待文档阶段结束",
+      "文档阶段结束后自动建立 Code Graph。",
+      manager.getRecentErrors?.()?.codeGraph,
+    )
+    if (manager.isFeatureEnabled && manager.isFeatureConfigured) {
+      status.pipelines.rag = standbyPipeline(
+        "等待文档阶段结束",
+        "文档阶段和 Code Graph 结束后自动建立 Code RAG。",
+        manager.getRecentErrors?.()?.rag,
+      )
+    }
+  }
+  return {
+    ...status,
+    state: "In Progress",
+    message: documents.message,
+    processedFiles: documents.processedFiles,
+    totalFiles: documents.totalFiles,
+    percent: Math.min(99, documents.percent),
+  }
+}
+
+function normalizeState(manager: StatusSource): IndexingStatus {
   const cfg = manager.getCurrentStatus()
   const files = cfg.currentItemUnit === "files"
   const processedFiles = files ? cfg.processedItems : 0

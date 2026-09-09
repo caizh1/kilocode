@@ -3,6 +3,37 @@ import type { Provider, SessionModelUsage } from "../types/messages"
 const DATE_SUFFIX = /(?:-(?:20\d{6}|20\d{2}-\d{2}-\d{2}))(?:-v\d+(?::\d+)?)?$/i
 
 export type TokenSummary = { input: number; output: number; cached: number }
+export type BillingSummary = SessionModelUsage["totals"]["billing"]
+
+export function usageBilling(usage: { cost: number; billing?: BillingSummary }): BillingSummary {
+  return (
+    usage.billing ?? {
+      amountCNY: 0,
+      settledSteps: 0,
+      pendingSteps: 0,
+      unavailableSteps: 0,
+      otherCostUSD: Math.max(0, Number.isFinite(usage.cost) ? usage.cost : 0),
+      groups: [],
+    }
+  )
+}
+
+export function formatCNY(input: number, locale: string) {
+  const value = Math.max(0, Number.isFinite(input) ? input : 0)
+  if (value > 0 && value < 0.000001) return "<¥0.000001"
+  return `¥${new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 6 }).format(value)}`
+}
+
+export function formatUSD(input: number, locale: string) {
+  const value = Math.max(0, Number.isFinite(input) ? input : 0)
+  if (value > 0 && value < 0.000001) return "<$0.000001"
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(value)
+}
 
 export function isSameSessionTree(
   current: string,

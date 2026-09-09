@@ -21,7 +21,7 @@ export { CodeIndexOrchestrator } from "./orchestrator"
 export { CodeIndexServiceFactory } from "./service-factory"
 export { CacheManager } from "./cache-manager"
 export { Emitter, type Disposable } from "./runtime"
-export { DocumentIndexService, extractDocxPlantUml } from "./documents"
+export { DocumentIndexService, extractDocument, extractDocxPlantUml } from "./documents"
 
 export type { ICodeIndexManager, IndexProgressUpdate, EmbedderProvider } from "./interfaces/manager"
 

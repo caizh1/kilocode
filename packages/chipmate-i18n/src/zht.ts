@@ -84,6 +84,8 @@ export const dict = {
   "marketplace.install.cancel": "取消",
   "marketplace.install.success": "安裝成功！",
   "marketplace.install.failed": "安裝失敗",
+  "marketplace.install.identityMismatch":
+    "市場 Skill 的條目 ID 與套件內身分不一致，未安裝任何檔案。請聯絡發佈者修復市場條目後重試。",
   "marketplace.install.done": "完成",
   "marketplace.install.close": "關閉",
   "marketplace.remove.title": "移除 {{name}}？",

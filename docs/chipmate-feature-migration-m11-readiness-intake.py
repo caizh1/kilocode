@@ -264,42 +264,6 @@ def company_template_gate(path: Path | None, accept_pass_with_limits: bool) -> G
     )
 
 
-def agent_terminal_visible_ux_gate(path: Path | None) -> Gate:
-    note = (
-        "requires returned installed VS Code visible UX intake PASS for command palette, "
-        "default-off prompt, terminal pane, native terminal preservation, dangerous confirmation, "
-        "audit/log evidence, and intake-summary shape; self-check or generic PASS summaries are not accepted"
-    )
-    if path is None:
-        return Gate("Visible Agent Terminal UX", "MISSING", False, "not provided", note)
-    text = read_text(path)
-    if not text:
-        return Gate("Visible Agent Terminal UX", "MISSING", False, str(path), note)
-    status = status_value(text, "Status", "Overall status") or "UNKNOWN"
-    required_needles = [
-        "# Agent Terminal Visible UX Intake Summary",
-        "Failed checks: `0`",
-        "evidence file found:",
-        "context filled: Installed VSIX profile",
-        "status PASS: Agent Terminal command visible",
-        "status PASS: Terminal pane opens after enable",
-        "status PASS: Native ChipMate terminal unaffected",
-        "status PASS: Dangerous command confirmation visible",
-        "attached evidence assets:",
-    ]
-    bad_needles = [
-        "This self-check uses synthetic evidence only",
-        "M11 Visible Agent Terminal UX Gate Self-Check",
-        "synthetic evidence",
-    ]
-    has_required_shape = all(needle in text for needle in required_needles)
-    has_bad_shape = any(needle in text for needle in bad_needles)
-    ready = status == "PASS" and has_required_shape and not has_bad_shape
-    if status == "PASS" and not ready:
-        status = "PASS_NEEDS_REVIEW"
-    return Gate("Visible Agent Terminal UX", status, ready, str(path), note)
-
-
 def write_summary(output: Path, gates: list[Gate]) -> None:
     ready = all(gate.ready for gate in gates)
     lines = [
@@ -341,7 +305,6 @@ def main() -> int:
     parser.add_argument("--internal-embedded-c-summary", type=Path)
     parser.add_argument("--company-template-summary", type=Path)
     parser.add_argument("--accept-company-template-pass-with-limits", action="store_true")
-    parser.add_argument("--agent-terminal-visible-ux-intake", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -353,7 +316,6 @@ def main() -> int:
         target_execution_gate("Offline Linux x86-64 target execution", args.linux_target_intake, ["linux-x64", "linux", "Linux"]),
         internal_embedded_c_gate(args.internal_embedded_c_summary),
         company_template_gate(args.company_template_summary, args.accept_company_template_pass_with_limits),
-        agent_terminal_visible_ux_gate(args.agent_terminal_visible_ux_intake),
     ]
     write_summary(args.output, gates)
     ready = all(gate.ready for gate in gates)

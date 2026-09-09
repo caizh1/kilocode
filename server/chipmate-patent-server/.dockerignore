@@ -1,0 +1,15 @@
+node_modules
+dist
+out
+.env
+runtime
+*.log
+test
+examples
+deploy
+script/*
+!script/copy-build-assets.mjs
+README.md
+DEPLOYMENT.md
+compose.yaml
+compose.https.yaml

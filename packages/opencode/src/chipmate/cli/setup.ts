@@ -19,11 +19,11 @@ import { DaemonCommand } from "@/chipmate/cli/cmd/daemon"
 import { DevSetupCommand, DevAliasCommand } from "@/chipmate/cli/dev-setup"
 import { RemoteCommand } from "@/cli/cmd/remote"
 import { ConfigCommand as ConfigCLICommand } from "@/cli/cmd/config"
-import { JsonMigration } from "@/chipmate/storage/json-migration"
 import { ProductProfile } from "@/chipmate/product-profile"
 import { ChipMateLog } from "@/chipmate/log"
 import { ChipMateSessions } from "@/chipmate-sessions/chipmate-sessions"
 import { LegacyProductStateMigration } from "@/chipmate/migration/legacy-product-state"
+import { HistoryCommand } from "@/chipmate/cli/cmd/history"
 
 const log = Log.create({ service: "chipmate.cli" })
 let skipShutdown = false
@@ -44,6 +44,7 @@ export namespace ChipMateCli {
       .command(ProfileCommand)
       .command(RemoteCommand)
       .command(DaemonCommand)
+      .command(HistoryCommand)
       .command(ConfigCLICommand)
     if (InstallationBuildKind !== "release") cli.command(DevSetupCommand).command(DevAliasCommand)
     // Safe self-reference: `cli` is a typed parameter and yargs `.command()` returns the same
@@ -70,9 +71,16 @@ export namespace ChipMateCli {
     if (!process.env[ENV_VERSION]) process.env[ENV_VERSION] = InstallationVersion
     process.env.CHIPMATE = "1"
 
+    // History maintenance must snapshot the database before any normal bootstrap
+    // service opens or mutates it. The command owns its complete lifecycle.
+    const command = Array.isArray(opts?._) ? opts._[0] : undefined
+    if (command === "history") {
+      skipShutdown = true
+      return
+    }
+
     // Must run before AppRuntime initializes the SQLite database, or the marker
     // exists before legacy JSON can be imported.
-    await JsonMigration.bootstrap()
     await LegacyProductStateMigration.bootstrap()
 
     const cfg = await AppRuntime.runPromise(Config.Service.use((c) => c.getGlobal()))

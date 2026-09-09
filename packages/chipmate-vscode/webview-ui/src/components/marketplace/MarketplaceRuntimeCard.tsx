@@ -14,6 +14,7 @@ interface Props {
   server: MarketplaceServerState
   identity: MarketplaceIdentityState
   onVerify(): void
+  onLogout?(): void
   diagnostics?: JSX.Element
 }
 
@@ -60,6 +61,12 @@ export function MarketplaceRuntimeCard(props: Props) {
             <span class={`codicon codicon-${verifying() ? "loading" : "refresh"}`} aria-hidden="true" />
             {verifying() ? t("marketplace.runtime.verifying") : t("marketplace.runtime.reverify")}
           </Button>
+          <Show when={props.identity.status === "verified" && props.onLogout}>
+            <Button size="small" variant="ghost" onClick={() => props.onLogout?.()}>
+              <span class="codicon codicon-sign-out" aria-hidden="true" />
+              退出登录
+            </Button>
+          </Show>
           <Show when={props.diagnostics}>
             <Button size="small" variant="ghost" onClick={() => setOpen((value) => !value)}>
               <span class={`codicon codicon-chevron-${open() ? "up" : "down"}`} aria-hidden="true" />

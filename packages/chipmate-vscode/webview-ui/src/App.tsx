@@ -22,17 +22,23 @@ import { IndexingProvider } from "./context/indexing"
 import { AgentRequirementsProvider } from "./context/agent-requirements"
 import { MemoryProvider } from "./context/memory"
 import { SessionProvider, useSession } from "./context/session"
+import { ManualCompactionProvider } from "./context/manual-compaction"
 import { LocalTabsProvider, useLocalTabs } from "./context/local-tabs"
+import { SessionSurfaceProvider, useSessionSurface } from "./context/session-surface"
 import { LanguageBridge } from "./context/language-bridge"
 import { ChatView } from "./components/chat"
 import { SidebarEmptyState } from "./components/chat/SidebarEmptyState"
 import { registerExpandedTaskTool } from "./components/chat/TaskToolExpanded"
 import { registerVscodeToolOverrides } from "./components/chat/VscodeToolOverrides"
+import { registerUfsReviewTool } from "./components/chat/UfsReviewToolCard"
 import { SpeechToTextPrewarm } from "./components/speech-to-text/SpeechToTextPrewarm"
+import { DeepSeekHarnessProvider, useDeepSeekHarness } from "./context/deepseek-harness"
+import { requestAgentSelection } from "./components/shared/ModeSwitcher"
 
 // Override the upstream "task" tool renderer with the fully-expanded version
 // that shows child session parts inline in the VS Code sidebar.
 registerExpandedTaskTool()
+registerUfsReviewTool()
 // Apply VS Code sidebar preferences to other tools (e.g. bash expanded by default).
 registerVscodeToolOverrides()
 import HistoryView from "./components/history/HistoryView"
@@ -69,6 +75,7 @@ export const DataBridge: Component<{ children: any }> = (props) => {
   const vscode = useVSCode()
   const prov = useProvider()
   const server = useServer()
+  const surface = useSessionSurface()
 
   // Memos for fields that change infrequently (not per-token) — cheap and
   // avoids allocating a fresh array/object on every consumer read.
@@ -127,14 +134,17 @@ export const DataBridge: Component<{ children: any }> = (props) => {
   }
 
   const respond = (input: { sessionID: string; permissionID: string; response: "once" | "always" | "reject" }) => {
+    if (!surface.canMutate()) return
     session.respondToPermission(input.permissionID, input.response, [], [])
   }
 
   const reply = (input: { requestID: string; answers: string[][] }) => {
+    if (!surface.canMutate()) return
     session.replyToQuestion(input.requestID, input.answers)
   }
 
   const reject = (input: { requestID: string }) => {
+    if (!surface.canMutate()) return
     session.rejectQuestion(input.requestID)
   }
 
@@ -202,7 +212,13 @@ export const DataBridge: Component<{ children: any }> = (props) => {
       onOpenUrl={openUrl}
       onOpenContent={openContent}
       onValidateFiles={validateFiles}
-      onNavigateToSession={(id) => session.selectSession(id)}
+      onNavigateToSession={(id) => {
+        if (surface.kind() === "main-editor") {
+          vscode.postMessage({ type: "sessionSurface.openMain", key: { kind: "session", id } })
+          return
+        }
+        session.selectSession(id)
+      }}
     >
       {props.children}
     </DataProvider>
@@ -263,10 +279,19 @@ const AppContent: Component = () => {
   const tabs = useLocalTabs()
   const server = useServer()
   const vscode = useVSCode()
+  const dsh = useDeepSeekHarness()
+  const surface = useSessionSurface()
 
   const handleViewAction = (action: string) => {
     switch (action) {
       case "plusButtonClicked": {
+        if (surface.kind() === "main-editor") {
+          vscode.postMessage({
+            type: "sessionSurface.openMain",
+            key: { kind: "draft", id: `main-pending:${crypto.randomUUID()}` },
+          })
+          break
+        }
         const chat = currentView() === "newTask"
         if (chat) window.dispatchEvent(new CustomEvent("newTaskRequest"))
         if (!chat && tabs) tabs.add()
@@ -303,20 +328,42 @@ const AppContent: Component = () => {
   const cycleAgent = (direction: 1 | -1) => {
     const available = session.agents().filter((a) => a.mode !== "subagent" && !a.hidden)
     if (available.length <= 1) return
-    const current = session.selectedAgent()
+    const current = dsh.active() ? "deepseek-harness" : session.selectedAgent()
     const idx = available.findIndex((a) => a.name === current)
     const raw = idx + direction
     const next = raw < 0 ? available.length - 1 : raw >= available.length ? 0 : raw
     const agent = available[next]
-    if (agent) session.selectAgent(agent.name)
+    if (!agent) return
+    requestAgentSelection(agent.name)
   }
 
   const handleForked = (message: { type?: string; sessionID?: string; forkedFromID?: string }) => {
     if (message.type !== "sessionForked" || !message.sessionID) return
+    if (surface.kind() === "main-editor") {
+      vscode.postMessage({ type: "sessionSurface.openMain", key: { kind: "session", id: message.sessionID } })
+      setCurrentView("newTask")
+      return
+    }
     if (tabs && message.forkedFromID) tabs.openAfter(message.forkedFromID, message.sessionID)
     if (tabs && !message.forkedFromID) tabs.open(message.sessionID)
     if (!tabs) session.selectSession(message.sessionID)
     setCurrentView("newTask")
+  }
+
+  const [forkState, setForkState] = createSignal<{
+    sessionID: string
+    afterMessageID?: string
+    state: "pending" | "slow"
+  }>()
+  const handleForkState = (message: {
+    type?: string
+    sessionID?: string
+    afterMessageID?: string
+    state?: string
+  }) => {
+    if (message.type !== "sessionForkState" || !message.sessionID) return
+    if (message.state !== "pending" && message.state !== "slow") return setForkState(undefined)
+    setForkState({ sessionID: message.sessionID, afterMessageID: message.afterMessageID, state: message.state })
   }
 
   const handleChipMateModel = (message: { type?: string }) => {
@@ -344,6 +391,7 @@ const AppContent: Component = () => {
         setCurrentView("newTask")
       }
       handleChipMateModel(message)
+      handleForkState(message)
       handleForked(message)
       if (message?.type === "viewSubAgentSession" && message.sessionID) {
         console.log("[ChipMate New] App: 🔍 viewSubAgentSession:", message.sessionID)
@@ -356,13 +404,20 @@ const AppContent: Component = () => {
   })
 
   const handleSelectSession = (id: string) => {
+    if (surface.kind() === "main-editor") {
+      vscode.postMessage({ type: "sessionSurface.openMain", key: { kind: "session", id } })
+      setCurrentView("newTask")
+      return
+    }
     if (tabs) tabs.open(id)
     if (!tabs) session.selectSession(id)
     setCurrentView("newTask")
   }
 
   const handleForkMessage = (sessionId: string, messageId: string) => {
-    vscode.postMessage({ type: "forkSession", sessionId, messageId })
+    if (forkState()?.sessionID === sessionId) return
+    setForkState({ sessionID: sessionId, afterMessageID: messageId, state: "pending" })
+    vscode.postMessage({ type: "forkSession", sessionId, afterMessageId: messageId })
   }
 
   const emptyState = () => (
@@ -375,7 +430,8 @@ const AppContent: Component = () => {
         fallback={
           <ChatView
             continueInWorktree
-            onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+            onForkMessage={handleForkMessage}
+            forkState={forkState()}
             promptBoxId="sidebar:fallback"
             emptyState={emptyState}
           />
@@ -384,7 +440,8 @@ const AppContent: Component = () => {
         <Match when={currentView() === "newTask"}>
           <ChatView
             onSelectSession={handleSelectSession}
-            onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+            onForkMessage={handleForkMessage}
+            forkState={forkState()}
             continueInWorktree
             promptBoxId="sidebar:new-task"
             emptyState={emptyState}
@@ -394,7 +451,11 @@ const AppContent: Component = () => {
           <HistoryView onSelectSession={handleSelectSession} onBack={() => setCurrentView("newTask")} />
         </Match>
         <Match when={currentView() === "profile"}>
-          <ProfileView profileData={server.profileData()} deviceAuth={server.deviceAuth()} onLogin={server.startLogin} />
+          <ProfileView
+            profileData={server.profileData()}
+            deviceAuth={server.deviceAuth()}
+            onLogin={server.startLogin}
+          />
         </Match>
         <Match when={currentView() === "settings"}>
           <Settings
@@ -417,50 +478,56 @@ const App: Component = () => {
     <ThemeProvider defaultTheme="chipmate-vscode">
       <DialogProvider>
         <VSCodeProvider>
-          <MermaidDownloadBridge />
-          <PlantUmlBridge />
-          <ServerProvider>
-            <LanguageBridge>
-              <MarkedProvider>
-                <DiffComponentProvider component={Diff}>
-                  <CodeComponentProvider component={Code}>
-                    <FileComponentProvider component={File}>
-                      <ProviderProvider>
-                        <ConfigProvider>
-                          <SpeechToTextPrewarm />
-                          <DisplayProvider>
-                            <WorkStyleProvider>
-                              <IndexingProvider>
-                                <ChipMateEmbeddingModelsProvider>
-                                  <ImageModelsProvider>
-                                    <NotificationsProvider>
-                                      <SessionProvider>
-                                        <LocalTabsProvider>
-                                          <AgentRequirementsProvider>
-                                            <MemoryProvider>
-                                              <FeedbackProvider>
-                                                <DataBridge>
-                                                  <AppContent />
-                                                </DataBridge>
-                                              </FeedbackProvider>
-                                            </MemoryProvider>
-                                          </AgentRequirementsProvider>
-                                        </LocalTabsProvider>
-                                      </SessionProvider>
-                                    </NotificationsProvider>
-                                  </ImageModelsProvider>
-                                </ChipMateEmbeddingModelsProvider>
-                              </IndexingProvider>
-                            </WorkStyleProvider>
-                          </DisplayProvider>
-                        </ConfigProvider>
-                      </ProviderProvider>
-                    </FileComponentProvider>
-                  </CodeComponentProvider>
-                </DiffComponentProvider>
-              </MarkedProvider>
-            </LanguageBridge>
-          </ServerProvider>
+          <SessionSurfaceProvider>
+            <MermaidDownloadBridge />
+            <PlantUmlBridge />
+            <ServerProvider>
+              <LanguageBridge>
+                <MarkedProvider>
+                  <DiffComponentProvider component={Diff}>
+                    <CodeComponentProvider component={Code}>
+                      <FileComponentProvider component={File}>
+                        <ProviderProvider>
+                          <DeepSeekHarnessProvider>
+                            <ConfigProvider>
+                              <SpeechToTextPrewarm />
+                              <DisplayProvider>
+                                <WorkStyleProvider>
+                                  <IndexingProvider>
+                                    <ChipMateEmbeddingModelsProvider>
+                                      <ImageModelsProvider>
+                                        <NotificationsProvider>
+                                          <SessionProvider>
+                                            <ManualCompactionProvider>
+                                              <LocalTabsProvider>
+                                                <AgentRequirementsProvider>
+                                                  <MemoryProvider>
+                                                    <FeedbackProvider>
+                                                      <DataBridge>
+                                                        <AppContent />
+                                                      </DataBridge>
+                                                    </FeedbackProvider>
+                                                  </MemoryProvider>
+                                                </AgentRequirementsProvider>
+                                              </LocalTabsProvider>
+                                            </ManualCompactionProvider>
+                                          </SessionProvider>
+                                        </NotificationsProvider>
+                                      </ImageModelsProvider>
+                                    </ChipMateEmbeddingModelsProvider>
+                                  </IndexingProvider>
+                                </WorkStyleProvider>
+                              </DisplayProvider>
+                            </ConfigProvider>
+                          </DeepSeekHarnessProvider>
+                        </ProviderProvider>
+                      </FileComponentProvider>
+                    </CodeComponentProvider>
+                  </DiffComponentProvider>
+                </MarkedProvider>
+              </LanguageBridge>
+            </ServerProvider>
+          </SessionSurfaceProvider>
         </VSCodeProvider>
         <Toast.Region />
       </DialogProvider>

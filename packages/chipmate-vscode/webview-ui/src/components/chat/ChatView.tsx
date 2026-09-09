@@ -5,6 +5,8 @@
  * Main chat container that combines all chat components
  */
 
+import { TurnChangesProvider } from "../../context/turn-changes"
+import { TurnChangesDock } from "./TurnChangesDock"
 import { type Component, type JSX, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { Button } from "@chipmate/chipmate-ui/button"
 import { Icon } from "@chipmate/chipmate-ui/icon"
@@ -32,11 +34,17 @@ import { TranscriptSearchProvider } from "../../context/transcript-search"
 import { isPromptBlocked, isSuggesting, isQuestioning } from "./prompt-input-utils"
 import { showTabStrip } from "../../utils/local-tabs"
 import { canUseSidebarSessionActions } from "../../utils/internal-offline-ui"
+import { useDeepSeekHarness } from "../../context/deepseek-harness"
+import { DeepSeekHarnessComposer, DeepSeekHarnessConversation } from "../deepseek-harness/DeepSeekHarnessConversation"
+import { DeepSeekHarnessTaskHeader } from "../deepseek-harness/DeepSeekHarnessTaskHeader"
+import { useSessionSurface } from "../../context/session-surface"
+import type { SessionSurfacePhase } from "../../../../src/shared/session-surface"
 
 interface ChatViewProps {
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
   onForkMessage?: (sessionId: string, messageId: string) => void
+  forkState?: { sessionID: string; afterMessageID?: string; state: "pending" | "slow" }
   onForkSession?: (sessionId: string) => void
   readonly?: boolean
   /** When true, show the "Continue in Worktree" button. Defaults to true in the sidebar. */
@@ -54,8 +62,11 @@ export const ChatView: Component<ChatViewProps> = (props) => {
   const server = useServer()
   const tabs = useLocalTabs()
   const requirements = useAgentRequirements()
+  const deepSeekHarness = useDeepSeekHarness()
+  const surface = useSessionSurface()
   // Show "Show Changes" only in the standalone sidebar, not inside Agent Manager
-  const isSidebar = () => worktreeMode === undefined
+  const isSidebar = () => surface.kind() === "sidebar" && worktreeMode === undefined
+  const readonly = () => props.readonly === true || !surface.canMutate()
   const pendingSessionID = () => props.pendingSessionID ?? tabs?.pending()
   // Show "Continue in Worktree": only when explicitly enabled via prop
   const canContinueInWorktree = () => props.continueInWorktree === true
@@ -85,18 +96,19 @@ export const ChatView: Component<ChatViewProps> = (props) => {
   const permissionRequest = () => familyPermissions().find((p) => p.sessionID === id()) ?? familyPermissions()[0]
   // Questions and suggestions do not block input; permissions and agent requirements do.
   // Pending questions and suggestions are auto-dismissed in sendMessage/sendCommand.
-  const blocked = () => isPromptBlocked(familyPermissions().length) || (!props.readonly && requirements.blocked())
+  const blocked = () => isPromptBlocked(familyPermissions().length) || (!readonly() && requirements.blocked())
   const requirementReason = () =>
-    !props.readonly && requirements.blocked() ? language.t("agentRequirements.prompt.blocked") : undefined
+    !readonly() && requirements.blocked() ? language.t("agentRequirements.prompt.blocked") : undefined
   // Session is busy only because a suggestion tool call is pending — prompt should behave as idle
   const suggesting = () => isSuggesting(blocked(), familySuggestions().length)
   // Session is busy only because a question tool call is pending — prompt should behave as idle
   const questioning = () => isQuestioning(blocked(), familyQuestions().length)
-  const dock = () => !props.readonly || !!permissionRequest()
+  const dock = () => !readonly() || !!permissionRequest()
 
   onMount(() => {
     if (props.readonly) return
     const handler = (e: KeyboardEvent) => {
+      if (readonly()) return
       if (e.key !== "Escape" || (!session.submitting() && session.status() === "idle") || e.defaultPrevented) return
       e.preventDefault()
       session.abort()
@@ -161,7 +173,16 @@ export const ChatView: Component<ChatViewProps> = (props) => {
     return request
   }
 
-  const startSession = () => window.dispatchEvent(new CustomEvent("newTaskRequest"))
+  const startSession = () => {
+    if (surface.kind() === "main-editor") {
+      vscode.postMessage({
+        type: "sessionSurface.openMain",
+        key: { kind: "draft", id: `main-pending:${crypto.randomUUID()}` },
+      })
+      return
+    }
+    window.dispatchEvent(new CustomEvent("newTaskRequest"))
+  }
 
   const fork = () => {
     const sid = id()
@@ -354,28 +375,44 @@ export const ChatView: Component<ChatViewProps> = (props) => {
   )
 
   return (
+    <TurnChangesProvider enabled={!deepSeekHarness.active()}>
     <TranscriptSearchProvider>
-      <div class="chat-view" data-ui="qa-shell">
+      <div
+        class="chat-view"
+        classList={{ "chat-view--surface-deleted": surface.state()?.phase === "deleted" }}
+        data-ui="qa-shell"
+      >
         <Show when={isSidebar() && !props.readonly && tabs && showTabStrip(tabs.ids())}>
           <SessionTabStrip />
         </Show>
-        <TaskHeader readonly={props.readonly} />
+        <Show when={deepSeekHarness.active()} fallback={<TaskHeader readonly={readonly()} navigation={!readonly()} />}>
+          <DeepSeekHarnessTaskHeader />
+        </Show>
+        <SessionSurfaceBanner readonly={props.readonly === true} />
         <div class="chat-messages-wrapper" data-ui="qa-conversation">
           <div class="chat-messages">
             <Show
-              when={!props.readonly && requirements.visible()}
+              when={!readonly() && !deepSeekHarness.active() && requirements.visible()}
               fallback={
-                <MessageList
-                  onSelectSession={props.onSelectSession}
-                  onShowHistory={props.onShowHistory}
-                  onForkMessage={props.onForkMessage}
-                  questions={standaloneQuestions}
-                  suggestions={standaloneSuggestions}
-                  readonly={props.readonly}
-                  emptyState={props.emptyState}
-                  announce={isSidebar()}
-                  sessionID={pendingSessionID}
-                />
+                <Show
+                  when={deepSeekHarness.active()}
+                  fallback={
+                    <MessageList
+                      onSelectSession={props.onSelectSession}
+                      onShowHistory={props.onShowHistory}
+                      onForkMessage={props.onForkMessage}
+                      forkState={props.forkState}
+                      questions={standaloneQuestions}
+                      suggestions={standaloneSuggestions}
+                      readonly={readonly()}
+                      emptyState={props.emptyState}
+                      announce={isSidebar()}
+                      sessionID={pendingSessionID}
+                    />
+                  }
+                >
+                  <DeepSeekHarnessConversation />
+                </Show>
               }
             >
               <AgentRequirements />
@@ -385,48 +422,131 @@ export const ChatView: Component<ChatViewProps> = (props) => {
 
         <Show when={dock()}>
           <div class="chat-input" data-ui="qa-dock">
-            <PermissionDialogController
-              request={highRiskPermission}
-              responding={(permissionId) => session.respondingPermissions().has(permissionId)}
-              onDecide={decide}
-              onEdit={edit}
-            />
-            <Show when={server.connectionState() === "error" && server.errorMessage()}>
-              <StartupErrorBanner errorMessage={server.errorMessage()!} errorDetails={server.errorDetails()!} />
-            </Show>
-            <Show
-              when={
-                permissionRequest() && permissionPresentation(permissionRequest()!) === "standard"
-                  ? permissionRequest()
-                  : undefined
-              }
-              keyed
-            >
-              {(perm) => (
-                <PermissionDock
-                  request={perm}
-                  responding={session.respondingPermissions().has(perm.id)}
-                  onDecide={decide}
-                  onEdit={() => edit(perm)}
-                />
-              )}
-            </Show>
-            <Show when={!props.readonly && idle() && !blocked() && hasActions(hasMessages())}>
-              {renderActions(hasMessages())}
-            </Show>
-            <Show when={!props.readonly}>
-              <PromptInput
-                blocked={blocked}
-                blockedReason={requirementReason}
-                suggesting={suggesting}
-                questioning={questioning}
-                boxId={props.promptBoxId}
-                pendingSessionID={pendingSessionID()}
+            <Show when={!deepSeekHarness.active()}>
+              <PermissionDialogController
+                request={() => (readonly() ? undefined : highRiskPermission())}
+                responding={(permissionId) => session.respondingPermissions().has(permissionId)}
+                onDecide={decide}
+                onEdit={edit}
               />
+              <Show when={server.connectionState() === "error" && server.errorMessage()}>
+                <StartupErrorBanner errorMessage={server.errorMessage()!} errorDetails={server.errorDetails()!} />
+              </Show>
+              <Show
+                when={
+                  !readonly() && permissionRequest() && permissionPresentation(permissionRequest()!) === "standard"
+                    ? permissionRequest()
+                    : undefined
+                }
+                keyed
+              >
+                {(perm) => (
+                  <PermissionDock
+                    request={perm}
+                    responding={session.respondingPermissions().has(perm.id)}
+                    onDecide={decide}
+                    onEdit={() => edit(perm)}
+                  />
+                )}
+              </Show>
+              <Show when={!readonly() && idle() && !blocked() && hasActions(hasMessages())}>
+                {renderActions(hasMessages())}
+              </Show>
+              <Show when={!readonly() && !deepSeekHarness.active()}>
+                <TurnChangesDock />
+                <PromptInput
+                  blocked={blocked}
+                  blockedReason={requirementReason}
+                  suggesting={suggesting}
+                  questioning={questioning}
+                  boxId={props.promptBoxId}
+                  pendingSessionID={pendingSessionID()}
+                />
+              </Show>
+            </Show>
+            <Show when={!readonly() && deepSeekHarness.active()}>
+              <DeepSeekHarnessComposer />
             </Show>
           </div>
         </Show>
       </div>
     </TranscriptSearchProvider>
+    </TurnChangesProvider>
   )
+}
+
+type SurfaceStatusKey =
+  | "session.surface.status.disconnected"
+  | "session.surface.status.opening"
+  | "session.surface.status.returning"
+  | "session.surface.status.restoring"
+  | "session.surface.status.deleted"
+  | "session.surface.owner.main"
+  | "session.surface.mirror"
+
+const SessionSurfaceBanner: Component<{ readonly: boolean }> = (props) => {
+  const surface = useSessionSurface()
+  const server = useServer()
+  const language = useLanguage()
+  const mirrored = () =>
+    !props.readonly && !!surface.state() && !surface.canMutate() && surface.state()?.phase !== "deleted"
+  const visible = () => surface.kind() === "main-editor" || mirrored()
+  const status = () =>
+    language.t(
+      surfaceStatusKey(
+        surface.kind() === "main-editor" && surface.state()?.phase === "sidebar"
+          ? "opening-main"
+          : surface.state()?.phase,
+        surface.canMutate(),
+        server.connectionState() === "error",
+      ),
+    )
+  return (
+    <>
+      <Show when={visible()}>
+        <div class="session-surface-bar" data-phase={surface.state()?.phase}>
+          <span class="session-surface-status" role="status" aria-live="polite">
+            <Icon name={surface.canMutate() ? "check" : "eye"} size="small" />
+            {status()}
+          </span>
+          <div class="session-surface-actions">
+            <Show when={mirrored()}>
+              <Button variant="ghost" size="small" onClick={surface.focusOwner}>
+                {language.t("session.surface.focusMain")}
+              </Button>
+            </Show>
+            <Show when={surface.state()?.phase !== "deleted"}>
+              <Button
+                variant="secondary"
+                size="small"
+                disabled={surface.state()?.phase === "returning-sidebar"}
+                onClick={surface.returnToSidebar}
+              >
+                {language.t("session.surface.returnSidebar")}
+              </Button>
+            </Show>
+          </div>
+        </div>
+      </Show>
+      <Show when={surface.state()?.phase === "deleted"}>
+        <div class="session-surface-deleted" role="status">
+          <strong>{language.t("session.surface.deleted.title")}</strong>
+          <span>{language.t("session.surface.deleted.detail")}</span>
+        </div>
+      </Show>
+    </>
+  )
+}
+
+function surfaceStatusKey(
+  phase: SessionSurfacePhase | undefined,
+  canMutate: boolean,
+  disconnected: boolean,
+): SurfaceStatusKey {
+  if (disconnected) return "session.surface.status.disconnected"
+  if (phase === "opening-main") return "session.surface.status.opening"
+  if (phase === "returning-sidebar") return "session.surface.status.returning"
+  if (phase === "restoring") return "session.surface.status.restoring"
+  if (phase === "deleted") return "session.surface.status.deleted"
+  return canMutate ? "session.surface.owner.main" : "session.surface.mirror"
 }

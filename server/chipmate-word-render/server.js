@@ -65,6 +65,14 @@ const server = http.createServer(async (request, response) => {
       await handleRenderWord(request, response)
       return
     }
+    if (request.method === "POST" && request.url === "/convert/word-to-images") {
+      await require("./word-to-images").handleWordToImages(request, response, {
+        readBody, send: sendJson, command: commandPath, environment: wordRenderEnvironment,
+        maxDocxBytes: MAX_DOCX_BYTES, timeoutMs: RENDER_TIMEOUT_MS, maxPdfBytes: MAX_RENDER_PDF_BYTES,
+        maxPageBytes: MAX_RESPONSE_PAGE_BYTES, maxTotalBytes: MAX_RENDER_PAGE_TOTAL_BYTES, maxResponseBytes: MAX_RENDER_RESPONSE_BYTES,
+      })
+      return
+    }
     if (request.method === "POST" && request.url === "/render/mermaid") {
       await handleRenderMermaid(request, response)
       return
@@ -74,7 +82,7 @@ const server = http.createServer(async (request, response) => {
       return
     }
     if (request.method === "POST" && request.url === "/auth/new-api/resolve-user") {
-      await handleResolveNewApiUser(request, response)
+      sendClientUpgrade(response)
       return
     }
     if (request.method === "GET" && request.url === "/packages/manifest.json") {
@@ -86,7 +94,7 @@ const server = http.createServer(async (request, response) => {
       return
     }
     if (request.method === "POST" && request.url === "/marketplace/skills") {
-      await handleSkillMarketUpload(request, response)
+      sendClientUpgrade(response)
       return
     }
     if (request.method === "GET" && request.url === "/marketplace/manifest.json") {
@@ -98,7 +106,7 @@ const server = http.createServer(async (request, response) => {
       return
     }
     if (request.method === "POST" && request.url && /^\/marketplace\/skills\/[^/]+\/stars(?:\?|$)/.test(request.url)) {
-      await handleSkillMarketStar(request, response)
+      sendClientUpgrade(response)
       return
     }
     if (request.method === "GET" && request.url && request.url.startsWith("/marketplace/skills/")) {
@@ -1337,6 +1345,14 @@ async function handleResolveNewApiUser(request, response) {
   )
 }
 
+function sendClientUpgrade(response) {
+  sendJson(response, 410, {
+    ok: false,
+    code: "client-upgrade-required",
+    message: "New API 身份认证已停用，请升级客户端并使用 ChipMate Server LDAP 登录。",
+  })
+}
+
 async function handleSkillMarketSkills(request, response) {
   const catalog = await generateSkillMarketCatalog(SKILL_MARKET_ROOT, requestOrigin(request))
   sendJson(response, 200, catalog)
@@ -1871,12 +1887,12 @@ function requireManifestString(value, field) {
 }
 
 function healthPayload() {
-  const tokenResolverConfig = readNewApiResolverConfig()
   const skillMarketStatus = skillMarketHealthStatus()
   return {
     ok: true,
     service: "chipmate-word-render",
     endpoints: [
+      "/convert/word-to-images",
       "/render/word",
       "/render/mermaid",
       "/render/plantuml",
@@ -1942,16 +1958,13 @@ function healthPayload() {
         filesEndpoint: "/marketplace/skills/<skill-id>/files",
         uploadEndpoint: "/marketplace/skills",
         starsEndpoint: "/marketplace/skills/<skill-id>/stars",
-        writable: true,
+        writable: false,
         metrics: ["downloadCount", "stars"],
       },
-      newApiTokenResolver: {
+      legacyAuthentication: {
         endpoint: "/auth/new-api/resolve-user",
-        enabled: tokenResolverConfig.enabled,
-        baseUrlConfigured: Boolean(tokenResolverConfig.baseUrl),
-        adminAccessTokenConfigured: Boolean(tokenResolverConfig.adminAccessToken),
-        userIdConfigured: Boolean(tokenResolverConfig.userId),
-        tokenNameSuffix: tokenResolverConfig.tokenNameSuffix,
+        deprecated: true,
+        status: 410,
       },
     },
   }

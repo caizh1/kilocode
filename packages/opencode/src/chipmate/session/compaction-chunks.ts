@@ -1,41 +1,101 @@
-import { Effect } from "effect"
+import { Effect, Semaphore } from "effect"
 import type { Agent } from "@/agent/agent"
 import type { Config } from "@/config/config"
 import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import type { LLM } from "@/session/llm"
 import { MessageV2 } from "@/session/message-v2"
-import { usable } from "@/session/overflow"
 import type { SessionProcessor } from "@/session/processor"
 import { MessageID, PartID, type SessionID } from "@/session/schema"
 import type { Session } from "@/session/session"
 import { Token } from "@/util/token"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database } from "@opencode-ai/core/database/database"
+import { ChipMateCompactionDiagnostics } from "./compaction-diagnostics"
 
 type Update = <T extends MessageV2.Part>(part: T) => Effect.Effect<T>
 type UpdateMessage = <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
 
 const log = Log.create({ service: "chipmate.compaction.chunks" })
 const TOOL_OUTPUT_MAX_CHARS = 2_000
-const TRANSCRIPT_MAX_CHARS = 16_000
+const TRANSCRIPT_FRAGMENT_CHARS = 8_000
 const RATIO = 0.6
 const CHUNK_TOKENS = 48_000
 const CONCURRENCY = 3
 const DEPTH = 3
-const OUTPUT = 2_048
+const ESTIMATE_RATIO = 1.3
+const OUTPUT_SAFETY = 2_048
+const MIN_OUTPUT = 1_024
 
 export namespace ChipMateCompactionChunks {
+  export type Stage = "full" | "chunk" | "reduce" | "replay"
+  export type AttemptMode = "selected" | "none"
+
+  export type Attempt = {
+    attempt: 1 | 2
+    mode: AttemptMode
+    selectedVariant?: string
+    effectiveVariant?: string
+  }
+
+  export type Progress = {
+    attempt: 1 | 2
+    attemptMode: AttemptMode
+    phase: "chunk" | "reduce" | "replay"
+    completedUnits: number
+    totalUnits: number
+    reduceDepth?: number
+    activity?: "splitting"
+  }
+
+  export type AttemptResult<T = string> =
+    | { kind: "success"; value: T }
+    | {
+        kind: "reasoning_exhausted"
+        stage: Stage
+        finish: "length"
+        textChars: number
+        reasoningChars: number
+      }
+    | {
+        kind: "context_overflow"
+        stage?: Stage
+        rejectionReason?: "input_limit" | "unknown_capacity_cap" | "insufficient_headroom" | "minimal_unit"
+        error?: MessageV2.Assistant["error"]
+      }
+    | { kind: "incomplete"; error: MessageV2.Assistant["error"] }
+    | { kind: "failure"; error: MessageV2.Assistant["error"] }
+
+  export function retryWithoutThinking(input: AttemptResult<unknown>) {
+    return input.kind === "reasoning_exhausted" || input.kind === "context_overflow" || input.kind === "incomplete"
+  }
+
   type Chunk = {
     index: number
     messages: MessageV2.WithParts[]
   }
 
-  type Output = {
-    result: SessionProcessor.Result
-    output: string | undefined
-    error: MessageV2.Assistant["error"]
+  type Atom = {
+    prefix: string
+    content: string
+    suffix: string
+    splitDepth: number
   }
+
+  type Prepared = {
+    kind: "prepared"
+    atoms: Atom[]
+    data: LLM.StreamInput["messages"]
+    text: string
+    estimatedInputTokens: number
+    inputBudget: number
+    requestedOutputTokenLimit: number
+    effectiveOutputTokenLimit: number
+    capacityKnown: boolean
+    splitDepth: number
+  }
+
+  type Output = AttemptResult
 
   type Deps = {
     processors: SessionProcessor.Interface
@@ -52,11 +112,14 @@ export namespace ChipMateCompactionChunks {
     prompt: string
     target: MessageV2.Assistant
     outputTokenMax?: number
+    billing?: { baseURL: unknown; apiKey: unknown }
+    attempt: Attempt
     updateMessage: UpdateMessage
     updatePart: Update
+    onProgress?: (progress: Progress) => Effect.Effect<void>
   }
 
-  type Replay = {
+  export type Replay = {
     info: MessageV2.User
     parts: MessageV2.Part[]
   }
@@ -67,60 +130,133 @@ export namespace ChipMateCompactionChunks {
   }
 
   export function needed(input: { cfg: Config.Info; model: Provider.Model; tokens: number; outputTokenMax?: number }) {
-    const mdl = model(input.model, input.outputTokenMax)
-    // Apply 1.3x multiplier to token estimate to compensate for Token.estimate
-    // under-counting actual provider tokenizer counts by ~15-30%.
-    return (
-      Math.ceil(input.tokens * 1.3) + mdl.limit.output >
-      usable({ cfg: input.cfg, model: mdl, outputTokenMax: input.outputTokenMax })
-    )
+    const estimated = adjustedTokens(input.tokens)
+    const requested = ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax)
+    const context = input.model.limit.context
+    const limit = input.model.limit.input
+    if (limit && estimated > limit) return true
+    if (!context) return estimated > budget(input)
+    return estimated + requested + OUTPUT_SAFETY > context
   }
 
-  export function replay(input: Input & { replay: Replay }) {
+  export function replay(
+    input: Input & { replay: Replay },
+  ): Effect.Effect<AttemptResult<Replay>, never, Database.Service> {
     return Effect.gen(function* () {
-      const chunk: Chunk = {
-        index: 0,
-        messages: [{ info: input.replay.info, parts: input.replay.parts }],
-      }
+      const messages = [{ info: input.replay.info, parts: input.replay.parts }]
       const size = budget({ cfg: input.cfg, model: input.model, outputTokenMax: input.outputTokenMax })
-      if (!(yield* large({ messages: chunk.messages, model: input.model, size }))) return input.replay
-      const result = yield* summarize({ ...input, chunk, total: 1 })
-      if (result.result !== "continue" || !result.output) return input.replay
+      if (!(yield* large({ messages, model: input.model, size }))) {
+        return { kind: "success", value: input.replay } as const
+      }
+      const planned = yield* plan({
+        ...input,
+        atoms: atoms({ messages }),
+        stage: "replay",
+        final: "Create one compact representation of the replayed user request. Preserve every concrete requirement.",
+      })
+      if (planned.kind !== "success") return planned
+      const partial = yield* execute({ ...input, prepared: planned.value, stage: "replay" })
+      if (partial.kind !== "success") return partial
+      const result = yield* reduce({
+        ...input,
+        summaries: partial.value,
+        depth: 0,
+        final: "Create one compact representation of the replayed user request. Preserve every concrete requirement.",
+      })
+      if (result.kind !== "success") return result
       return {
-        info: input.replay.info,
-        parts: [
-          {
-            id: PartID.ascending(),
-            messageID: input.replay.info.id,
-            sessionID: input.sessionID,
-            type: "text" as const,
-            synthetic: true,
-            text: [
-              "The original replayed request was too large to send after compaction.",
-              "Use this compacted representation of that request instead:",
-              result.output,
-            ].join("\n\n"),
-          },
-        ],
-      } satisfies Replay
+        kind: "success",
+        value: {
+          info: input.replay.info,
+          parts: [
+            {
+              id: PartID.ascending(),
+              messageID: input.replay.info.id,
+              sessionID: input.sessionID,
+              type: "text" as const,
+              synthetic: true,
+              text: [
+                "The original replayed request was too large to send after compaction.",
+                "Use this compacted representation of that request instead:",
+                result.value,
+              ].join("\n\n"),
+            },
+          ],
+        },
+      } as const
     })
   }
 
   export function budget(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
-    const mdl = model(input.model, input.outputTokenMax)
-    const available = Math.floor(usable({ cfg: input.cfg, model: mdl, outputTokenMax: input.outputTokenMax }) * RATIO)
-    return Math.max(1_000, Math.min(available, CHUNK_TOKENS))
+    const windows = [input.model.limit.context, input.model.limit.input].filter(
+      (value): value is number => typeof value === "number" && value > 0,
+    )
+    if (windows.length === 0) return CHUNK_TOKENS
+    return Math.max(1, Math.min(Math.floor(Math.min(...windows) * RATIO), CHUNK_TOKENS))
   }
 
-  function model(input: Provider.Model, outputTokenMax?: number) {
-    const cap = Math.min(OUTPUT, outputTokenMax ?? OUTPUT)
+  function model(input: Provider.Model, output: number) {
     return {
       ...input,
       limit: {
         ...input.limit,
-        output: ProviderTransform.maxOutputTokens(input, cap),
+        output,
       },
     } satisfies Provider.Model
+  }
+
+  export function adjustedTokens(tokens: number) {
+    return Math.ceil(tokens * ESTIMATE_RATIO)
+  }
+
+  export function outputBudget(input: {
+    model: Provider.Model
+    estimatedInputTokens: number
+    outputTokenMax?: number
+  }) {
+    const requestedOutputTokenLimit = ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax)
+    const context = input.model.limit.context
+    const limit = input.model.limit.input
+    const capacityKnown = context > 0 || !!limit
+    if (limit && input.estimatedInputTokens > limit) {
+      return {
+        kind: "context_overflow" as const,
+        requestedOutputTokenLimit,
+        capacityKnown,
+        rejectionReason: "input_limit" as const,
+      }
+    }
+    if (!context) {
+      if (!limit && input.estimatedInputTokens > CHUNK_TOKENS) {
+        return {
+          kind: "context_overflow" as const,
+          requestedOutputTokenLimit,
+          capacityKnown,
+          rejectionReason: "unknown_capacity_cap" as const,
+        }
+      }
+      return {
+        kind: "available" as const,
+        requestedOutputTokenLimit,
+        effectiveOutputTokenLimit: requestedOutputTokenLimit,
+        capacityKnown,
+      }
+    }
+    const available = context - input.estimatedInputTokens - OUTPUT_SAFETY
+    if (available < Math.min(MIN_OUTPUT, requestedOutputTokenLimit)) {
+      return {
+        kind: "context_overflow" as const,
+        requestedOutputTokenLimit,
+        capacityKnown,
+        rejectionReason: "insufficient_headroom" as const,
+      }
+    }
+    return {
+      kind: "available" as const,
+      requestedOutputTokenLimit,
+      effectiveOutputTokenLimit: Math.min(requestedOutputTokenLimit, available),
+      capacityKnown,
+    }
   }
 
   function large(input: { messages: MessageV2.WithParts[]; model: Provider.Model; size: number }) {
@@ -133,7 +269,7 @@ export namespace ChipMateCompactionChunks {
         stripMedia: true,
         toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
       })
-      return Token.estimate(JSON.stringify(msgs))
+      return adjustedTokens(Token.estimate(JSON.stringify(msgs)))
     })
   }
 
@@ -165,20 +301,87 @@ export namespace ChipMateCompactionChunks {
       .trim()
   }
 
+  function reasoning(parts: MessageV2.Part[]) {
+    return parts
+      .filter((part): part is MessageV2.ReasoningPart => part.type === "reasoning")
+      .reduce((total, part) => total + part.text.length, 0)
+  }
+
+  export function inspect(input: {
+    result: SessionProcessor.Result
+    message: MessageV2.Assistant
+    parts: MessageV2.Part[]
+    error?: MessageV2.Assistant["error"]
+    stage: Stage
+  }): AttemptResult {
+    const output = text(input.message, input.parts)
+    const reasoningChars = reasoning(input.parts)
+    const error = input.error
+    if (error && error.name !== "ContextOverflowError") return { kind: "failure", error }
+    if (input.message.finish === "length") {
+      if (reasoningChars > 0) {
+        return {
+          kind: "reasoning_exhausted",
+          stage: input.stage,
+          finish: "length",
+          textChars: output.length,
+          reasoningChars,
+        }
+      }
+      return {
+        kind: "incomplete",
+        error: new MessageV2.APIError({
+          message: "Compaction response reached the output limit; incomplete summary was discarded",
+          isRetryable: false,
+        }).toObject(),
+      }
+    }
+    if (input.result === "compact" || error?.name === "ContextOverflowError") {
+      return { kind: "context_overflow", error }
+    }
+    if (input.result !== "continue") {
+      return {
+        kind: "incomplete",
+        error:
+          error ??
+          new MessageV2.APIError({
+            message: "Compaction worker stopped without a usable response",
+            isRetryable: false,
+          }).toObject(),
+      }
+    }
+    if (!input.message.finish) {
+      return {
+        kind: "incomplete",
+        error: new MessageV2.APIError({
+          message: "Compaction worker returned without a finish reason",
+          isRetryable: false,
+        }).toObject(),
+      }
+    }
+    if (!output) {
+      return {
+        kind: "incomplete",
+        error: new MessageV2.APIError({
+          message: "Compaction worker returned an empty response",
+          isRetryable: false,
+        }).toObject(),
+      }
+    }
+    return { kind: "success", value: output }
+  }
+
   function clip(input: { text: string; chars: number; label: string }) {
     if (input.text.length <= input.chars) return input.text
     const cut = input.text.length - input.chars
     return `${input.text.slice(0, input.chars)}\n[${input.label} truncated for compaction: omitted ${cut} chars]`
   }
 
-  function part(part: MessageV2.Part) {
-    if (part.type === "text") return clip({ text: part.text, chars: TRANSCRIPT_MAX_CHARS, label: "Text" })
-    if (part.type === "reasoning")
-      return `[Reasoning]: ${clip({ text: part.text, chars: TRANSCRIPT_MAX_CHARS, label: "Reasoning" })}`
-    if (part.type === "file") return `[File attachment]: ${part.filename ?? part.url} (${part.mime})`
+  function serialize(part: MessageV2.Part) {
+    if (part.type === "text" || part.type === "reasoning") return part.text
+    if (part.type === "file") return `[File attachment]: ${part.filename ?? "attachment"} (${part.mime})`
     if (part.type === "agent") return `[Agent]: ${part.name}`
-    if (part.type === "subtask")
-      return `[Subtask ${part.agent}]: ${part.description}\n${clip({ text: part.prompt, chars: TRANSCRIPT_MAX_CHARS, label: "Subtask prompt" })}`
+    if (part.type === "subtask") return `[Subtask ${part.agent}]: ${part.description}\n${part.prompt}`
     if (part.type === "tool") {
       const head = `[Tool ${part.tool} ${part.state.status}]`
       if (part.state.status === "completed") {
@@ -197,17 +400,51 @@ export namespace ChipMateCompactionChunks {
     return `[${part.type}]`
   }
 
-  function transcript(input: { messages: MessageV2.WithParts[] }) {
-    return input.messages
-      .map((msg, index) => {
-        const body = msg.parts.map(part).filter(Boolean).join("\n\n")
+  function fragments(value: string, chars = TRANSCRIPT_FRAGMENT_CHARS) {
+    if (!value) return [""]
+    const points = Array.from(value)
+    if (points.length <= chars) return [value]
+    const result: string[] = []
+    let offset = 0
+    while (points.length - offset > chars) {
+      const candidate = points.slice(offset, offset + chars).join("")
+      const paragraph = candidate.lastIndexOf("\n\n")
+      const newline = candidate.lastIndexOf("\n")
+      const boundary =
+        paragraph >= candidate.length / 2 ? paragraph + 2 : newline >= candidate.length / 2 ? newline + 1 : -1
+      const head = boundary > 0 ? candidate.slice(0, boundary) : candidate
+      result.push(head)
+      offset += Array.from(head).length
+    }
+    result.push(points.slice(offset).join(""))
+    return result
+  }
+
+  function atoms(input: { messages: MessageV2.WithParts[] }) {
+    return input.messages.flatMap((message, messageIndex) => {
+      if (!message.parts.length) {
         return [
-          `<message index=\"${index + 1}\" role=\"${msg.info.role}\">`,
-          body || "[no content]",
-          "</message>",
-        ].join("\n")
+          {
+            prefix: `<message index="${messageIndex + 1}" role="${message.info.role}">`,
+            content: "[no content]",
+            suffix: "</message>",
+            splitDepth: 0,
+          },
+        ]
+      }
+      return message.parts.flatMap((value, partIndex) => {
+        const pieces = fragments(serialize(value))
+        return pieces.map((piece, fragmentIndex) => ({
+          prefix: [
+            `<message index="${messageIndex + 1}" role="${message.info.role}" continuation="${fragmentIndex + 1}/${pieces.length}">`,
+            `<part index="${partIndex + 1}" type="${value.type}">`,
+          ].join("\n"),
+          content: piece,
+          suffix: ["</part>", "</message>"].join("\n"),
+          splitDepth: 0,
+        }))
       })
-      .join("\n\n")
+    })
   }
 
   function prompt(input: { chunk: Chunk; total: number }) {
@@ -219,16 +456,234 @@ export namespace ChipMateCompactionChunks {
     ].join("\n")
   }
 
-  function messages(input: { summaries: string[] }) {
-    return input.summaries.map((summary, index) => ({
-      role: "user" as const,
-      content: [
-        {
-          type: "text" as const,
-          text: [`<partial-summary index=\"${index + 1}\">`, summary, "</partial-summary>"].join("\n"),
-        },
-      ],
-    }))
+  function summaryAtoms(input: { summaries: string[] }) {
+    return input.summaries.flatMap((summary, index) =>
+      fragments(summary).map((piece, fragmentIndex, pieces) => ({
+        prefix: `<partial-summary index="${index + 1}" continuation="${fragmentIndex + 1}/${pieces.length}">`,
+        content: piece,
+        suffix: "</partial-summary>",
+        splitDepth: 0,
+      })),
+    )
+  }
+
+  function data(input: { atoms: Atom[] }) {
+    return [
+      {
+        role: "user" as const,
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              "The following transcript fragments preserve the original order and continuation markers.",
+              "Summarize only facts present in these fragments.",
+              "<conversation>",
+              input.atoms.map((atom) => [atom.prefix, atom.content, atom.suffix].join("\n")).join("\n\n"),
+              "</conversation>",
+            ].join("\n"),
+          },
+        ],
+      },
+    ] satisfies LLM.StreamInput["messages"]
+  }
+
+  function requestText(input: { stage: "chunk" | "reduce" | "replay"; index: number; total: number; final: string }) {
+    if (input.stage === "reduce") return input.final
+    return prompt({ chunk: { index: input.index, messages: [] }, total: input.total })
+  }
+
+  function prepare(
+    input: Input & {
+      atoms: Atom[]
+      stage: "chunk" | "reduce" | "replay"
+      index: number
+      total: number
+      final: string
+    },
+  ):
+    | Prepared
+    | {
+        kind: "context_overflow"
+        estimatedInputTokens: number
+        requestedOutputTokenLimit: number
+        capacityKnown: boolean
+        rejectionReason: "input_limit" | "unknown_capacity_cap" | "insufficient_headroom"
+      } {
+    const value = data({ atoms: input.atoms })
+    const text = requestText(input)
+    const request = [...value, { role: "user" as const, content: [{ type: "text" as const, text }] }]
+    const estimatedInputTokens = adjustedTokens(Token.estimate(JSON.stringify(request)))
+    const inputBudget = budget(input)
+    const available = outputBudget({ model: input.model, estimatedInputTokens, outputTokenMax: input.outputTokenMax })
+    if (available.kind === "context_overflow") {
+      return {
+        kind: "context_overflow",
+        estimatedInputTokens,
+        requestedOutputTokenLimit: available.requestedOutputTokenLimit,
+        capacityKnown: available.capacityKnown,
+        rejectionReason: available.rejectionReason,
+      }
+    }
+    if (estimatedInputTokens > inputBudget) {
+      return {
+        kind: "context_overflow",
+        estimatedInputTokens,
+        requestedOutputTokenLimit: available.requestedOutputTokenLimit,
+        capacityKnown: available.capacityKnown,
+        rejectionReason: available.capacityKnown ? "input_limit" : "unknown_capacity_cap",
+      }
+    }
+    return {
+      kind: "prepared",
+      atoms: input.atoms,
+      data: value,
+      text,
+      estimatedInputTokens,
+      inputBudget,
+      requestedOutputTokenLimit: available.requestedOutputTokenLimit,
+      effectiveOutputTokenLimit: available.effectiveOutputTokenLimit,
+      capacityKnown: available.capacityKnown,
+      splitDepth: Math.max(0, ...input.atoms.map((atom) => atom.splitDepth)),
+    }
+  }
+
+  function divide(atom: Atom) {
+    const points = Array.from(atom.content)
+    if (points.length <= 1) return undefined
+    const middle = Math.ceil(points.length / 2)
+    return [
+      {
+        prefix: `${atom.prefix}\n<subfragment continuation="1/2">`,
+        content: points.slice(0, middle).join(""),
+        suffix: `</subfragment>\n${atom.suffix}`,
+        splitDepth: atom.splitDepth + 1,
+      },
+      {
+        prefix: `${atom.prefix}\n<subfragment continuation="2/2">`,
+        content: points.slice(middle).join(""),
+        suffix: `</subfragment>\n${atom.suffix}`,
+        splitDepth: atom.splitDepth + 1,
+      },
+    ] satisfies Atom[]
+  }
+
+  function preflight(
+    input: Input & {
+      stage: "chunk" | "reduce" | "replay"
+      index?: number
+      total?: number
+      depth?: number
+      splitDepth: number
+      estimatedInputTokens: number
+      inputBudget: number
+      requestedOutputTokenLimit: number
+      effectiveOutputTokenLimit?: number
+      capacityKnown: boolean
+      requestDispatched: boolean
+      splitReason?: "local_preflight" | "provider_context_overflow"
+      rejectionReason?: "input_limit" | "unknown_capacity_cap" | "insufficient_headroom" | "minimal_unit"
+    },
+  ) {
+    return ChipMateCompactionDiagnostics.workerPreflight({
+      sessionID: input.sessionID,
+      compactionMessageID: input.target.id,
+      providerID: input.model.providerID,
+      modelID: input.model.id,
+      stage: input.stage,
+      chunkIndex: input.index,
+      chunkCount: input.total,
+      depth: input.depth,
+      splitDepth: input.splitDepth,
+      attempt: input.attempt.attempt,
+      attemptMode: input.attempt.mode,
+      estimatedInputTokens: input.estimatedInputTokens,
+      inputBudget: input.inputBudget,
+      requestedOutputTokenLimit: input.requestedOutputTokenLimit,
+      effectiveOutputTokenLimit: input.effectiveOutputTokenLimit,
+      capacityKnown: input.capacityKnown,
+      requestDispatched: input.requestDispatched,
+      splitReason: input.splitReason,
+      rejectionReason: input.rejectionReason,
+    })
+  }
+
+  function plan(input: Input & { atoms: Atom[]; stage: "chunk" | "reduce" | "replay"; final: string; depth?: number }) {
+    return Effect.sync(() => {
+      const source = [...input.atoms]
+      const groups: Atom[][] = []
+      let group: Atom[] = []
+      for (let index = 0; index < source.length; ) {
+        const atom = source[index]!
+        const candidate = [...group, atom]
+        const checked = prepare({ ...input, atoms: candidate, index: source.length - 1, total: source.length })
+        if (checked.kind === "prepared") {
+          group = candidate
+          index++
+          continue
+        }
+        if (group.length) {
+          groups.push(group)
+          group = []
+          continue
+        }
+        const parts = divide(atom)
+        log.warn(
+          "compaction_diag",
+          preflight({
+            ...input,
+            index: groups.length,
+            total: source.length,
+            splitDepth: atom.splitDepth,
+            estimatedInputTokens: checked.estimatedInputTokens,
+            inputBudget: budget(input),
+            requestedOutputTokenLimit: checked.requestedOutputTokenLimit,
+            capacityKnown: checked.capacityKnown,
+            requestDispatched: false,
+            splitReason: "local_preflight",
+            rejectionReason: parts ? checked.rejectionReason : "minimal_unit",
+          }),
+        )
+        if (!parts) {
+          return { kind: "context_overflow" as const, stage: input.stage, rejectionReason: "minimal_unit" as const }
+        }
+        source.splice(index, 1, ...parts)
+      }
+      if (group.length) groups.push(group)
+
+      for (;;) {
+        const prepared = groups.map((atoms, index) => prepare({ ...input, atoms, index, total: groups.length }))
+        const rejected = prepared.findIndex((item) => item.kind === "context_overflow")
+        if (rejected < 0) return { kind: "success" as const, value: prepared as Prepared[] }
+        const value = prepared[rejected]!
+        if (value.kind !== "context_overflow") continue
+        const atoms = groups[rejected]!
+        log.warn(
+          "compaction_diag",
+          preflight({
+            ...input,
+            index: rejected,
+            total: groups.length,
+            splitDepth: Math.max(0, ...atoms.map((atom) => atom.splitDepth)),
+            estimatedInputTokens: value.estimatedInputTokens,
+            inputBudget: budget(input),
+            requestedOutputTokenLimit: value.requestedOutputTokenLimit,
+            capacityKnown: value.capacityKnown,
+            requestDispatched: false,
+            splitReason: "local_preflight",
+            rejectionReason: value.rejectionReason,
+          }),
+        )
+        if (atoms.length > 1) {
+          const middle = Math.ceil(atoms.length / 2)
+          groups.splice(rejected, 1, atoms.slice(0, middle), atoms.slice(middle))
+          continue
+        }
+        const parts = divide(atoms[0]!)
+        if (!parts)
+          return { kind: "context_overflow" as const, stage: input.stage, rejectionReason: "minimal_unit" as const }
+        groups.splice(rejected, 1, parts)
+      }
+    })
   }
 
   function assistant(input: { base: MessageV2.Assistant; sessionID: SessionID }) {
@@ -245,16 +700,50 @@ export namespace ChipMateCompactionChunks {
     } satisfies MessageV2.Assistant
   }
 
-  function run(input: Input & { data: LLM.StreamInput["messages"]; text: string }) {
+  function run(
+    input: Input & {
+      prepared: Prepared
+      diagnostic: { stage: "chunk" | "reduce" | "replay"; chunkIndex?: number; chunkCount?: number; depth?: number }
+    },
+  ) {
     return Effect.gen(function* () {
+      const messages = [
+        ...input.prepared.data,
+        { role: "user" as const, content: [{ type: "text" as const, text: input.prepared.text }] },
+      ]
+      log.info(
+        "compaction_diag",
+        preflight({
+          ...input,
+          stage: input.diagnostic.stage,
+          index: input.diagnostic.chunkIndex,
+          total: input.diagnostic.chunkCount,
+          depth: input.diagnostic.depth,
+          splitDepth: input.prepared.splitDepth,
+          estimatedInputTokens: input.prepared.estimatedInputTokens,
+          inputBudget: input.prepared.inputBudget,
+          requestedOutputTokenLimit: input.prepared.requestedOutputTokenLimit,
+          effectiveOutputTokenLimit: input.prepared.effectiveOutputTokenLimit,
+          capacityKnown: input.prepared.capacityKnown,
+          requestDispatched: true,
+        }),
+      )
       const msg = yield* input.session.updateMessage(assistant({ base: input.target, sessionID: input.sessionID }))
-      const mdl = model(input.model, input.outputTokenMax)
-      const worker = yield* input.processors.create({ assistantMessage: msg, sessionID: input.sessionID, model: mdl })
+      const mdl = model(input.model, input.prepared.effectiveOutputTokenLimit)
+      const worker = yield* input.processors.create({
+        assistantMessage: msg,
+        sessionID: input.sessionID,
+        model: mdl,
+        billing: input.billing,
+      })
       const opts = input.agent.options
       // agent.options feeds into providerOptions; strip maxOutputTokens
       // so it does not leak into the wire body. The output cap is enforced
       // independently via the constrained model and llm.ts re-cap.
-      const agent = { ...input.agent, options: opts ?? {} }
+      const agent = {
+        ...input.agent,
+        options: Object.fromEntries(Object.entries(opts ?? {}).filter(([key]) => key !== "maxOutputTokens")),
+      }
       const out = yield* Effect.gen(function* () {
         const result = yield* worker.process({
           user: input.user,
@@ -262,144 +751,254 @@ export namespace ChipMateCompactionChunks {
           sessionID: input.sessionID,
           tools: {},
           system: [],
-          messages: [...input.data, { role: "user", content: [{ type: "text", text: input.text }] }],
+          messages,
           model: mdl,
         })
         const parts = yield* MessageV2.parts(worker.message.id)
-        return {
+        const output = text(worker.message, parts)
+        const error = worker.message.error ?? worker.compactError?.()
+        const inspected = inspect({
           result,
-          output: text(worker.message, parts),
-          error: worker.message.error ?? worker.compactError?.(),
-        }
+          message: worker.message,
+          parts,
+          error,
+          stage: input.diagnostic.stage,
+        })
+        const diagnostic = ChipMateCompactionDiagnostics.worker({
+          sessionID: input.sessionID,
+          compactionMessageID: input.target.id,
+          workerMessageID: worker.message.id,
+          providerID: mdl.providerID,
+          modelID: mdl.id,
+          stage: input.diagnostic.stage,
+          chunkIndex: input.diagnostic.chunkIndex,
+          chunkCount: input.diagnostic.chunkCount,
+          depth: input.diagnostic.depth,
+          attempt: input.attempt.attempt,
+          attemptMode: input.attempt.mode,
+          selectedVariant: input.attempt.selectedVariant,
+          effectiveVariant: input.attempt.effectiveVariant,
+          estimatedInputTokens: input.prepared.estimatedInputTokens,
+          requestedOutputTokenLimit: input.prepared.requestedOutputTokenLimit,
+          effectiveOutputTokenLimit: mdl.limit.output,
+          capacityKnown: input.prepared.capacityKnown,
+          fallbackReason: input.attempt.mode === "none" ? "selected_attempt_failed" : undefined,
+          pipelineRestarted: input.attempt.attempt === 2,
+          result,
+          finish: worker.message.finish,
+          textChars: output.length,
+          reasoningChars: reasoning(parts),
+          tokens: worker.message.tokens,
+          error,
+        })
+        if (inspected.kind !== "success") log.warn("compaction_diag", diagnostic)
+        else log.info("compaction_diag", diagnostic)
+        return inspected.kind === "context_overflow" ? { ...inspected, stage: input.diagnostic.stage } : inspected
       }).pipe(
         Effect.ensuring(
           input.session.removeMessage({ sessionID: input.sessionID, messageID: worker.message.id }).pipe(Effect.ignore),
         ),
       )
-      const result = out.result
-      const output = out.output
-      if (result !== "continue") return { result, output: undefined, error: out.error }
-      if (!output)
+      return out
+    })
+  }
+
+  function failed<T>(outputs: AttemptResult<T>[]) {
+    return (
+      outputs.find((output) => output.kind === "failure") ??
+      outputs.find((output) => output.kind === "reasoning_exhausted") ??
+      outputs.find((output) => output.kind === "incomplete") ??
+      outputs.find((output) => output.kind === "context_overflow")
+    )
+  }
+
+  function recover(
+    input: Input & {
+      prepared: Prepared
+      stage: "chunk" | "reduce" | "replay"
+      index: number
+      total: number
+      depth?: number
+      onSplit?: () => Effect.Effect<void>
+    },
+  ): Effect.Effect<AttemptResult<string[]>, never, Database.Service> {
+    return Effect.gen(function* () {
+      const result = yield* run({
+        ...input,
+        prepared: input.prepared,
+        diagnostic: { stage: input.stage, chunkIndex: input.index, chunkCount: input.total, depth: input.depth },
+      })
+      if (result.kind === "success") return { kind: "success", value: [result.value] } as const
+      if (result.kind !== "context_overflow" || input.prepared.capacityKnown) return result
+      const groups =
+        input.prepared.atoms.length > 1
+          ? [
+              input.prepared.atoms.slice(0, Math.ceil(input.prepared.atoms.length / 2)),
+              input.prepared.atoms.slice(Math.ceil(input.prepared.atoms.length / 2)),
+            ]
+          : divide(input.prepared.atoms[0]!)?.map((atom) => [atom])
+      if (!groups) {
+        log.warn(
+          "compaction_diag",
+          preflight({
+            ...input,
+            splitDepth: input.prepared.splitDepth,
+            estimatedInputTokens: input.prepared.estimatedInputTokens,
+            inputBudget: input.prepared.inputBudget,
+            requestedOutputTokenLimit: input.prepared.requestedOutputTokenLimit,
+            effectiveOutputTokenLimit: input.prepared.effectiveOutputTokenLimit,
+            capacityKnown: false,
+            requestDispatched: false,
+            splitReason: "provider_context_overflow",
+            rejectionReason: "minimal_unit",
+          }),
+        )
         return {
-          result: "stop" as const,
-          output: undefined,
-          error:
-            out.error ??
-            new MessageV2.APIError({
-              message: "Compaction worker returned an empty response",
-              isRetryable: true,
-            }).toObject(),
-        }
-      return { result, output, error: undefined }
+          kind: "context_overflow",
+          stage: input.stage,
+          rejectionReason: "minimal_unit",
+          error: result.error,
+        } as const
+      }
+      const children: Prepared[] = []
+      for (let index = 0; index < groups.length; index++) {
+        const value = prepare({
+          ...input,
+          atoms: groups[index]!,
+          index,
+          total: groups.length,
+          final: input.prepared.text,
+        })
+        if (value.kind === "context_overflow")
+          return {
+            kind: "context_overflow",
+            stage: input.stage,
+            rejectionReason: value.rejectionReason,
+            error: result.error,
+          }
+        children.push({ ...value, splitDepth: input.prepared.splitDepth + 1 })
+      }
+      log.warn(
+        "compaction_diag",
+        preflight({
+          ...input,
+          splitDepth: input.prepared.splitDepth,
+          estimatedInputTokens: input.prepared.estimatedInputTokens,
+          inputBudget: input.prepared.inputBudget,
+          requestedOutputTokenLimit: input.prepared.requestedOutputTokenLimit,
+          effectiveOutputTokenLimit: input.prepared.effectiveOutputTokenLimit,
+          capacityKnown: false,
+          requestDispatched: false,
+          splitReason: "provider_context_overflow",
+        }),
+      )
+      yield* input.onSplit?.() ?? Effect.void
+      const outputs = yield* Effect.forEach(
+        children,
+        (prepared, index) => recover({ ...input, prepared, index, total: children.length }),
+        { concurrency: 1 },
+      )
+      const failure = failed(outputs)
+      if (failure) return failure
+      return {
+        kind: "success",
+        value: outputs.flatMap((output) => (output.kind === "success" ? output.value : [])),
+      } as const
     })
   }
 
-  function fatal(output: Output | undefined) {
-    return output?.result === "stop" && !!output.error && output.error.name !== "ContextOverflowError"
-  }
-
-  function fail(input: Input, output: Output | undefined) {
+  function execute(input: Input & { prepared: Prepared[]; stage: "chunk" | "reduce" | "replay"; depth?: number }) {
     return Effect.gen(function* () {
-      if (output?.result !== "stop") return false
-      const error = output.error
-      if (!error || error.name === "ContextOverflowError") return false
-
-      input.target.error = error
-      input.target.finish = "error"
-      input.target.time.completed = Date.now()
-      yield* input.updateMessage(input.target)
-      return true
-    })
-  }
-
-  function summarize(input: Input & { chunk: Chunk; total: number }) {
-    return Effect.gen(function* () {
-      const size = budget({ cfg: input.cfg, model: input.model, outputTokenMax: input.outputTokenMax })
-      const data = (yield* large({ messages: input.chunk.messages, model: input.model, size }))
-        ? [
-            {
-              role: "user" as const,
-              content: [
-                {
-                  type: "text" as const,
-                  text: [
-                    "The following compacted transcript represents an oversized conversation chunk.",
-                    "Summarize only facts present in the transcript.",
-                    "<conversation>",
-                    transcript({ messages: input.chunk.messages }),
-                    "</conversation>",
-                  ].join("\n"),
-                },
-              ],
-            },
-          ]
-        : yield* MessageV2.toModelMessagesEffect(input.chunk.messages, input.model, {
-            stripMedia: true,
-            toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
-          })
-      return yield* run({ ...input, data, text: prompt({ chunk: input.chunk, total: input.total }) })
+      let completed = 0
+      const lock = Semaphore.makeUnsafe(1)
+      const report = (activity?: Progress["activity"]) =>
+        input.onProgress?.({
+          attempt: input.attempt.attempt,
+          attemptMode: input.attempt.mode,
+          phase: input.stage,
+          completedUnits: completed,
+          totalUnits: input.prepared.length,
+          reduceDepth: input.depth,
+          activity,
+        }) ?? Effect.void
+      yield* report()
+      const outputs = yield* Effect.forEach(
+        input.prepared,
+        (prepared, index) =>
+          recover({
+            ...input,
+            prepared,
+            index,
+            total: input.prepared.length,
+            onSplit: () => lock.withPermits(1)(report("splitting")),
+          }).pipe(
+            Effect.tap(() =>
+              lock.withPermits(1)(
+                Effect.gen(function* () {
+                  completed++
+                  yield* report()
+                }),
+              ),
+            ),
+          ),
+        { concurrency: Math.min(CONCURRENCY, input.prepared.length) },
+      )
+      const failure = failed(outputs)
+      if (failure) return failure
+      return {
+        kind: "success",
+        value: outputs.flatMap((output) => (output.kind === "success" ? output.value : [])),
+      } as const
     })
   }
 
   function reduce(
-    input: Input & { summaries: string[]; depth: number },
+    input: Input & { summaries: string[]; depth: number; final: string },
   ): Effect.Effect<Output, never, Database.Service> {
     return Effect.gen(function* () {
-      const result = yield* run({ ...input, data: messages({ summaries: input.summaries }), text: input.prompt })
-      if (result.result === "continue") return result
-      if (input.depth >= DEPTH || input.summaries.length <= 1) return result
-
-      const size = Math.ceil(input.summaries.length / 2)
-      const groups = Array.from({ length: Math.ceil(input.summaries.length / size) }, (_, index) =>
-        input.summaries.slice(index * size, index * size + size),
-      )
-      const next: Output[] = yield* Effect.forEach(
-        groups,
-        (group) => reduce({ ...input, summaries: group, depth: input.depth + 1 }),
-        { concurrency: 1 },
-      )
-      const failed = next.find(fatal) ?? next.find((item) => item.result !== "continue" || !item.output)
-      if (failed) return fatal(failed) ? failed : result
-      return yield* reduce({ ...input, summaries: next.map((item) => item.output!), depth: input.depth + 2 })
+      if (!input.summaries.length) {
+        return {
+          kind: "incomplete",
+          error: new MessageV2.APIError({
+            message: "Compaction reduce produced no summaries",
+            isRetryable: false,
+          }).toObject(),
+        } as const
+      }
+      const planned = yield* plan({
+        ...input,
+        atoms: summaryAtoms(input),
+        stage: "reduce",
+        final: input.final,
+        depth: input.depth,
+      })
+      if (planned.kind !== "success") return planned
+      const result = yield* execute({ ...input, prepared: planned.value, stage: "reduce", depth: input.depth })
+      if (result.kind !== "success") return result
+      if (result.value.length === 1) return { kind: "success", value: result.value[0]! } as const
+      if (input.depth >= DEPTH) return { kind: "context_overflow", stage: "reduce" } as const
+      return yield* reduce({ ...input, summaries: result.value, depth: input.depth + 1, final: input.final })
     })
   }
 
   export function process(input: Input) {
     return Effect.gen(function* () {
-      const size = budget({ cfg: input.cfg, model: input.model, outputTokenMax: input.outputTokenMax })
-      const chunks = yield* split({ messages: input.messages, model: input.model, size })
-      log.info("fallback", { chunks: chunks.length, concurrency: CONCURRENCY })
-
-      const partial = yield* Effect.forEach(chunks, (chunk) => summarize({ ...input, chunk, total: chunks.length }), {
-        concurrency: Math.min(CONCURRENCY, chunks.length),
-      })
-      const failed = partial.find(fatal) ?? partial.find((item) => item.result !== "continue" || !item.output)
-      if (failed) {
-        if (yield* fail(input, failed)) return "stop" as const
-        return "compact" as const
+      const source = atoms(input)
+      if (!source.length) {
+        return {
+          kind: "incomplete" as const,
+          error: new MessageV2.APIError({
+            message: "Compaction input contains no summarizable content",
+            isRetryable: false,
+          }).toObject(),
+        }
       }
-
-      const final =
-        chunks.length === 1 && (yield* large({ messages: chunks[0].messages, model: input.model, size }))
-          ? partial[0]
-          : yield* reduce({ ...input, summaries: partial.map((item) => item.output!), depth: 0 })
-      if (!final || final.result !== "continue" || !final.output) {
-        if (yield* fail(input, final)) return "stop" as const
-        return "compact" as const
-      }
-
-      yield* input.updatePart({
-        id: PartID.ascending(),
-        messageID: input.target.id,
-        sessionID: input.sessionID,
-        type: "text",
-        text: final.output,
-      })
-      input.target.finish = "stop"
-      input.target.error = undefined
-      input.target.time.completed = Date.now()
-      yield* input.updateMessage(input.target)
-      return "continue" as const
+      const planned = yield* plan({ ...input, atoms: source, stage: "chunk", final: input.prompt })
+      if (planned.kind !== "success") return planned
+      log.info("fallback", { chunks: planned.value.length, concurrency: CONCURRENCY })
+      const partial = yield* execute({ ...input, prepared: planned.value, stage: "chunk" })
+      if (partial.kind !== "success") return partial
+      return yield* reduce({ ...input, summaries: partial.value, depth: 0, final: input.prompt })
     })
   }
 }

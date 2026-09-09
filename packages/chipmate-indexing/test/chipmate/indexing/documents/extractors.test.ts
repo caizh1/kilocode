@@ -9,6 +9,8 @@ import {
   extractDocument,
   pdftotextPath,
   preflightPdfExtractor,
+  PDF_EXTRACT_TIMEOUT_MS,
+  PDF_PREFLIGHT_TIMEOUT_MS,
 } from "../../../../src/indexing/documents/extractors"
 
 const dirs: string[] = []
@@ -178,12 +180,50 @@ describe("Document extractors", () => {
   })
 
   test("uses explicit pdftotext override before bundled paths", () => {
-    expect(pdftotextPath({ CHIPMATE_PDFTOTEXT_PATH: "C:\\tools\\pdftotext.exe" }, "/extension/bin/chipmate.exe", "win32")).toBe(
-      "C:\\tools\\pdftotext.exe",
-    )
+    expect(
+      pdftotextPath({ CHIPMATE_PDFTOTEXT_PATH: "C:\\tools\\pdftotext.exe" }, "/extension/bin/chipmate.exe", "win32"),
+    ).toBe("C:\\tools\\pdftotext.exe")
   })
 
   if (process.platform !== "win32") {
+    test("PDF 预检与抽取达到各自期限后终止真实子进程", async () => {
+      expect(PDF_PREFLIGHT_TIMEOUT_MS).toBe(15_000)
+      expect(PDF_EXTRACT_TIMEOUT_MS).toBe(120_000)
+      const dir = await temp()
+      const exe = path.join(dir, "超时抽取器")
+      const before = process.env.CHIPMATE_PDFTOTEXT_PATH
+      await writeFile(exe, "#!/bin/sh\nexec sleep 30\n")
+      await chmod(exe, 0o755)
+      process.env.CHIPMATE_PDFTOTEXT_PATH = exe
+      try {
+        const started = Date.now()
+        await expect(preflightPdfExtractor(dir, { timeoutMs: 30 })).rejects.toThrow("超时")
+        await expect(extractDocument(path.join(dir, "故障.pdf"), 1024, { timeoutMs: 30 })).rejects.toThrow("超时")
+        expect(Date.now() - started).toBeLessThan(5_000)
+      } finally {
+        if (before === undefined) delete process.env.CHIPMATE_PDFTOTEXT_PATH
+        else process.env.CHIPMATE_PDFTOTEXT_PATH = before
+      }
+    })
+
+    test("取消 PDF 抽取立即终止子进程而不等待单文件上限", async () => {
+      const dir = await temp()
+      const exe = path.join(dir, "取消抽取器")
+      const before = process.env.CHIPMATE_PDFTOTEXT_PATH
+      await writeFile(exe, "#!/bin/sh\nexec sleep 30\n")
+      await chmod(exe, 0o755)
+      process.env.CHIPMATE_PDFTOTEXT_PATH = exe
+      const controller = new AbortController()
+      try {
+        const task = extractDocument(path.join(dir, "取消.pdf"), 1024, { signal: controller.signal })
+        controller.abort()
+        await expect(task).rejects.toThrow("取消")
+      } finally {
+        if (before === undefined) delete process.env.CHIPMATE_PDFTOTEXT_PATH
+        else process.env.CHIPMATE_PDFTOTEXT_PATH = before
+      }
+    })
+
     test("preflights the selected PDF extractor through a Chinese path containing spaces", async () => {
       const dir = await temp()
       const exe = path.join(dir, "pdftotext")

@@ -1,3 +1,4 @@
+import * as TurnChanges from "@/chipmate/turn-changes/runtime" // chipmate_change
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
@@ -42,12 +43,18 @@ import { chipmateSessionFork } from "@/chipmate/session/fork-command"
 import { ChipMateSessionEvent } from "@/chipmate/session/event"
 import { SessionExport } from "@/chipmate/session-export"
 import * as SandboxPolicy from "@/chipmate/sandbox/policy"
-import { carryForkDiff } from "@/chipmate/session-portability/cumulative-diff" // chipmate_change
+import {
+  appendSessionDiffs,
+  carryForkDiffAtBoundary,
+  clearForkDiff,
+  forkDiffFromSnapshots,
+  type PortableDiff,
+} from "@/chipmate/session-portability/cumulative-diff" // chipmate_change
 import { BlockedError as AgentRequirementError } from "@/chipmate/agent-requirements"
 import { ProductProfile } from "@/chipmate/product-profile"
 import { DocumentAgentScope } from "@/chipmate/document-agent/scope"
 // chipmate_change end
-import { Effect, Layer, Option, Context, Schema, Types } from "effect"
+import { Deferred, Effect, Exit, Layer, Option, Context, Schema, Scope, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { AbsolutePath } from "@opencode-ai/core/schema" // chipmate_change
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -289,7 +296,87 @@ export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInpu
 export const ForkInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
+  afterMessageID: Schema.optional(MessageID),
+  operationID: Schema.optional(Schema.String.check(Schema.isUUID())),
 })
+export type ForkInput = Types.DeepMutable<Schema.Schema.Type<typeof ForkInput>>
+
+export class ForkError extends Schema.TaggedErrorClass<ForkError>()("SessionForkError", {
+  sessionID: SessionID,
+  kind: Schema.Literals(["invalid-boundary", "in-progress", "operation-conflict", "recovery-conflict"]),
+  message: Schema.String,
+}) {}
+
+type ForkMetadata = {
+  version: 1
+  operationID: string
+  sourceSessionID: string
+  boundary: { mode: "full" | "before" | "after"; messageID?: string }
+  state: "copying" | "complete"
+  expectedMessages: number
+}
+
+const forkMetadataKey = "chipmate.sessionFork"
+
+function readForkMetadata(metadata: Info["metadata"]): ForkMetadata | undefined {
+  const value = metadata?.[forkMetadataKey]
+  if (!value || typeof value !== "object") return
+  const record = value as Partial<ForkMetadata>
+  if (record.version !== 1 || typeof record.operationID !== "string") return
+  if (typeof record.sourceSessionID !== "string" || !record.boundary || typeof record.boundary !== "object") return
+  if (record.state !== "copying" && record.state !== "complete") return
+  if (typeof record.expectedMessages !== "number") return
+  return record as ForkMetadata
+}
+
+function forkBoundary(input: ForkInput): ForkMetadata["boundary"] {
+  return input.afterMessageID
+    ? { mode: "after", messageID: input.afterMessageID }
+    : input.messageID
+      ? { mode: "before", messageID: input.messageID }
+      : { mode: "full" }
+}
+
+function forkBoundaryKey(input: ForkInput) {
+  const boundary = forkBoundary(input)
+  return boundary.messageID ? `${boundary.mode}:${boundary.messageID}` : boundary.mode
+}
+
+/** Resolve a completed durable fork before applying current source busy-state checks. */
+export function findCompletedFork(input: ForkInput): Effect.Effect<Info | undefined, ForkError, Database.Service> {
+  if (!input.operationID) return Effect.succeed(undefined)
+  return Effect.gen(function* () {
+    if (input.messageID && input.afterMessageID) {
+      return yield* Effect.fail(
+        new ForkError({
+          sessionID: input.sessionID,
+          kind: "invalid-boundary",
+          message: "messageID and afterMessageID are mutually exclusive",
+        }),
+      )
+    }
+    const { db } = yield* Database.Service
+    const rows = yield* db.select().from(SessionTable).all().pipe(Effect.orDie)
+    const match = rows.map(fromRow).find((item) => readForkMetadata(item.metadata)?.operationID === input.operationID)
+    if (!match) return undefined
+    const metadata = readForkMetadata(match.metadata)!
+    const boundary = forkBoundary(input)
+    const same =
+      metadata.sourceSessionID === input.sessionID &&
+      metadata.boundary.mode === boundary.mode &&
+      metadata.boundary.messageID === boundary.messageID
+    if (!same) {
+      return yield* Effect.fail(
+        new ForkError({
+          sessionID: input.sessionID,
+          kind: "operation-conflict",
+          message: "operationID belongs to another fork request",
+        }),
+      )
+    }
+    return metadata.state === "complete" ? match : undefined
+  })
+}
 export const GetInput = SessionID
 export const ChildrenInput = SessionID
 export const RemoveInput = SessionID
@@ -526,7 +613,7 @@ export interface Interface {
     sandboxInheritanceToken?: string
   }) => Effect.Effect<Info>
   // chipmate_change end
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+  readonly fork: (input: ForkInput) => Effect.Effect<Info, NotFound | ForkError>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -590,15 +677,23 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 export const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service
+  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service | TurnChanges.Service // chipmate_change
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const changes = yield* TurnChanges.Service // chipmate_change
     const { db } = yield* Database.Service
     const database = yield* Database.Service
     const background = yield* BackgroundJob.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const scope = yield* Scope.Scope
+    type ForkFlight = {
+      readonly operationID?: string
+      readonly boundary: string
+      readonly done: Deferred.Deferred<Info, NotFound | ForkError>
+    }
+    const forkFlights = new Map<string, ForkFlight>()
 
     // chipmate_change start - inherited sandbox policy source
     const createNext = Effect.fn("Session.createNext")(function* (input: {
@@ -721,6 +816,7 @@ export const layer: Layer.Layer<
         )
 
         if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
+        if (hasInstance) yield* changes.remove(sessionID) // chipmate_change
         const kids = yield* children(sessionID)
         for (const child of kids) {
           yield* remove(child.id)
@@ -839,84 +935,231 @@ export const layer: Layer.Layer<
       return session
     })
 
-    const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
+    // chipmate_change start - durable, inclusive and single-flight session forks
+    const failFork = (input: ForkInput, kind: ForkError["kind"], message: string) =>
+      Effect.fail(new ForkError({ sessionID: input.sessionID, kind, message }))
+
+    const hasForkUserOutput = Effect.fn("Session.hasForkUserOutput")(function* (target: Info) {
+      const queue = [target]
+      while (queue.length > 0) {
+        const current = queue.shift()!
+        const output = yield* messages({ sessionID: current.id })
+        if (output.some((item) => item.info.role === "user" && item.info.time.created >= current.time.created)) {
+          return true
+        }
+        queue.push(...(yield* children(current.id)))
+      }
+      return false
+    })
+
+    const copyFork = Effect.fn("Session.copyFork")(function* (input: ForkInput) {
+      const started = performance.now()
       const ctx = yield* InstanceState.context
       const original = yield* get(input.sessionID)
-      const title = getForkedTitle(original.title)
-      // chipmate_change start - forks into another directory cannot read the source confinement from the new dir, so carry it over explicitly
-      const sandboxFallback = yield* SandboxPolicy.peek(original.directory, input.sessionID)
-      // chipmate_change end
-      // chipmate_change start - historical forks must use the model from retained context, not a later source-session selection
-      const msgs = yield* messages({ sessionID: input.sessionID })
-      const point = input.messageID
-      const message = point ? msgs.findLast((msg) => msg.info.id < point && msg.info.role === "user") : undefined
+      if (input.messageID && input.afterMessageID) {
+        return yield* failFork(input, "invalid-boundary", "messageID and afterMessageID are mutually exclusive")
+      }
+
+      const all = yield* messages({ sessionID: input.sessionID })
+      const point = input.afterMessageID ?? input.messageID
+      const index = point ? all.findIndex((item) => item.info.id === point) : -1
+      if (point && index < 0) return yield* failFork(input, "invalid-boundary", `Fork boundary not found: ${point}`)
+      if (input.afterMessageID && all[index]?.info.role !== "assistant") {
+        return yield* failFork(input, "invalid-boundary", "afterMessageID must identify an assistant message")
+      }
+      const retained = input.afterMessageID ? all.slice(0, index + 1) : input.messageID ? all.slice(0, index) : all
+      const boundary = forkBoundary(input)
+
+      if (input.operationID) {
+        const rows = yield* db
+          .select()
+          .from(SessionTable)
+          .all()
+          .pipe(Effect.orDie)
+        const match = rows.map(fromRow).find((item) => readForkMetadata(item.metadata)?.operationID === input.operationID)
+        if (match) {
+          const previous = readForkMetadata(match.metadata)!
+          const sameBoundary =
+            previous.sourceSessionID === input.sessionID &&
+            previous.boundary.mode === boundary.mode &&
+            previous.boundary.messageID === boundary.messageID
+          if (!sameBoundary) {
+            return yield* failFork(input, "operation-conflict", "operationID belongs to another fork request")
+          }
+          if (previous.state === "complete") return match
+          if (yield* hasForkUserOutput(match)) {
+            return yield* failFork(
+              input,
+              "recovery-conflict",
+              "The incomplete fork contains user output and cannot be removed automatically",
+            )
+          }
+          yield* remove(match.id)
+          const stale = yield* db
+            .select({ id: SessionTable.id })
+            .from(SessionTable)
+            .where(eq(SessionTable.id, match.id))
+            .get()
+            .pipe(Effect.orDie)
+          if (stale) {
+            return yield* failFork(input, "recovery-conflict", "The incomplete fork could not be cleaned safely")
+          }
+          yield* clearForkDiff(match.id)
+        }
+      }
+
+      const lastUser = retained.findLast((item) => item.info.role === "user")
       const model =
-        message?.info.role === "user"
+        lastUser?.info.role === "user"
           ? {
-              id: message.info.model.modelID,
-              providerID: message.info.model.providerID,
-              variant: message.info.model.variant,
+              id: lastUser.info.model.modelID,
+              providerID: lastUser.info.model.providerID,
+              variant: lastUser.info.model.variant,
             }
           : point
             ? undefined
             : original.model
               ? { ...original.model }
               : undefined
-      // chipmate_change end
+      const sandboxFallback = yield* SandboxPolicy.peek(original.directory, input.sessionID)
+      const operation = input.operationID
+        ? ({
+            version: 1,
+            operationID: input.operationID,
+            sourceSessionID: input.sessionID,
+            boundary,
+            state: "copying",
+            expectedMessages: retained.length,
+          } satisfies ForkMetadata)
+        : undefined
+      const baseMetadata = DocumentAgentScope.forkMetadata(original.metadata)
       const session = yield* createNext({
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
-        title,
-        metadata: DocumentAgentScope.forkMetadata(original.metadata), // chipmate_change - 派生会话默认恢复仅文档
-        model, // chipmate_change - preserve the model + variant active at the fork point
-        sourceID: input.sessionID, // chipmate_change - forks preserve initialized confinement
-        sandboxFallback, // chipmate_change - seed confinement from the source session's original directory
+        title: getForkedTitle(original.title),
+        metadata: operation ? { ...baseMetadata, [forkMetadataKey]: operation } : baseMetadata,
+        model,
+        sourceID: input.sessionID,
+        sandboxFallback,
       })
-      const idMap = new Map<string, MessageID>()
 
-      for (const msg of msgs) {
-        if (input.messageID && msg.info.id >= input.messageID) break
-        const newID = MessageID.ascending()
-        idMap.set(msg.info.id, newID)
-
-        const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
-        const cloned = yield* updateMessage({
-          ...msg.info,
-          sessionID: session.id,
-          id: newID,
-          ...(msg.info.role === "assistant" && { cost: 0 }), // chipmate_change - count only spend incurred after the fork
-          ...(parentID && { parentID }),
+      const rollback = Effect.gen(function* () {
+        yield* remove(session.id).pipe(Effect.ignore)
+        yield* clearForkDiff(session.id)
+      })
+      return yield* Effect.gen(function* () {
+        const idMap = new Map(retained.map((item) => [item.info.id, MessageID.ascending()] as const))
+        const graph = retained.map((item) => ({
+          item,
+          parts: item.parts
+            .map((part) => ChipMateSession.prepareForkedPart(part))
+            .filter((part): part is SessionV1.Part => part !== undefined),
+        }))
+        const frozenChildren = yield* ChipMateSession.freezeChildren({
+          messages: graph.map((entry) => ({ info: entry.item.info, parts: entry.parts })),
+          ops: { get, messages },
         })
-
-        for (const part of msg.parts) {
-          // chipmate_change - detach task calls + drop transient parts before copying the forked transcript
-          const prepared = ChipMateSession.prepareForkedPart(part)
-          if (!prepared) continue
-          const p: SessionV1.Part = {
-            ...prepared,
-            id: PartID.ascending(),
-            messageID: cloned.id,
+        for (const entry of graph) {
+          const newID = idMap.get(entry.item.info.id)!
+          const parentID =
+            entry.item.info.role === "assistant" && entry.item.info.parentID
+              ? idMap.get(entry.item.info.parentID)
+              : undefined
+          const cloned = yield* updateMessage({
+            ...entry.item.info,
             sessionID: session.id,
-            ...(prepared.type === "step-finish" && { cost: 0 }), // chipmate_change - exclude pre-fork spend from model stats
+            id: newID,
+            ...(entry.item.info.role === "assistant" && { cost: 0 }),
+            ...(parentID && { parentID }),
+          })
+          for (const prepared of entry.parts) {
+            const part: SessionV1.Part = {
+              ...prepared,
+              id: PartID.ascending(),
+              messageID: cloned.id,
+              sessionID: session.id,
+              ...(prepared.type === "step-finish" && { cost: 0 }),
+            }
+            if (part.type === "compaction" && part.tail_start_id) part.tail_start_id = idMap.get(part.tail_start_id)
+            yield* updatePart(part)
           }
-          if (p.type === "compaction" && p.tail_start_id) {
-            p.tail_start_id = idMap.get(p.tail_start_id)
-          }
-          yield* updatePart(p)
         }
-      }
-      // chipmate_change - preserve imported/cumulative diffs when forking (self-contained Storage runtime keeps this shared file off the legacy Storage layer)
-      yield* carryForkDiff(input.sessionID, session.id)
-      // chipmate_change start - fork terminal task children under the new parent and remap their references
-      yield* ChipMateSession.remapChildren({
-        sessionID: session.id,
-        remapped: new Map([[input.sessionID, session.id]]),
-        ops: { get, messages, create, updateMessage, updatePart },
-      })
-      // chipmate_change end
-      return session
+
+        const historical = Boolean(input.messageID || input.afterMessageID)
+        let local: PortableDiff[] | undefined
+        if (historical) {
+          const parts = retained.flatMap((item) => item.parts)
+          const from = parts.find(
+            (part): part is SessionV1.StepStartPart => part.type === "step-start" && Boolean(part.snapshot),
+          )?.snapshot
+          const to = parts.findLast(
+            (part): part is SessionV1.StepFinishPart => part.type === "step-finish" && Boolean(part.snapshot),
+          )?.snapshot
+          local =
+            from && to
+              ? yield* forkDiffFromSnapshots({ from, to })
+              : retained
+                  .filter((item) => item.info.role === "user")
+                  .flatMap((item) => (item.info.role === "user" ? (item.info.summary?.diffs ?? []) : []))
+                  .reduce<PortableDiff[]>((result, diff) => appendSessionDiffs({ existing: result, next: [diff] }), [])
+        }
+        yield* carryForkDiffAtBoundary(input.sessionID, session.id, local)
+        yield* ChipMateSession.remapChildren({
+          sessionID: session.id,
+          remapped: new Map([[input.sessionID, session.id]]),
+          ops: { get, messages, create, updateMessage, updatePart },
+          frozen: frozenChildren,
+        })
+        if (operation) {
+          yield* patch(session.id, {
+            metadata: { ...session.metadata, [forkMetadataKey]: { ...operation, state: "complete" } },
+            time: { updated: Date.now() },
+          })
+        }
+        const result = yield* get(session.id)
+        yield* Effect.logInfo("session fork complete", {
+          operationID: input.operationID,
+          sourceSessionID: input.sessionID,
+          targetSessionID: session.id,
+          boundary: forkBoundaryKey(input),
+          messages: retained.length,
+          parts: graph.reduce((total, item) => total + item.parts.length, 0),
+          children: frozenChildren.size,
+          elapsedMs: Math.round(performance.now() - started),
+        })
+        return result
+      }).pipe(Effect.onError(() => rollback))
     })
+
+    const fork = Effect.fn("Session.fork")((input: ForkInput) =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const ctx = yield* InstanceState.context
+          const key = `${ctx.directory}\0${input.sessionID}`
+          const boundary = forkBoundaryKey(input)
+          const existing = forkFlights.get(key)
+          if (existing) {
+            const same = input.operationID
+              ? existing.operationID === input.operationID && existing.boundary === boundary
+              : !existing.operationID && existing.boundary === boundary
+            if (same) return yield* restore(Deferred.await(existing.done))
+            return yield* failFork(input, "in-progress", "Another fork is already running for this session")
+          }
+
+          const done = yield* Deferred.make<Info, NotFound | ForkError>()
+          const flight = { operationID: input.operationID, boundary, done } satisfies ForkFlight
+          forkFlights.set(key, flight)
+          yield* Effect.gen(function* () {
+            const exit = yield* restore(copyFork(input)).pipe(Effect.exit)
+            if (forkFlights.get(key) === flight) forkFlights.delete(key)
+            yield* Deferred.done(done, exit)
+          }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+          return yield* restore(Deferred.await(done))
+        }),
+      ),
+    )
+    // chipmate_change end
 
     const patch = (sessionID: SessionID, info: Patch) =>
       Effect.gen(function* () {
@@ -1228,7 +1471,7 @@ export const fork = chipmateSessionFork
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [TurnChanges.node, BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node], // chipmate_change
 })
 
 export * as Session from "./session"

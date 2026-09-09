@@ -43,7 +43,7 @@ export type Context<M extends Metadata = Metadata> = {
   extra?: { [key: string]: unknown }
   messages: SessionV1.WithParts[]
   metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
-  // chipmate_change - Agent Console commands can require a non-persistable manual confirmation
+  // chipmate_change - selected tools can require a non-persistable manual confirmation
   ask(input: Omit<PermissionV1.Request, "id" | "sessionID" | "tool"> & { forceAsk?: boolean }): Effect.Effect<void>
 }
 

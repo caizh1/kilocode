@@ -1,3 +1,4 @@
+import * as TurnChanges from "@/chipmate/turn-changes/runtime" // chipmate_change
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
@@ -15,6 +16,7 @@ import { ChipMateCostPropagation } from "@/chipmate/session/cost-propagation" //
 import { ChipMateSessionProcessor } from "@/chipmate/session/processor" // chipmate_change
 import * as ChipMateWorkflowVariant from "@/chipmate/session/workflow-variant" // chipmate_change
 import { ChipMateSessionOverflow } from "@/chipmate/session/overflow" // chipmate_change
+import { ChipMateCompactionDiagnostics } from "@/chipmate/session/compaction-diagnostics" // chipmate_change
 import { ChipMateReference } from "@/chipmate/reference/contains" // chipmate_change
 import { ChipMateReadObject } from "@/chipmate/tool/read-object" // chipmate_change
 import { isInterrupted } from "@/chipmate/effect/cause" // chipmate_change
@@ -40,6 +42,7 @@ import { Provider } from "@/provider/provider"
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
+import { usable } from "./overflow" // chipmate_change
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
@@ -163,6 +166,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const changes = yield* TurnChanges.Service // chipmate_change
     const status = yield* SessionStatus.Service
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
@@ -1537,6 +1541,7 @@ export const layer = Layer.effect(
         // chipmate_change end
 
         if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+        yield* changes.enter(sessionID, lastUser.id, session.parentID) // chipmate_change
 
         const lastAssistantMsg = msgs.findLast(
           (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1636,11 +1641,38 @@ export const layer = Layer.effect(
           continue
         }
 
-        if (
-          lastFinished &&
-          lastFinished.summary !== true &&
-          (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
-        ) {
+        // chipmate_change start - record the reported-usage decision without changing its inputs or threshold
+        const finished = lastFinished
+        const reportedTriggered =
+          finished && finished.summary !== true
+            ? yield* Effect.gen(function* () {
+                const cfg = yield* config.get()
+                const usableTokens = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
+                const triggered = yield* compaction.isOverflow({ tokens: finished.tokens, model })
+                yield* Effect.logInfo(
+                  "compaction_diag",
+                  ChipMateCompactionDiagnostics.reportedUsage({
+                    sessionID,
+                    messageID: finished.id,
+                    previousProviderID: finished.providerID,
+                    previousModelID: finished.modelID,
+                    currentProviderID: model.providerID,
+                    currentModelID: model.id,
+                    tokens: finished.tokens,
+                    evaluatedTokens: ChipMateSessionOverflow.count(finished.tokens),
+                    contextLimit: model.limit.context,
+                    inputLimit: model.limit.input,
+                    outputLimit: model.limit.output,
+                    usableTokens,
+                    thresholdTokens: usableTokens,
+                    triggered,
+                  }),
+                )
+                return triggered
+              })
+            : false
+        // chipmate_change end
+        if (reportedTriggered && lastFinished) { // chipmate_change
           // chipmate_change start
           const guard = ChipMateSessionPrompt.guardCompactionAttempt({
             sessionID,
@@ -1714,6 +1746,7 @@ export const layer = Layer.effect(
           msg.time.completed = Date.now()
           yield* sessions.updateMessage(msg)
         })
+        const billingProvider = yield* provider.getProvider(model.providerID) // chipmate_change
         const handle = yield* processor
           .create({
             assistantMessage: msg,
@@ -1721,6 +1754,12 @@ export const layer = Layer.effect(
             model,
             telemetry, // chipmate_change
             snapshotInitialization: input.snapshotInitialization, // chipmate_change
+            // chipmate_change start
+            billing: {
+              baseURL: billingProvider.options.baseURL ?? model.api.url,
+              apiKey: billingProvider.key ?? billingProvider.options.apiKey,
+            },
+            // chipmate_change end - keep the credential ephemeral while enabling exact New API reconciliation
           })
           .pipe(Effect.onInterrupt(() => finalize))
 
@@ -1831,6 +1870,7 @@ export const layer = Layer.effect(
             ],
             tools: enabled, // chipmate_change
             model,
+            runtimeToolCall: council ? UltraVerify.dispatch(council) : undefined, // chipmate_change - start Ultra locally before provider IO
             toolChoice: ChipMateSessionPrompt.structuredOutputToolChoice({
               format: format.type,
               model: { id: model.api.id, npm: model.api.npm },
@@ -2056,7 +2096,7 @@ export const layer = Layer.effect(
         state.ensureRunning(
           input.sessionID,
           lastAssistant(input.sessionID).pipe(Effect.orDie),
-          runLoop(input).pipe(Effect.orDie),
+          runLoop(input).pipe(Effect.onExit((exit) => changes.complete(input.sessionID, exit, closeReasons.get(input.sessionID))), Effect.orDie), // chipmate_change
         ), // chipmate_change
         Effect.fnUntraced(function* (exit) {
           yield* ChipMateSession.publishTurnClose({
@@ -2779,6 +2819,7 @@ export const node = LayerNode.make({
   service: Service,
   layer,
   deps: [
+    TurnChanges.node, // chipmate_change
     SessionStatus.node,
     Session.node,
     Agent.node,

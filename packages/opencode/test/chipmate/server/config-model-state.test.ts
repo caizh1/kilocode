@@ -76,4 +76,31 @@ describe("config model state routes", () => {
     expect(body.recent).toEqual([{ providerID: "chipmate", modelID: "recent" }])
     expect(body.favorite).toEqual([{ providerID: "chipmate", modelID: "gpt-5.5" }])
   })
+
+  test("updates favorites while preserving extension migrations", async () => {
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(
+      path.join(tmp.path, "model.json"),
+      JSON.stringify({
+        recent: [],
+        favorite: [],
+        model: { build: { providerID: "legacy", modelID: "legacy-model" } },
+        variant: {},
+        migrations: { defaultModelSelectionV1: 1 },
+      }),
+    )
+
+    await json(
+      await req("/config/model-state", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ favorite: [{ providerID: "chipmate", modelID: "gpt-5.5" }] }),
+      }),
+    )
+
+    const saved = await Bun.file(path.join(tmp.path, "model.json")).json()
+    expect(saved.migrations).toEqual({ defaultModelSelectionV1: 1 })
+    expect(saved.model).toEqual({ build: { providerID: "legacy", modelID: "legacy-model" } })
+  })
 })

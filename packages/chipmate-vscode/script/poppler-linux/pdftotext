@@ -1,0 +1,7 @@
+#!/bin/sh
+# 仅为本次 PDF 提取设置编码数据和依赖搜索路径，不修改宿主进程环境。
+set -eu
+root=$(CDPATH= cd -- "${0%/*}" && pwd)
+export CHIPMATE_POPPLER_DATADIR="$root/share/poppler"
+unset LD_PRELOAD LD_LIBRARY_PATH
+exec "$root/lib/ld-musl-x86_64.so.1" --library-path "$root/lib" "$root/pdftotext.bin" "$@"

@@ -379,9 +379,7 @@
   max-width: 100%;
 }
 
-.settings-shell
-  [data-slot="settings-row-input"]
-  :is(.model-selector-trigger-label, .thinking-selector-trigger-label) {
+.settings-shell [data-slot="settings-row-input"] :is(.model-selector-trigger-label, .thinking-selector-trigger-label) {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
@@ -612,6 +610,530 @@
 
 .settings-shell .chipmate-server-status-error {
   color: var(--vscode-errorForeground, var(--text-critical-base, #f14c4c));
+}
+
+.settings-shell .patent-center-page,
+.settings-shell .patent-center-card-heading,
+.settings-shell .patent-center-privacy-badge,
+.settings-shell .patent-center-server-control,
+.settings-shell .patent-center-status-title,
+.settings-shell .patent-center-metrics,
+.settings-shell .patent-center-actions,
+.settings-shell .patent-center-number,
+.settings-shell .patent-center-model-selector {
+  display: flex;
+  min-width: 0;
+}
+
+.settings-shell .patent-center-page {
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-shell .patent-center-card-heading {
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-shell .patent-center-card-heading h3,
+.settings-shell .patent-center-card-heading p {
+  margin: 0;
+}
+
+.settings-shell .patent-center-card-heading h3 {
+  font-size: var(--chipmate-font-size-18);
+  font-weight: 600;
+}
+
+.settings-shell .patent-center-card-heading p {
+  margin-top: 5px;
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+}
+
+.settings-shell .patent-center-privacy-badge {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  color: var(--vscode-testing-iconPassed, var(--text-success-base, #73c991));
+  font-size: var(--font-size-small);
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.settings-shell .patent-center-server-control {
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-shell .patent-center-server-control [data-component="text-field"] {
+  flex: 1 1 320px;
+  min-width: 180px;
+}
+
+.settings-shell .patent-center-server-control [data-component="button"] {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-shell .patent-center-server-control-error [data-slot="input-wrapper"] {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.settings-shell .patent-center-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, currentColor 36%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  font-size: var(--font-size-small);
+}
+
+.settings-shell .patent-center-status-success {
+  color: var(--vscode-testing-iconPassed, var(--text-success-base, #73c991));
+}
+
+.settings-shell .patent-center-status-warning {
+  color: var(--vscode-editorWarning-foreground, var(--text-warning-base, #cca700));
+}
+
+.settings-shell .patent-center-status-error {
+  color: var(--vscode-errorForeground, var(--text-critical-base, #f14c4c));
+}
+
+.settings-shell .patent-center-status-title {
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-shell .patent-center-metrics {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-top: 8px;
+  color: var(--vscode-foreground, var(--text-base));
+}
+
+.settings-shell .patent-center-number {
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-shell .patent-center-number input {
+  width: 78px;
+  min-height: 32px;
+  padding-inline: 9px;
+}
+
+.settings-shell .patent-center-number span {
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--font-size-small);
+}
+
+.settings-shell .patent-center-model-control {
+  display: grid;
+  justify-items: end;
+  min-width: 0;
+  gap: 6px;
+}
+
+.settings-shell .patent-center-model-selector {
+  align-items: center;
+  max-width: 100%;
+}
+
+.settings-shell .patent-center-model-selector .prompt-selector-trigger--model {
+  justify-content: space-between;
+  min-width: 240px;
+  max-width: min(360px, 100%);
+  min-height: 34px;
+  padding-inline: 10px;
+  border: 1px solid var(--vscode-dropdown-border, var(--border-base));
+  border-radius: 6px;
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+}
+
+.settings-shell .patent-center-model-selector .prompt-selector-trigger--model:hover {
+  border-color: var(--vscode-focusBorder, var(--border-focus));
+  background: var(--vscode-list-hoverBackground, var(--surface-raised-base));
+}
+
+.settings-shell .patent-center-model-selector .model-selector-trigger-status {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vscode-testing-iconPassed, var(--text-success-base, #73c991));
+}
+
+.settings-shell .patent-center-model-helper {
+  color: var(--vscode-descriptionForeground, var(--text-weak-base));
+  font-size: var(--font-size-small);
+  line-height: 1.4;
+}
+
+.settings-shell .patent-center-actions {
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-shell .patent-center-actions [data-component="button"] {
+  flex: 1 1 170px;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-shell .patent-radar-task-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 35%, var(--vscode-panel-border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 6%, var(--vscode-editor-background));
+}
+
+.settings-shell .patent-radar-live-dot {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+}
+
+.settings-shell .patent-radar-live-dot.is-active {
+  background: var(--vscode-testing-iconPassed, #73c991);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 16%, transparent);
+}
+
+.settings-shell .patent-radar-task-copy {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settings-shell .patent-radar-task-copy > span,
+.settings-shell .patent-radar-task-copy > small {
+  color: var(--vscode-descriptionForeground);
+}
+
+.settings-shell .patent-radar-task-track,
+.patent-radar-progress-track {
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--vscode-progressBar-background, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
+}
+
+.settings-shell .patent-radar-task-track > span,
+.patent-radar-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--vscode-testing-iconPassed, #73c991);
+  transition: width 180ms ease;
+}
+
+.settings-shell .patent-radar-task-strip [data-component="button"] {
+  flex: 0 0 auto;
+}
+
+.patent-radar-dialog {
+  display: grid;
+  width: min(980px, calc(100vw - 48px));
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 18px;
+}
+
+.patent-radar-dialog-summary,
+.patent-radar-dialog-state,
+.patent-radar-dialog-metrics,
+.patent-radar-dialog-footer,
+.patent-radar-dialog-footer > div,
+.patent-radar-dialog-stats,
+.patent-radar-dialog-stats > div,
+.patent-radar-dialog-stats > div > span,
+.patent-radar-timeline-item,
+.patent-radar-candidate-card > div {
+  display: flex;
+  min-width: 0;
+}
+
+.patent-radar-dialog-summary,
+.patent-radar-dialog-footer {
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.patent-radar-dialog-stats {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.5fr) repeat(3, minmax(120px, 1fr));
+  align-items: start;
+  gap: 22px;
+  padding-block: 14px;
+  border-block: 1px solid var(--vscode-panel-border, var(--border-base));
+}
+
+.patent-radar-dialog-stats > div {
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.patent-radar-dialog-stats > div > i {
+  flex: 0 0 24px;
+  font-size: 21px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.patent-radar-dialog-stats > div > span {
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.patent-radar-dialog-stats small {
+  color: var(--vscode-descriptionForeground);
+}
+
+.patent-radar-dialog-progress-value {
+  display: block;
+  min-width: 0;
+}
+
+.patent-radar-dialog-progress-value > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.patent-radar-dialog-progress-value .patent-radar-progress-track {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.patent-radar-dialog-state {
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.patent-radar-dialog-state > div,
+.patent-radar-dialog-metrics {
+  display: grid;
+  gap: 4px;
+}
+
+.patent-radar-dialog-state span,
+.patent-radar-dialog-metrics,
+.patent-radar-timeline-item span,
+.patent-radar-dialog-footer > span,
+.patent-radar-empty {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--font-size-small);
+}
+
+.patent-radar-dialog-metrics {
+  justify-items: end;
+}
+
+.patent-radar-dialog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  min-height: 0;
+  align-content: start;
+  gap: 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.patent-radar-timeline,
+.patent-radar-latest {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--vscode-panel-border, var(--border-base));
+  border-radius: 9px;
+  background: var(--vscode-editor-background, var(--background-base));
+}
+
+.patent-radar-section-title {
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.patent-radar-timeline {
+  display: grid;
+  align-content: start;
+  gap: 11px;
+}
+
+.patent-radar-timeline-item {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.patent-radar-timeline-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.patent-radar-timeline-item + .patent-radar-timeline-item {
+  padding-top: 11px;
+  border-top: 1px solid var(--vscode-panel-border, var(--border-base));
+}
+
+.patent-radar-step-marker {
+  display: inline-flex;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--vscode-testing-iconPassed, #73c991);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.patent-radar-step-marker.is-active {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.patent-radar-candidate-card {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 45%, var(--vscode-panel-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-focusBorder) 6%, transparent);
+}
+
+.patent-radar-candidate-card h4,
+.patent-radar-candidate-card p {
+  margin: 0;
+}
+
+.patent-radar-candidate-card p {
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+.patent-radar-candidate-tags,
+.patent-radar-relation-chain {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.patent-radar-candidate-tags span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+  font-size: var(--font-size-small);
+}
+
+.patent-radar-relation-chain {
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--font-size-small);
+}
+
+.patent-radar-relation-chain > i {
+  flex: 0 0 16px;
+}
+
+.patent-radar-dialog-footer {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.patent-radar-dialog-footer > div {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 800px) {
+  .patent-radar-dialog {
+    width: min(620px, calc(100vw - 32px));
+    gap: 14px;
+  }
+
+  .patent-radar-dialog-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patent-radar-dialog-summary,
+  .patent-radar-dialog-footer,
+  .settings-shell .patent-radar-task-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .patent-radar-dialog-metrics {
+    justify-items: start;
+  }
+
+  .patent-radar-dialog-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 20px;
+    padding-block: 12px;
+  }
+
+  .patent-radar-dialog-stats > div {
+    align-items: flex-start;
+  }
+
+  .patent-radar-dialog-stats > div > i {
+    flex-basis: 20px;
+    font-size: 18px;
+  }
+
+  .patent-radar-timeline-item {
+    align-items: center;
+  }
+
+  .patent-radar-timeline-item > div > span {
+    display: none;
+  }
+
+  .patent-radar-dialog-footer > div {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 460px) {
+  .patent-radar-dialog {
+    width: 100%;
+    gap: 12px;
+  }
+
+  .patent-radar-dialog-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .patent-radar-dialog-footer > div [data-component="button"] {
+    flex: 1 1 130px;
+    justify-content: center;
+  }
 }
 
 .settings-shell .chipmate-server-reload {
@@ -1234,6 +1756,35 @@ body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slo
     align-items: stretch;
   }
 
+  .settings-shell .patent-center-server-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-shell .patent-center-server-control [data-component="text-field"],
+  .settings-shell .patent-center-server-control [data-component="button"] {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .settings-shell .patent-center-server-control [data-component="button"] {
+    justify-content: center;
+  }
+
+  .settings-shell .patent-center-model-control {
+    justify-items: stretch;
+    width: 100%;
+  }
+
+  .settings-shell .patent-center-model-selector .prompt-selector-trigger--model {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .settings-shell .patent-center-model-helper {
+    padding-left: 16px;
+  }
+
   .settings-shell .chipmate-server-input,
   .settings-shell .chipmate-server-test[data-component="button"],
   .settings-shell .chipmate-server-status-slot {
@@ -1332,10 +1883,19 @@ body.vscode-high-contrast-light .settings-shell .chipmate-server-input [data-slo
   }
 }
 
+body.vscode-reduce-motion .settings-shell *,
+body.vscode-reduce-motion .settings-shell *::before,
+body.vscode-reduce-motion .settings-shell *::after {
+  scroll-behavior: auto;
+  transition-duration: 0.01ms;
+  animation-duration: 0.01ms;
+  animation-iteration-count: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .settings-shell *,
-  .settings-shell *::before,
-  .settings-shell *::after {
+  body:not([data-vscode-theme-id]) .settings-shell *,
+  body:not([data-vscode-theme-id]) .settings-shell *::before,
+  body:not([data-vscode-theme-id]) .settings-shell *::after {
     scroll-behavior: auto;
     transition-duration: 0.01ms;
     animation-duration: 0.01ms;

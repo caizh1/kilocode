@@ -31,6 +31,7 @@
 - 扩展使用 `bin/chipmate` 或目标平台的 `chipmate.exe`，不依赖系统安装的 CLI。
 - 本地 CLI 准备脚本是 `bun script/local-bin.ts`；需要强制重建时传 `--force`。
 - 打包必须使用本次全新生成的 `packages/opencode/dist/@chipmate/cli-*`，不得复用当前 `bin/`、历史 VSIX 或从旧包解压的 CLI。
+- `script/build.ts` 必须在编译扩展前自动清空并全新构建本次目标对应的 release CLI，固定目标版本、`CHIPMATE_RELEASE=1` 和禁止 CLI 自行上传，并生成、复核 `dist/.chipmate-release-cli-build.json`；复制每个目标前必须再次核验凭证和实际二进制哈希，防止并发构建替换 CLI。交付打包禁止通过 `CLI_DIST_DIR` 或预先手工构建绕过该流程。
 - 激活时只创建一个共享 `ChipMateConnectionService`。首次连接时 `ServerManager` 启动 `chipmate serve --port 0`，通过随机 `CHIPMATE_SERVER_PASSWORD` 认证，并在当前子进程存活时复用它。
 - Sidebar、Open in Tab 面板和 Agent Manager chat 共用该连接；每个 `ChipMateProvider` 按 session 过滤 SSE。Agent Manager 的终端通道不代表存在独立 `chipmate serve`。
 - 后端状态是否隔离取决于状态分配位置：`InstanceState` 按 directory 隔离，service closure 中的状态跨同一扩展宿主请求共享。修改 Snapshot、并发或 worktree 行为时必须验证该边界。
@@ -49,6 +50,14 @@
 - Windows 内网基线默认仅保留 `en` fallback 和 `zh`，不捆绑 FFmpeg 和 source map；必须包含离线 ripgrep、LanceDB、Tree-sitter、CLI、扩展运行时以及所有当前 webview bundle。
 - `script/build.ts` 的最终 archive 审计是必需/禁止文件的唯一真源。新增 bundle、sidecar 或 runtime 资源时更新脚本和测试，不在 `AGENTS.md` 维护第二份文件清单。
 
+### ChipMate DeepSeek Harness 运行时分发
+
+- ChipMate DeepSeek Harness 使用的 Windows 和 Linux 官方 DSH 运行时由 ChipMate Server 发行镜像统一内置并通过运行时接口分发。ChipMate Server 只负责托管和分发；下载后的官方 DSH 必须在用户本机及对应工作区中执行。
+- 禁止把完整官方 DSH 运行时、运行时 ZIP、为官方 DSH 单独捆绑的 Node 运行时或 `bin/dsh-runtime/**` 打入 VSIX。`packages/chipmate-vscode/dsh-runtime/` 仅用于构建和校验官方运行时归档，不属于 VSIX 内容。
+- VSIX 只允许包含当前目标平台的 `bin/dsh-runtime-lock.json`、生命周期 Supervisor，以及下载、校验、安装和启动本机官方 DSH 所需的代码。锁文件不得同时包含 Windows、Linux 或其他非当前目标平台。
+- 扩展必须从 ChipMate Server 下载与 VSIX 锁文件逐字段匹配的运行时，在临时目录完成完整性与归档安全校验后原子安装到本机缓存。版本、目标、SHA-256、大小或文件清单哈希不一致时必须拒绝使用。
+- ChipMate Server 不可用、下载失败或运行时校验失败时，禁止回退到 VSIX 内置运行时、半成品缓存或普通 ChipMate Agent。`script/build.ts` 的归档审计必须继续拒绝 `extension/bin/dsh-runtime/**`，并验证锁文件只包含当前目标平台。
+
 ## Embedding 与索引默认值
 
 - 内网默认配置为 `openai-compatible`、`qwen3-embedding-8b`、`dimensionMode: auto` 和 `lancedb`。
@@ -66,7 +75,7 @@
 ## 构建结构
 
 - Extension 是 Node/CJS bundle：`src/extension.ts` → `dist/extension.js`。
-- Webview 是 browser bundle，当前包含 Sidebar、Agent Manager、Agent Console 和 diff 相关入口；具体输出列表以 `esbuild.js` 和打包审计为准。
+- Webview 是 browser bundle，当前包含 Sidebar、Agent Manager 和 diff 等入口；具体输出列表以 `esbuild.js` 和打包审计为准。
 - Extension 源码位于 `src/`，webview 位于 `webview-ui/`；webview 使用 SolidJS，不是 React。
 - 测试输出到 `out/`，产品 bundle 输出到 `dist/`，两者不能互相替代。
 - CSP 必须使用 nonce 并覆盖实际字体来源；不要用易漂移的源码行号记录 CSP 位置。
@@ -103,6 +112,7 @@
 - 图标、图标按钮和状态图标必须留在正常文档流中，使用 `inline-flex`、flex 或 grid 对齐；禁止用 `position: absolute` 做图标布局。
 - 新图标先检查相邻动作和项目现有资源，匹配尺寸、视觉重量、间距以及 hover、active、focus、disabled 状态。
 - UI 改动必须验证窄宽度、长文本、缩放、键盘焦点和主题切换，不得只验证单一桌面宽度。
+- VS Code Webview 中，工作动画的 reduced-motion 最终真源必须是 `body.vscode-reduce-motion`；原始 `prefers-reduced-motion` 只允许作为 `body:not([data-vscode-theme-id])` 的非 VS Code fallback。禁止用 `.chat-view`、`.settings-shell` 或其他祖先的通配后代规则仅凭原始媒体查询设置 `animation: none`、`animation-duration` 或 `animation-iteration-count`，从而覆盖 `WorkingIndicator`、动态 Spinner 或其运动层。新增或修改相关组件、全局/容器级 motion CSS、样式入口或打包流程时，必须运行并按需扩展 `tests/dynamic-spinner-motion.spec.ts`：至少覆盖“操作系统 reduce + VS Code Off”仍持续运动、“VS Code On”静态降级，并验证计算动画时长/循环次数及两个时点的 transform 或像素确实变化；只检查资源存在、DOM、`display` 或 `data-spinner-variant` 不算通过。`script/build.ts` 必须继续对最终 VSIX 的 `extension/dist/webview.css` 执行同一动画契约审计，审计失败时禁止交付或发布。
 
 ## Diff 与性能
 

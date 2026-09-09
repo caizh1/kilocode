@@ -2,6 +2,7 @@
 node_modules/
 out/
 .runtime/
+.runtime-seed/
 playwright-report/
 test-results/
 *.docker.tar

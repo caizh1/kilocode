@@ -1,3 +1,4 @@
+import { providerOriginsDiffer } from "../../../../src/shared/custom-provider"
 import type { CustomProviderPackage } from "../../../../src/shared/provider-model"
 import type { Modalities, ModelEntry, VariantEntry } from "./CustomProviderModelCard"
 
@@ -23,6 +24,7 @@ export type FormErrors = {
   providerID: string | undefined
   name: string | undefined
   baseURL: string | undefined
+  apiKey: string | undefined
   models: Array<{ id?: string; name?: string; variants?: Array<{ name?: string }> }>
   headers: Array<{ key?: string; value?: string }>
 }
@@ -35,6 +37,9 @@ type ValidateArgs = {
   existingProviderIDs: Set<string>
   /** Preserved env vars from the existing provider config (edit mode only) */
   existingEnv?: string[]
+  existingBaseURL?: string
+  existingHasCredential?: boolean
+  apiKeyChanged?: boolean
 }
 
 type ValidateResult = {
@@ -92,6 +97,40 @@ export function resolveQuickModels(
   }
 }
 
+export function hasExtendedModelConfiguration(
+  existing: { config: { models?: Record<string, unknown> } } | undefined,
+  defaults: { modelID: string; autocompleteModelID: string } | undefined,
+) {
+  if (!existing || !defaults) return false
+  const managed = new Set([defaults.modelID, defaults.autocompleteModelID])
+  return Object.keys(existing.config.models ?? {}).some((id) => !managed.has(id))
+}
+
+export function mergeDiscoveredModels(current: ModelEntry[], discovered: Array<{ id: string; name: string }>) {
+  const placeholder = current.length === 1 && !current[0]?.id.trim() && !current[0]?.name.trim()
+  const existing = new Set(current.map((model) => model.id.trim().toLowerCase()).filter(Boolean))
+  const added = discovered.flatMap((model) => {
+    const id = model.id.trim()
+    const key = id.toLowerCase()
+    if (!key || existing.has(key)) return []
+    existing.add(key)
+    return [
+      {
+        id,
+        name: model.name.trim() || id,
+        reasoning: false,
+        supportsImages: false,
+        modalities: {},
+        variants: [],
+      } satisfies ModelEntry,
+    ]
+  })
+  return {
+    models: placeholder ? added : [...current, ...added],
+    added,
+  }
+}
+
 function checkVariant(v: VariantEntry, seen: Set<string>, t: Translator) {
   const n = v.name.trim()
   if (!n) return { name: t("provider.custom.error.required") }
@@ -145,6 +184,13 @@ function checkProviderID(id: string, editing: boolean, disabled: string[], exist
       ? undefined
       : t("provider.custom.error.providerID.exists")
   return { idErr, existsErr }
+}
+
+function checkOriginCredential(input: ValidateArgs, baseURL: string, apiKey: string) {
+  if (!input.existingHasCredential) return
+  if (!providerOriginsDiffer(input.existingBaseURL, baseURL)) return
+  if (input.apiKeyChanged && apiKey) return
+  return input.t("provider.custom.error.apiKey.originChanged")
 }
 
 function serializeVariant(v: VariantEntry): [string, Record<string, unknown>] {
@@ -221,6 +267,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
     : !/^https?:\/\//.test(baseURL)
       ? input.t("provider.custom.error.baseURL.format")
       : undefined
+  const credentialError = checkOriginCredential(input, baseURL, apiKey)
 
   const seenModels = new Set<string>()
   const modelErrors = input.form.models.map((m) => checkModel(providerID, m, seenModels, input.t))
@@ -234,11 +281,12 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
     providerID: idErr ?? existsErr,
     name: nameError,
     baseURL: urlError,
+    apiKey: credentialError,
     models: modelErrors,
     headers: headerErrors,
   }
 
-  const ok = !idErr && !existsErr && !nameError && !urlError && modelsValid && headersValid
+  const ok = !idErr && !existsErr && !nameError && !urlError && !credentialError && modelsValid && headersValid
   if (!ok) return { errors }
 
   const headers = Object.fromEntries(

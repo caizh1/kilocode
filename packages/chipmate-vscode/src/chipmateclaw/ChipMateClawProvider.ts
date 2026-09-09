@@ -1,3 +1,4 @@
+import { bindAppearance } from "../appearance"
 /**
  * ChipMateClaw panel provider for the VS Code extension.
  *
@@ -140,6 +141,7 @@ export class ChipMateClawProvider implements vscode.Disposable {
       localResourceRoots: [this.uri],
     }
 
+    bindAppearance(panel)
     panel.webview.html = buildWebviewHtml(panel.webview, {
       scriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "dist", "chipmateclaw.js")),
       styleUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.uri, "dist", "chipmateclaw.css")),

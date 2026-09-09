@@ -16,6 +16,15 @@ function createCtx(
   merged: ExistingGlobal = existing,
   error?: Error,
   updateError?: Error,
+  providerItems: Array<Record<string, unknown>> = [
+    {
+      id: "openai",
+      name: "OpenAI",
+      source: "custom",
+      env: [],
+      models: {},
+    },
+  ],
 ) {
   const calls = {
     set: [] as Array<{ providerID: string; auth: { type: string; key: string; metadata?: Record<string, string> } }>,
@@ -59,15 +68,7 @@ function createCtx(
       provider: {
         list: async () => ({
           data: {
-            all: [
-              {
-                id: "openai",
-                name: "OpenAI",
-                source: "custom",
-                env: [],
-                models: {},
-              },
-            ],
+            all: providerItems,
             connected: ["openai"],
             default: {},
           },
@@ -255,7 +256,7 @@ describe("saveCustomProvider", () => {
     expect(calls.configOptions[0]?.headers?.["x-chipmate-defer-instance-dispose"]).toBe("1")
     expect(calls.configOptions[0]?.headers?.["x-chipmate-memory-operation"]).toMatch(/^custom-provider:/)
     expect(calls.dispose).toBe(1)
-    expect(calls.order).toEqual(["global.get", "global.update", "dispose", "config.get", "providers"])
+    expect(calls.order).toEqual(["global.get", "config.get", "global.update", "dispose", "config.get", "providers"])
   })
 
   it("preserves auth when the api key field is unchanged", async () => {
@@ -285,7 +286,68 @@ describe("saveCustomProvider", () => {
     expect(calls.remove).toHaveLength(0)
     expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-test" } }])
     expect(calls.setOptions[0]?.headers?.["x-chipmate-defer-instance-dispose"]).toBe("1")
-    expect(calls.order).toEqual(["global.get", "global.update", "auth.set", "dispose", "config.get", "providers"])
+    expect(calls.order).toEqual([
+      "global.get",
+      "config.get",
+      "global.update",
+      "auth.set",
+      "dispose",
+      "config.get",
+      "providers",
+    ])
+  })
+
+  it("rejects a different URL origin when an existing credential is not replaced", async () => {
+    const previous = createSavedProvider()
+    const merged = { provider: { myprovider: previous } }
+    const active = [
+      {
+        id: "myprovider",
+        name: "My Provider",
+        source: "config",
+        key: "sk-existing",
+        env: [],
+        options: previous.options,
+        models: previous.models,
+      },
+    ]
+    const { ctx, calls, setCachedConfig } = createCtx({ disabled_providers: [] }, merged, undefined, undefined, active)
+    const next = { ...createProvider(), options: { baseURL: "https://other.example/v1" } }
+
+    await saveCustomProvider(ctx, "req", "myprovider", next, undefined, false, null, setCachedConfig)
+
+    expect(calls.config).toHaveLength(0)
+    expect(calls.set).toHaveLength(0)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "myprovider",
+      action: "connect",
+      message: "A new API key or environment credential is required when the provider URL origin changes",
+    })
+  })
+
+  it("saves a different URL origin after replacing the existing credential", async () => {
+    const previous = createSavedProvider()
+    const merged = { provider: { myprovider: previous } }
+    const active = [
+      {
+        id: "myprovider",
+        name: "My Provider",
+        source: "config",
+        key: "sk-existing",
+        env: [],
+        options: previous.options,
+        models: previous.models,
+      },
+    ]
+    const { ctx, calls, setCachedConfig } = createCtx({ disabled_providers: [] }, merged, undefined, undefined, active)
+    const next = { ...createProvider(), options: { baseURL: "https://other.example/v1" } }
+
+    await saveCustomProvider(ctx, "req", "myprovider", next, "sk-new", true, null, setCachedConfig)
+
+    expect(calls.config).toHaveLength(1)
+    expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-new" } }])
   })
 
   it("activates a saved reasoning model without persisted variants", async () => {
@@ -332,6 +394,7 @@ describe("saveCustomProvider", () => {
     expect(calls.config[1]).toEqual({ config: { model: "chipmate/deepseek-v4-flash" } })
     expect(calls.order).toEqual([
       "global.get",
+      "config.get",
       "global.update",
       "auth.set",
       "global.update",
@@ -438,7 +501,15 @@ describe("saveCustomProvider", () => {
 
     expect(calls.dispose).toBe(1)
     expect(calls.refresh).toBe(1)
-    expect(calls.order).toEqual(["global.get", "global.update", "auth.set", "dispose", "config.get", "providers"])
+    expect(calls.order).toEqual([
+      "global.get",
+      "config.get",
+      "global.update",
+      "auth.set",
+      "dispose",
+      "config.get",
+      "providers",
+    ])
   })
 
   // Regression tests for https://github.com/ChipMate-Org/chipmate/issues/9186

@@ -186,7 +186,8 @@
   opacity: 0.7;
 }
 
-.working-compaction {
+.working-compaction,
+.compaction-status-card {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -203,7 +204,8 @@
   backdrop-filter: blur(18px) saturate(135%);
 }
 
-.working-compaction-title {
+.working-compaction-title,
+.compaction-status-title {
   display: flex;
   align-items: center;
   min-width: 0;
@@ -212,42 +214,87 @@
   font-weight: 600;
 }
 
-.working-compaction-title > span:last-child {
+.working-compaction-title > span:last-child,
+.compaction-status-title > span:last-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.working-compaction-title [data-component="icon"] {
+.compaction-status-title > span:last-child {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.working-compaction-title [data-component="icon"],
+.compaction-status-title [data-component="icon"] {
   flex: 0 0 auto;
   color: var(--vscode-focusBorder);
 }
 
-.working-compaction-progress [data-slot="progress-track"] {
+.working-compaction-progress [data-slot="progress-track"],
+.compaction-status-progress [data-slot="progress-track"] {
   height: 6px;
   border-color: color-mix(in srgb, var(--vscode-focusBorder) 24%, transparent);
   background: color-mix(in srgb, var(--vscode-editor-background) 65%, transparent);
 }
 
-.working-compaction-progress [data-slot="progress-fill"] {
+.working-compaction-progress [data-slot="progress-fill"],
+.compaction-status-progress [data-slot="progress-fill"] {
   background: var(--vscode-progressBar-background, var(--vscode-focusBorder));
   box-shadow: 0 0 10px color-mix(in srgb, var(--vscode-focusBorder) 36%, transparent);
 }
 
-.working-compaction-detail {
+.working-compaction-detail,
+.compaction-status-description {
   color: var(--vscode-descriptionForeground);
   font-size: var(--chipmate-font-size-11);
   line-height: 1.35;
 }
 
+.compaction-status-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--chipmate-font-size-11);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+body.vscode-reduce-motion .working-compaction-progress[data-indeterminate] [data-slot="progress-fill"],
+body.vscode-reduce-motion .compaction-status-progress[data-indeterminate] [data-slot="progress-fill"] {
+  width: 100%;
+  animation: none;
+  opacity: 0.45;
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .working-compaction-progress[data-indeterminate] [data-slot="progress-fill"] {
+  body:not([data-vscode-theme-id]) .working-compaction-progress[data-indeterminate] [data-slot="progress-fill"],
+  body:not([data-vscode-theme-id]) .compaction-status-progress[data-indeterminate] [data-slot="progress-fill"] {
     width: 100%;
     animation: none;
     opacity: 0.45;
     transform: none;
   }
+}
+
+.compaction-status-card[data-state="succeeded"] .compaction-status-title [data-component="icon"] {
+  color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+}
+
+.compaction-status-card[data-state="failed"] .compaction-status-title [data-component="icon"] {
+  color: var(--vscode-errorForeground);
+}
+
+.compaction-status-card[data-state="interrupted"] .compaction-status-title [data-component="icon"] {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
 }
 
 /* ============================================

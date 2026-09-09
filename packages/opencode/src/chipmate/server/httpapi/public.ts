@@ -76,18 +76,10 @@ export function matchLegacyChipMateOpenApi(input: Record<string, unknown>) {
   if (provider?.additionalProperties && typeof provider.additionalProperties === "object")
     provider.additionalProperties = nullable(provider.additionalProperties)
 
-  const pty = spec.components?.schemas?.Pty?.properties
-  if (pty?.sessionID) pty.sessionID = nullable(pty.sessionID)
-
   const out = spec.paths?.["/session/{sessionID}/branch-name"]?.post?.responses?.["200"]?.content?.[
     "application/json"
   ]?.schema?.properties
   if (out?.branch) out.branch = nullable(out.branch)
-
-  const update = spec.paths?.["/pty/{ptyID}"]?.put?.requestBody?.content?.["application/json"]?.schema
-  const name = update?.$ref?.replace("#/components/schemas/", "")
-  const fields = name ? spec.components?.schemas?.[name]?.properties : update?.properties
-  if (fields?.sessionID) fields.sessionID = nullable(fields.sessionID)
 
   const fim = spec.paths?.["/chipmate/fim"]?.post?.responses
   if (!fim) return

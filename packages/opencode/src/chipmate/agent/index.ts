@@ -15,12 +15,12 @@ import PROMPT_DEBUG from "../../agent/prompt/debug.txt"
 import PROMPT_ORCHESTRATOR from "../../agent/prompt/orchestrator.txt"
 import PROMPT_ASK from "../../agent/prompt/ask.txt"
 import PROMPT_EXPLORE from "../../agent/prompt/explore.txt"
-import PROMPT_AGENT_CONSOLE from "./agent-console.txt"
 import PROMPT_ULTRA from "./ultra.txt"
 import PROMPT_DOCUMENT from "./document.txt"
 import { applyInternalIndexingDefaults, isInternalOffline } from "../internal-offline"
 import { ProductProfile } from "../product-profile"
 import { DocumentAgentScope } from "../document-agent/scope"
+import { UfsReviewAgent } from "../ufs-review/agent"
 
 export const bash: Record<string, "allow" | "ask" | "deny"> = {
   "*": "ask",
@@ -349,7 +349,7 @@ export function processConfigItem(item: {
 
 export const DESIGN_DOC_WORKER = "design-doc-worker"
 export const DESIGN_DOC_STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
-const locked = new Set(["compaction", "title", "summary", DESIGN_DOC_WORKER])
+const locked = new Set(["compaction", "title", "summary", DESIGN_DOC_WORKER, ...UfsReviewAgent.names()])
 export const ULTRA_BASELINE = "ultra-code-baseline"
 export const ULTRA_SYNTH = "ultra-synthesizer"
 
@@ -367,6 +367,7 @@ export function designDocWorkerRules() {
 }
 
 function lockedRules(name: string) {
+  if (UfsReviewAgent.names().includes(name)) return UfsReviewAgent.rules()
   if (name === DocumentAgentScope.AGENT) return DocumentAgentScope.rules()
   return name === DESIGN_DOC_WORKER ? designDocWorkerRules() : hardRules()
 }
@@ -385,22 +386,6 @@ function documentAgent(): AgentInfo {
     permission: [...DocumentAgentScope.rules()],
     mode: "primary",
     native: true,
-  }
-}
-
-function agentConsole(): AgentInfo {
-  return {
-    name: "agent-console",
-    description: "Terminal-native assistant for the persistent ChipMate Agent Console shell.",
-    prompt: PROMPT_AGENT_CONSOLE,
-    options: {},
-    permission: Permission.fromConfig({
-      "*": "deny",
-      agent_console_shell: "ask",
-    }),
-    mode: "primary",
-    native: true,
-    hidden: true,
   }
 }
 
@@ -436,8 +421,8 @@ export function hardenSystemAgents(agents: Record<string, AgentInfo>) {
     }
     harden(item)
   }
-  agents["agent-console"] = agentConsole()
   agents[DESIGN_DOC_WORKER] = designDocWorker()
+  if (ProductProfile.chipmate) UfsReviewAgent.install(agents)
   if (documentAgentEnabled()) agents[DocumentAgentScope.AGENT] = documentAgent()
   delete agents[ULTRA_BASELINE]
   delete agents[ULTRA_SYNTH]
@@ -508,7 +493,6 @@ export function patchAgents(
 ) {
   const internal = isInternalOffline()
 
-  agents["agent-console"] = agentConsole()
   agents[DESIGN_DOC_WORKER] = designDocWorker()
   if (documentAgentEnabled()) agents[DocumentAgentScope.AGENT] = documentAgent()
 

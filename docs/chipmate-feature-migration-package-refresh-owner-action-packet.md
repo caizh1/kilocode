@@ -83,7 +83,6 @@ python3 docs/chipmate-feature-migration-m11-final-signoff-intake.py \
 - Re-run M11 final signoff intake.
 - Re-run current-state consistency.
 - Re-run M11 current status dashboard.
-- Keep M11 final signoff `NOT_READY_FOR_FINAL_SIGNOFF` if S3, S16, installed runtime, Windows/Linux target execution, internal embedded-C, company template, visible Agent Terminal UX, completion audit, or final review gates remain open.
 
 ## Boundary
 

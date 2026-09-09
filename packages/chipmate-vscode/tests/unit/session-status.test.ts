@@ -195,4 +195,19 @@ describe("seedSessionStatuses", () => {
     expect(map.get("confirmed")).toBe("busy")
     expect(msgs).toEqual([{ type: "sessionStatus", sessionID: "confirmed", status: "busy" }])
   })
+
+  it("does not let an old HTTP snapshot overwrite a newer SSE revision", async () => {
+    const client = createClient({ data: { current: { type: "busy" }, stale: { type: "busy" } } })
+    const map = new Map<string, SessionStatus["type"]>([
+      ["current", "retry"],
+      ["stale", "retry"],
+    ])
+    const { msgs, post } = collect()
+
+    await seedSessionStatuses(client, "/repo", map, post, true, (sessionID) => sessionID === "current")
+
+    expect(map.get("current")).toBe("busy")
+    expect(map.get("stale")).toBe("retry")
+    expect(msgs).toEqual([{ type: "sessionStatus", sessionID: "current", status: "busy" }])
+  })
 })

@@ -41,6 +41,7 @@ import { useImageAttachments, type ImageAttachment } from "../src/hooks/useImage
 import { useSpeechToText } from "../src/components/speech-to-text/useSpeechToText"
 import { convertToMentionPath } from "../src/utils/path-mentions"
 import { insertSpacedText } from "../src/components/chat/prompt-input-utils"
+import { isInternalModelHidden } from "../src/utils/internal-model-policy"
 import { WandSparkles } from "@chipmate/chipmate-ui/lucide"
 import { BranchSelect, BranchSelectPopover } from "../src/components/shared/BranchSelect"
 import { tracker } from "./telemetry"
@@ -127,6 +128,26 @@ export const NewWorktreeDialog: Component<{
   const speech = useSpeechToText(vscode, server, { t })
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config())
+
+  const hiddenModel = (selection: { providerID: string; modelID: string } | null) => {
+    if (!selection) return false
+    const source = provider.providers()[selection.providerID]
+    const candidate = source?.models[selection.modelID]
+    return isInternalModelHidden({
+      providerID: selection.providerID,
+      providerName: source?.name,
+      modelID: selection.modelID,
+      modelName: candidate?.name,
+    })
+  }
+
+  createEffect(() => {
+    const selected = model()
+    if (!hiddenModel(selected)) return
+    const fallback = session.configModel()
+    setModel(hiddenModel(fallback) ? null : fallback)
+  })
+
   let prior: string | null = null
   let request: string | undefined
   const cancel = () => {

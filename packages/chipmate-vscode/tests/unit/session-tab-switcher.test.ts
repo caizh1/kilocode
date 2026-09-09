@@ -54,4 +54,18 @@ describe("SessionTabSwitcher", () => {
     expect(switcher).toContain("padding-inline")
     expect(switcher).not.toMatch(/\b(?:left|right|margin-left|margin-right|border-left|border-right)\s*:/)
   })
+
+  it("matches the confirmed active-tab design across dark and light themes", async () => {
+    const css = await Bun.file(path.join(WEBVIEW, "src/styles/session-tabs.css")).text()
+    const start = css.indexOf(".session-tab-bar .am-tab-active {")
+    const end = css.indexOf(".session-tab-bar .am-tab-target", start)
+    const active = css.slice(start, end)
+
+    expect(css).toContain("border-bottom-width: 3px")
+    expect(css).toContain(".am-tab:not(.am-tab-active):hover")
+    expect(active).toContain("var(--surface-base) 66%")
+    expect(active).toContain("body.vscode-light .session-tab-bar .am-tab-active")
+    expect(active).toContain("var(--surface-base) 88%")
+    expect(active).toContain("font-weight: 600")
+  })
 })

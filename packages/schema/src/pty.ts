@@ -4,7 +4,6 @@ import { Schema } from "effect"
 import { optional } from "./schema"
 import { define, inventory } from "./event"
 import { ascending } from "./identifier"
-import { SessionID } from "./session-id" // chipmate_change
 import { NonNegativeInt, PositiveInt, statics } from "./schema"
 
 const IDSchema = Schema.String.check(Schema.isStartsWith("pty")).pipe(Schema.brand("PtyID"))
@@ -29,7 +28,6 @@ export const Info = Schema.Struct({
   status: Schema.Literals(["running", "exited"]),
   pid: NonNegativeInt,
   exitCode: optional(NonNegativeInt),
-  sessionID: optional(Schema.NullOr(SessionID)), // chipmate_change - ChipMate associates PTYs with sessions
 }).annotate({ identifier: "Pty" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 

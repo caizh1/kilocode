@@ -3,6 +3,7 @@ import { busyMessage, isBusy } from "@/chipmate/database/sqlite-error" // chipma
 import { ChipMateSessionHttpApi } from "@/chipmate/server/httpapi/session-fork" // chipmate_change
 import { BlockedError as AgentRequirementError } from "@/chipmate/agent-requirements" // chipmate_change
 import { ChipMateSessionPromptQueue } from "@/chipmate/session/prompt-queue" // chipmate_change
+import { HistoryMigrationMaintenance } from "@/chipmate/history/maintenance" // chipmate_change
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { ChipMateViewers } from "@/chipmate/presence/service" // chipmate_change
 import { Agent } from "@/agent/agent"
@@ -166,6 +167,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
+      HistoryMigrationMaintenance.assertAvailable() // chipmate_change - reject new work while local history maintenance owns the database
       return yield* shareSvc.create(ctx.payload)
     })
 
@@ -220,12 +222,22 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
-      return yield* SessionError.mapStorageNotFound(
-        session.fork({
-          sessionID: ctx.params.sessionID,
-          messageID: ctx.payload?.messageID,
-        }),
+      // chipmate_change start - authoritative busy check plus inclusive/idempotent fork fields
+      const input = {
+        sessionID: ctx.params.sessionID,
+        messageID: ctx.payload?.messageID,
+        afterMessageID: ctx.payload?.afterMessageID,
+        operationID: ctx.payload?.operationID,
+      }
+      const completed = yield* SessionError.mapFork(Session.findCompletedFork(input))
+      if (completed) return completed
+      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      return yield* SessionError.mapFork(
+        session.fork(input),
+      ).pipe(
+        Effect.catchTag("NotFoundError", (error) => SessionError.mapStorageNotFound(Effect.fail(error))),
       )
+      // chipmate_change end
     })
 
     const forkRaw = ChipMateSessionHttpApi.forkRaw(fork) // chipmate_change - carry upstream bodyless full-session fork support
@@ -275,6 +287,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof SummarizePayload.Type
     }) {
+      HistoryMigrationMaintenance.assertAvailable() // chipmate_change
       yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
       const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       const defaultAgent = yield* agentSvc.defaultAgent()
@@ -297,6 +310,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
+      HistoryMigrationMaintenance.assertAvailable() // chipmate_change
       yield* requireSession(ctx.params.sessionID)
       const message = yield* promptSvc
         .prompt({ ...ctx.payload, sessionID: ctx.params.sessionID } as unknown as SessionPrompt.PromptInput) // chipmate_change
@@ -323,6 +337,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
+      HistoryMigrationMaintenance.assertAvailable() // chipmate_change
       yield* requireSession(ctx.params.sessionID)
       yield* promptSvc
         .prompt({ ...ctx.payload, sessionID: ctx.params.sessionID } as unknown as SessionPrompt.PromptInput)
@@ -357,6 +372,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof CommandPayload.Type
     }) {
+      HistoryMigrationMaintenance.assertAvailable() // chipmate_change
       yield* requireSession(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
@@ -367,6 +383,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof ShellPayload.Type
     }) {
+      HistoryMigrationMaintenance.assertAvailable() // chipmate_change
       yield* requireSession(ctx.params.sessionID)
       return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
     })

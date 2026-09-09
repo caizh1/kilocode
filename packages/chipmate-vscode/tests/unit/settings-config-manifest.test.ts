@@ -51,7 +51,7 @@ describe("settings configuration manifest", () => {
       scope: "application",
     })
     expect(props["chipmate.v2.chat.shiftTabCyclesVariant"]).toMatchObject({ type: "boolean", default: true })
-    expect(props["chipmate.v2.showTokenThroughput"]).toMatchObject({ type: "boolean", default: false })
+    expect(props["chipmate.v2.showTokenThroughput"]).toMatchObject({ type: "boolean", default: true })
     expect(props["chipmate.v2.languageCommitMessage"]).toMatchObject({ type: "string", default: "sync" })
   })
 

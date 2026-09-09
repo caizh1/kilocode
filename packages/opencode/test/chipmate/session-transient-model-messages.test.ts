@@ -4,6 +4,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { Provider } from "../../src/provider/provider"
 import { ChipMatePartLifecycle } from "../../src/chipmate/session/part-lifecycle"
+import { ChipMateCompactionStatus } from "../../src/chipmate/session/compaction-status"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 
@@ -100,6 +101,35 @@ describe("transient session parts", () => {
     expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
       { role: "user", content: [{ type: "text", text: "continue" }] },
       { role: "assistant", content: [{ type: "text", text: "durable result" }] },
+    ])
+  })
+
+  test("keeps durable compaction lifecycle metadata out of model messages", async () => {
+    const message = user("msg_compaction")
+    const status = ChipMateCompactionStatus.create({
+      sessionID: sid,
+      messageID: message.id,
+      source: "manual",
+      now: 1_000,
+    })
+    const input: SessionV1.WithParts[] = [
+      {
+        info: message,
+        parts: [
+          status,
+          {
+            id: PartID.make("prt_compaction"),
+            messageID: message.id,
+            sessionID: sid,
+            type: "compaction",
+            auto: false,
+          },
+        ],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "What did we do so far?" }] },
     ])
   })
 })

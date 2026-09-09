@@ -8,7 +8,7 @@ import { Log } from "@opencode-ai/core/util/log" // chipmate_change
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
-import type { LLMEvent } from "@opencode-ai/llm"
+import { LLMEvent, ToolRuntime } from "@opencode-ai/llm" // chipmate_change
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
@@ -29,6 +29,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { ChipMateSession } from "@/chipmate/session"
 import { ChipMateLLM } from "@/chipmate/session/llm"
 import { ChipMateSessionOverflow } from "@/chipmate/session/overflow"
+import { ChipMateCompactionDiagnostics } from "@/chipmate/session/compaction-diagnostics"
 import { ChipMateToolSchema } from "@/chipmate/session/tool-schema"
 import { DSML } from "@/chipmate/session/dsml"
 import { SessionExport } from "@/chipmate/session-export"
@@ -61,7 +62,37 @@ export type StreamInput = {
   toolChoice?: "auto" | "required" | "none"
   preflight?: boolean // chipmate_change - enable proactive threshold compaction for normal session turns
   reportedContextTokens?: number // chipmate_change - provider-reported context size from the last finished turn, source of truth for the output cap
+  runtimeToolCall?: RuntimeToolCall // chipmate_change - trusted local dispatch before any provider request
 }
+
+// chipmate_change start - internal tool dispatch is runtime-owned and never model-generated
+export type RuntimeToolCall = {
+  readonly id: string
+  readonly name: string
+  readonly input: Record<string, unknown>
+}
+
+export function runtimeToolStream(input: {
+  readonly call: RuntimeToolCall
+  readonly tools: Record<string, Tool>
+  readonly messages: ModelMessage[]
+  readonly abort: AbortSignal
+}) {
+  const call = LLMEvent.toolCall(input.call)
+  const tools = LLMNativeRuntime.nativeTools(input.tools, { messages: input.messages, abort: input.abort })
+  const settled = Stream.fromEffect(ToolRuntime.dispatch(tools, call)).pipe(
+    Stream.flatMap((result) => {
+      const reason = result.result.type === "error" ? ("stop" as const) : ("tool-calls" as const)
+      return Stream.fromIterable([
+        ...result.events,
+        LLMEvent.stepFinish({ index: 0, reason }),
+        LLMEvent.finish({ reason }),
+      ])
+    }),
+  )
+  return Stream.make(LLMEvent.stepStart({ index: 0 }), call).pipe(Stream.concat(settled))
+}
+// chipmate_change end
 
 export type StreamRequest = StreamInput & {
   abort: AbortSignal
@@ -109,6 +140,26 @@ const live: Layer.Layer<
         mode: input.agent.mode,
       })
 
+      // chipmate_change start - Ultra startup is a trusted local tool call. This branch must stay
+      // before provider/config/auth lookup so the parent model receives exactly zero requests.
+      if (input.runtimeToolCall) {
+        yield* Effect.logInfo("llm runtime selected", {
+          "llm.runtime": "local-tool",
+          "llm.tool": input.runtimeToolCall.name,
+          "session.id": input.sessionID,
+        })
+        return {
+          type: "native" as const,
+          stream: runtimeToolStream({
+            call: input.runtimeToolCall,
+            tools: input.tools,
+            messages: input.messages,
+            abort: input.abort,
+          }),
+        }
+      }
+      // chipmate_change end
+
       const [language, cfg, item, info] = yield* Effect.all(
         [
           provider.getLanguage(input.model),
@@ -152,17 +203,40 @@ const live: Layer.Layer<
         usage,
         reported: input.reportedContextTokens,
       })
-      if (
+      const usableTokens = usable({ cfg, model: input.model, outputTokenMax: flags.outputTokenMax })
+      const preflightTriggered =
         preflight &&
-        usage &&
+        !!usage &&
         ChipMateSessionOverflow.shouldCompact({
           cfg,
           model: input.model,
-          usable: usable({ cfg, model: input.model, outputTokenMax: flags.outputTokenMax }), // chipmate_change
+          usable: usableTokens,
           tokens: usage.normalized,
           continuation: usage.continuation,
         })
-      ) {
+      if (preflight && usage) {
+        yield* Effect.logInfo(
+          "compaction_diag",
+          ChipMateCompactionDiagnostics.preflight({
+            sessionID: input.sessionID,
+            providerID: input.model.providerID,
+            modelID: input.model.id,
+            messageCount: estimated.length,
+            toolCount: Object.keys(tools).length,
+            normalizedTokens: usage.normalized,
+            rawTokens: usage.raw,
+            continuation: usage.continuation,
+            reportedContextTokens: input.reportedContextTokens,
+            contextLimit: input.model.limit.context,
+            inputLimit: input.model.limit.input,
+            outputLimit: input.model.limit.output,
+            usableTokens,
+            thresholdTokens: ChipMateSessionOverflow.limit({ cfg, model: input.model, usable: usableTokens }),
+            triggered: preflightTriggered,
+          }),
+        )
+      }
+      if (preflightTriggered) {
         return yield* Effect.fail(new ChipMateSessionOverflow.PreflightError())
       }
       const prepared = { ...base, tools, params: { ...base.params, maxOutputTokens } }
@@ -279,7 +353,11 @@ const live: Layer.Layer<
       const found = ChipMateSession.resolveRoot(input.sessionID)
       const root = parent ? (found === input.sessionID ? parent : found) : input.sessionID
       const exportable =
-        exporting && isChipMate && input.model.isFree === true && org.type === "personal" && input.agent.name !== "title"
+        exporting &&
+        isChipMate &&
+        input.model.isFree === true &&
+        org.type === "personal" &&
+        input.agent.name !== "title"
       if (exportable) {
         SessionExport.beforeRequest({
           input: { model: input.model, org },

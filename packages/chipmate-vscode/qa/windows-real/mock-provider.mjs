@@ -115,18 +115,10 @@ export function createMockProvider(opts = {}) {
 
 function chat(res, body, scenario) {
   if (scenario === "tool-call") {
-    const tools = Array.isArray(body?.tools) ? body.tools : []
-    const shell = tools.some((item) => item?.function?.name === "agent_console_shell")
     const call = {
       id: "call_qa_fixed",
       type: "function",
-      function: shell
-        ? {
-            name: "agent_console_shell",
-            arguments:
-              '{"command":"Add-Content -LiteralPath .chipmate-qa-agent.txt -Value approved","description":"QA approval probe"}',
-          }
-        : { name: "read", arguments: '{"filePath":"fixture/main.c"}' },
+      function: { name: "read", arguments: '{"filePath":"fixture/main.c"}' },
     }
     if (body?.stream) {
       return sse(res, [

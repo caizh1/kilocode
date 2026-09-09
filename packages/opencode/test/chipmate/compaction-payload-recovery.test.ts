@@ -240,24 +240,19 @@ describe("ChipMateCompactionPayloadRecovery", () => {
       },
       parts: [tool],
     }
-    const updated: MessageV2.Part[] = []
+    const stripped = ChipMateCompactionPayloadRecovery.strip({ messages: [user, assistant] })
 
-    await Effect.runPromise(
-      ChipMateCompactionPayloadRecovery.strip({
-        messages: [user, assistant],
-        update: (part) => Effect.sync(() => updated.push(part)).pipe(Effect.as(part)),
-      }),
-    )
-
-    expect(updated).toHaveLength(2)
-    expect(updated[0]).toMatchObject({
+    expect(stripped[0]?.parts[0]).toMatchObject({
       type: "text",
       text: "[Attached image/png: screen.png]",
     })
-    expect(updated[1]?.type).toBe("tool")
-    if (updated[1]?.type === "tool" && updated[1].state.status === "completed") {
-      expect(updated[1].state.time.compacted).toBeNumber()
+    const compacted = stripped[1]?.parts[0]
+    expect(compacted?.type).toBe("tool")
+    if (compacted?.type === "tool" && compacted.state.status === "completed") {
+      expect(compacted.state.time.compacted).toBeNumber()
     }
+    expect(user.parts[0]?.type).toBe("file")
+    if (tool.state.status === "completed") expect(tool.state.time.compacted).toBeUndefined()
   })
 
   test(
@@ -381,7 +376,7 @@ describe("ChipMateCompactionPayloadRecovery", () => {
               .filter((part): part is MessageV2.ToolPart => part.type === "tool")
             expect(tools).toHaveLength(2)
             expect(tools[0]?.type).toBe("tool")
-            if (tools[0]?.state.status === "completed") expect(tools[0].state.time.compacted).toBeNumber()
+            if (tools[0]?.state.status === "completed") expect(tools[0].state.time.compacted).toBeUndefined()
             expect(tools[1]?.type).toBe("tool")
             if (tools[1]?.state.status === "completed") expect(tools[1].state.time.compacted).toBeUndefined()
           } finally {

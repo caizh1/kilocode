@@ -45,6 +45,8 @@ type PendingPreview = {
   settled: boolean
 }
 
+export type CodeCommentPreviewTarget = Pick<FunctionTarget, "filePath" | "documentText" | "languageId">
+
 export function captureCodeCommentSourceView(editor: vscode.TextEditor): CodeCommentSourceViewState {
   const uri = editor.document.uri.toString()
   const sourceTab = findSourceTab(uri, editor.viewColumn)
@@ -69,8 +71,8 @@ export class CodeCommentPreviewController implements vscode.Disposable {
   ) {
     this.disposables = [
       host.registerProvider((key) => this.contents.get(key)),
-      host.registerCommand(APPLY_CODE_COMMENT_PREVIEW_COMMAND, () => this.settle(true)),
-      host.registerCommand(DISCARD_CODE_COMMENT_PREVIEW_COMMAND, () => this.settle(false)),
+      host.registerCommand("chipmate.v2.applyCodeCommentPreview", () => this.settle(true)),
+      host.registerCommand("chipmate.v2.discardCodeCommentPreview", () => this.settle(false)),
       host.onDidCloseDiff((original, modified) => {
         if (this.matchesPending(original, modified)) this.settle(false, false)
       }),
@@ -79,12 +81,44 @@ export class CodeCommentPreviewController implements vscode.Disposable {
   }
 
   async confirm(
-    target: FunctionTarget,
+    target: CodeCommentPreviewTarget,
     candidate: string,
     functions: number,
     source: CodeCommentSourceViewState,
     onOpened?: () => void,
     coverageIncomplete = 0,
+  ): Promise<boolean> {
+    return this.confirmWithTitle(
+      target,
+      candidate,
+      previewTitle(path.basename(target.filePath), functions, coverageIncomplete),
+      source,
+      onOpened,
+    )
+  }
+
+  async confirmSourceAnnotations(
+    target: CodeCommentPreviewTarget,
+    candidate: string,
+    targets: number,
+    source: CodeCommentSourceViewState,
+    onOpened?: () => void,
+  ): Promise<boolean> {
+    return this.confirmWithTitle(
+      target,
+      candidate,
+      sourceAnnotationPreviewTitle(path.basename(target.filePath), targets),
+      source,
+      onOpened,
+    )
+  }
+
+  private async confirmWithTitle(
+    target: CodeCommentPreviewTarget,
+    candidate: string,
+    title: string,
+    source: CodeCommentSourceViewState,
+    onOpened?: () => void,
   ): Promise<boolean> {
     if (this.pending) await this.finish(this.pending, false, true)
 
@@ -101,13 +135,7 @@ export class CodeCommentPreviewController implements vscode.Disposable {
 
     try {
       await this.host.setPendingContext(true)
-      await this.host.openDiff(
-        original,
-        modified,
-        previewTitle(filename, functions, coverageIncomplete),
-        target.languageId,
-        source,
-      )
+      await this.host.openDiff(original, modified, title, target.languageId, source)
       onOpened?.()
     } catch (error) {
       if (this.pending) await this.finish(this.pending, false, false)
@@ -174,6 +202,10 @@ export function previewTitle(filename: string, functions: number, coverageIncomp
   if (coverageIncomplete === 0) return `${filename} · ${functions} 个函数高可信注释预览`
   if (functions === 1) return `${filename} · 1 个函数注释预览（复杂逻辑覆盖不足）`
   return `${filename} · ${functions} 个函数注释预览（${coverageIncomplete} 个覆盖不足）`
+}
+
+export function sourceAnnotationPreviewTitle(filename: string, targets: number): string {
+  return `${filename} · ${targets} 个源码目标高可信注释预览`
 }
 
 export class VscodeCodeCommentPreviewHost implements CodeCommentPreviewHost {

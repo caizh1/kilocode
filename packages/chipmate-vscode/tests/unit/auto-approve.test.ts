@@ -210,46 +210,6 @@ describe("registerToggleAutoApprove", () => {
     expect(await ctrl.approve(asked("perm_1"))).toBe(false)
   })
 
-  it("never auto-approves Agent Console commands", async () => {
-    config(true)
-    const replies: unknown[] = []
-    const conn = connection(client({ reply: async (args) => replies.push(args) }))
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      () => "/workspace",
-      () => ["/workspace"],
-    )
-
-    expect(await ctrl.approve(asked("perm_manual", "ses_console", "agent_console_shell"))).toBe(false)
-    expect(replies).toEqual([])
-  })
-
-  it("skips pending Agent Console commands while draining other permissions", async () => {
-    config(false)
-    const replies: unknown[] = []
-    const conn = connection(
-      client({
-        list: async () => ({
-          data: [
-            { id: "perm_manual", permission: "agent_console_shell" },
-            { id: "perm_bash", permission: "bash" },
-          ],
-        }),
-        reply: async (args) => replies.push(args),
-      }),
-    )
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      () => "/workspace",
-      () => ["/workspace"],
-    )
-
-    await ctrl.toggle()
-    expect(replies).toEqual([{ requestID: "perm_bash", directory: "/workspace", reply: "once" }])
-  })
-
   it("cancels pending permission drains when disabled during an enable generation", async () => {
     config(false)
     const gate = defer<{ data: Permission[] }>()

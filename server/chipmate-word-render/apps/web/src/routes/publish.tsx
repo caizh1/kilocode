@@ -238,7 +238,7 @@ export function PublishPage(props: { user: MarketUser | undefined; csrf: string;
                     ? "请重新选择修改后的 Skill"
                     : "校验并发布"}
           </button>
-          <small>不会执行归档内 scripts/，不会保存 New API key，也不会修改你的本地目录。</small>
+          <small>不会执行归档内 scripts/，不会保存 LDAP 密码，也不会修改你的本地目录。</small>
         </form>
         <section className="glass-panel publication-result" aria-live="polite">
           <div className="panel-heading">

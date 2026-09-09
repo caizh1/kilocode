@@ -19,9 +19,9 @@ interface DisplayContextValue {
   setReasoningAutoCollapse: (collapse: boolean) => void
   fontSize: Accessor<number>
   setFontSize: (size: number) => void
-  // Shared throughput toggle — the same signal backs the per-message badge in
-  // every AssistantMessage and the aggregated row in TaskHeader, so flipping
-  // the setting once updates both surfaces without round-trips.
+  // Shared response-performance toggle for the latest completed turn.
+  // It starts false until the persisted setting arrives, avoiding a flash for
+  // users who explicitly disabled it.
   throughputVisible: Accessor<boolean>
 }
 
@@ -34,8 +34,8 @@ export const DisplayProvider: ParentComponent = (props) => {
   const [fontSize, setFontSizeSignal] = createSignal(readFontSize())
   const [throughputVisible, setThroughputVisible] = createSignal(false)
 
-  // Request the throughput toggle once on mount; the extension posts back
-  // (and onDidChangeConfiguration forwards subsequent edits).
+  // Request the response-performance toggle once on mount; the extension
+  // posts back and forwards subsequent configuration edits.
   onMount(() => vscode.postMessage({ type: "requestThroughputSetting" }))
 
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {

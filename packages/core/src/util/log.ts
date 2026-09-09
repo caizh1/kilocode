@@ -46,6 +46,19 @@ export type Logger = {
   }
 }
 
+// chipmate_change start
+export type DiagnosticListener = (level: Level, message: unknown, data: Record<string, unknown>) => void
+const diagnosticListeners = new Set<DiagnosticListener>()
+export function onDiagnostic(listener: DiagnosticListener) {
+  diagnosticListeners.add(listener)
+  return () => { diagnosticListeners.delete(listener) }
+}
+function diagnostic(level: Level, message: unknown, data: Record<string, unknown>) {
+  for (const listener of diagnosticListeners) {
+    try { listener(level, message, data) } catch (error) { process.stderr.write("诊断旁路记录失败\n") }
+  }
+}
+// chipmate_change end
 const loggers = new Map<string, Logger>()
 
 export const Default = create({ service: "default" })
@@ -180,21 +193,25 @@ export function create(tags?: Record<string, any>) {
   const result: Logger = {
     debug(message?: any, extra?: Record<string, any>) {
       if (shouldLog("DEBUG")) {
+        diagnostic("DEBUG", message, { ...tags, ...extra }) // chipmate_change
         write("DEBUG " + build(message, extra))
       }
     },
     info(message?: any, extra?: Record<string, any>) {
       if (shouldLog("INFO")) {
+        diagnostic("INFO", message, { ...tags, ...extra }) // chipmate_change
         write("INFO  " + build(message, extra))
       }
     },
     error(message?: any, extra?: Record<string, any>) {
       if (shouldLog("ERROR")) {
+        diagnostic("ERROR", message, { ...tags, ...extra }) // chipmate_change
         write("ERROR " + build(message, extra))
       }
     },
     warn(message?: any, extra?: Record<string, any>) {
       if (shouldLog("WARN")) {
+        diagnostic("WARN", message, { ...tags, ...extra }) // chipmate_change
         write("WARN  " + build(message, extra))
       }
     },

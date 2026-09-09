@@ -26,6 +26,35 @@ describe("ChipMateConnectionService question routing", () => {
     await expect(service.drainPendingPrompts()).resolves.toBeUndefined()
   })
 
+  test("passes cancellation to an in-flight prompt drain", async () => {
+    const service = new ChipMateConnectionService({} as any)
+    const started = Promise.withResolvers<void>()
+    let received: AbortSignal | undefined
+    const client = {
+      permission: {
+        list: async (_input: unknown, options: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            received = options.signal
+            started.resolve()
+            options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true })
+          }),
+      },
+      question: { list: async () => ({ data: [] }) },
+      suggestion: { list: async () => ({ data: [] }) },
+      network: { list: async () => ({ data: [] }) },
+    }
+    ;(service as any).client = client
+    ;(service as any).directoryProviders.add(() => ["/tmp/workspace"])
+    const controller = new AbortController()
+
+    const pending = service.drainPendingPrompts(controller.signal)
+    await started.promise
+    controller.abort(new Error("save cancelled"))
+
+    await expect(pending).rejects.toThrow("save cancelled")
+    expect(received).toBe(controller.signal)
+  })
+
   test("records and clears request origins from SSE events", () => {
     const service = new ChipMateConnectionService({} as any)
     const handler = service as unknown as {

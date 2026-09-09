@@ -17,7 +17,6 @@ import type { SessionV1 } from "@opencode-ai/core/v1/session"
 
 const log = Log.create({ service: "chipmate-task-model" })
 const mutations = [
-  "agent_console_shell",
   "agent_manager",
   "apply_patch",
   "background_process",
@@ -41,6 +40,7 @@ const mutations = [
   "render_mermaid_diagram",
   "render_plantuml_diagram",
   "render_word_document",
+  "word_to_images",
   "repo_clone",
   "save_mermaid_artifact",
   "skill_create",

@@ -8,9 +8,9 @@ import {
 } from "../../src/services/marketplace/errors"
 
 describe("marketplaceIdentityErrorMessage", () => {
-  it("explains disabled token resolver in Chinese", () => {
-    expect(marketplaceIdentityErrorMessage(new Error("token-resolver-disabled"))).toContain(
-      "未启用 New API token resolver",
+  it("提示旧客户端必须升级", () => {
+    expect(marketplaceIdentityErrorMessage(new Error("client-upgrade-required"))).toContain(
+      "升级 ChipMate 插件",
     )
   })
 
@@ -20,24 +20,24 @@ describe("marketplaceIdentityErrorMessage", () => {
     )
   })
 
-  it("explains missing token identity in Chinese", () => {
-    expect(marketplaceIdentityErrorMessage(new Error("token-not-found"))).toBe(
-      "当前 API Key 没有匹配到 @chipmate 用户。",
+  it("提示 LDAP 市场会话已过期", () => {
+    expect(marketplaceIdentityErrorMessage(new Error("marketplace-session-expired"))).toBe(
+      "市场登录已过期，请重新使用 LDAP 登录。",
     )
   })
 
-  it("preserves structured 502 diagnostics for an invalid New API URL", () => {
-    const err = new MarketplaceApiError("new-api-error", {
+  it("保留 ChipMate Server 地址错误的结构化诊断", () => {
+    const err = new MarketplaceApiError("server-url-invalid", {
       status: 502,
       reason: "invalid-url",
       requestId: "a1b2c3d4",
     })
 
-    expect(marketplaceIdentityErrorMessage(err)).toContain("NEW_API_BASE_URL")
+    expect(marketplaceIdentityErrorMessage(err)).toContain("市场 baseUrl")
     expect(marketplaceIssue(err)).toEqual({
-      summary: expect.stringContaining("NEW_API_BASE_URL"),
+      summary: expect.stringContaining("市场 baseUrl"),
       status: 502,
-      code: "new-api-error",
+      code: "server-url-invalid",
       reason: "invalid-url",
       requestId: "a1b2c3d4",
       retryAfter: undefined,

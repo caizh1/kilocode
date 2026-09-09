@@ -26,6 +26,7 @@ const DOCUMENT_ARTIFACT_TOOLS = new Set([
   "merge_word_documents",
   "diff_word_documents",
   "render_word_document",
+  "word_to_images",
   "save_mermaid_artifact",
   "render_mermaid_diagram",
   "render_plantuml_diagram",
@@ -49,7 +50,10 @@ export function documentArtifactCardFromToolPart(part: ToolPart): DocumentArtifa
     link("pdf", "Open PDF", read("pdfPath")),
     ...stringArray(output.pagePngPaths).map((item, index) => ({
       kind: "page-png" as const,
-      label: `Open page PNG ${index + 1}`,
+      label:
+        part.tool === "word_to_images"
+          ? `查看第 ${Array.isArray(output.pageNumbers) ? output.pageNumbers[index] : index + 1} 页`
+          : `Open page PNG ${index + 1}`,
       path: item,
       webviewUri: stringArray(output.pagePngWebviewUris)[index],
     })),
@@ -57,7 +61,11 @@ export function documentArtifactCardFromToolPart(part: ToolPart): DocumentArtifa
     link("json", "Open JSON", read("jsonPath")),
     link(
       "source",
-      part.tool === "render_plantuml_diagram" ? "Open PlantUML source" : "Open Mermaid source",
+      part.tool === "word_to_images"
+        ? "查看原 Word"
+        : part.tool === "render_plantuml_diagram"
+          ? "Open PlantUML source"
+          : "Open Mermaid source",
       read("sourcePath"),
     ),
     link(
@@ -84,6 +92,7 @@ function titleFor(tool: string, fallback?: string): string {
   if (tool.includes("mermaid")) return "Mermaid artifact"
   if (tool === "diff_word_documents") return "Word diff artifact"
   if (tool === "render_word_document") return "Word render artifact"
+  if (tool === "word_to_images") return "Word 页面图片"
   return "Word document artifact"
 }
 

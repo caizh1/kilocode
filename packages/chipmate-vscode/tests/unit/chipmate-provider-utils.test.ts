@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test"
 import {
   sessionToWebview,
   indexProvidersById,
+  excludeReservedAgents,
   filterVisibleAgents,
   buildSettingPath,
   mapSSEEventToWebviewMessage,
@@ -186,6 +187,20 @@ describe("sessionToWebview", () => {
 
     expect(result.documentAgentScope).toBe("documents_and_code")
   })
+
+  it("ignores legacy custom model metadata without exposing it", () => {
+    const result = sessionToWebview(
+      makeSession({
+        metadata: {
+          private: "value",
+          "chipmate.modelSelection": { source: "explicit", providerID: "qa-local", modelID: "qa-model" },
+        },
+      }),
+    )
+
+    expect(result).not.toHaveProperty("metadata")
+    expect(result).not.toHaveProperty("modelSelectionPolicy")
+  })
 })
 
 describe("indexProvidersById", () => {
@@ -243,6 +258,28 @@ describe("filterVisibleAgents", () => {
     const agents = [makeAgent({ name: "a", mode: "primary" }), makeAgent({ name: "b", mode: "all" })]
     const { visible } = filterVisibleAgents(agents)
     expect(visible).toHaveLength(2)
+  })
+})
+
+describe("excludeReservedAgents", () => {
+  it("removes every backend entry that collides with a product-reserved agent ID", () => {
+    const agents = [
+      makeAgent({ name: "code" }),
+      makeAgent({ name: "deepseek-harness", description: "legacy local mode" }),
+      makeAgent({ name: "ask" }),
+      makeAgent({ name: "deepseek-harness", description: "organization mode" }),
+    ]
+
+    const filtered = excludeReservedAgents(agents, new Set(["deepseek-harness"]))
+
+    expect(filtered.map((agent) => agent.name)).toEqual(["code", "ask"])
+    expect(agents).toHaveLength(4)
+  })
+
+  it("preserves unrelated custom agents and their order", () => {
+    const agents = [makeAgent({ name: "review" }), makeAgent({ name: "deepseek-review" })]
+
+    expect(excludeReservedAgents(agents, new Set(["deepseek-harness"]))).toEqual(agents)
   })
 })
 

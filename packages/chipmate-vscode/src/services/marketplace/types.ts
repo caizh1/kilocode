@@ -457,6 +457,7 @@ export interface BatchPublicationItem {
 export interface InstallResult {
   success: boolean
   slug: string
+  errorCode?: "skill-identity-mismatch"
   error?: string
   filePath?: string
   line?: number

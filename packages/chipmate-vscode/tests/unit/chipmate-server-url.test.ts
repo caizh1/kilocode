@@ -11,6 +11,8 @@ describe("ChipMate Server URL", () => {
     ["server.test:6001", "http://server.test:6001"],
     [" http://example.test:6001/ ", "http://example.test:6001"],
     ["https://example.test:7443", "https://example.test:7443"],
+    ["https://example.test:443", "https://example.test:443"],
+    ["http://example.test:80", "http://example.test:80"],
     ["[2001:db8::1]:6001", "http://[2001:db8::1]:6001"],
     ["https://[2001:db8::2]:7443/", "https://[2001:db8::2]:7443"],
   ])("normalizes %s", (input, expected) => {
@@ -20,6 +22,7 @@ describe("ChipMate Server URL", () => {
   it.each([
     "",
     "example.test",
+    "https://example.test",
     "ftp://example.test:21",
     "http://user@example.test:6001",
     "http://example.test:6001/v1",

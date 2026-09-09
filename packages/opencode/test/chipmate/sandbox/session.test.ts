@@ -1,3 +1,4 @@
+import * as TurnChanges from "@/chipmate/turn-changes/runtime"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -31,6 +32,7 @@ import { testEffect } from "../../lib/effect"
 const it = testEffect(
   Layer.mergeAll(
     Session.layer.pipe(
+      Layer.provide(AppNodeBuilder.build(TurnChanges.node)),
       Layer.provide(Bus.layer),
       Layer.provide(AppNodeBuilder.build(Storage.node)),
       Layer.provide(SyncEvent.defaultLayer),

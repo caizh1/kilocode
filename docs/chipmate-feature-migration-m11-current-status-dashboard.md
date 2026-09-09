@@ -63,7 +63,6 @@ It also does not migrate ChipMate contract/repair/gating behavior such as `nextT
 - `435` 安装 VSIX 做真实 chat/runtime S1-S16 smoke；这仍依赖可用 chat/autocomplete provider、目标工作区和人工/目标机执行，不能由 extension-host/command smoke 替代。
 - `518` Installed VS Code smoke S1-S16 not run in this session.
 - `519` Internal embedded C detailed-design end-to-end project validation not run in this session; QEMU UFS smoke above validates migrated artifact helpers on real source evidence, not the installed chat/skill pipeline.
-- `691` 打包验收: 安装 VSIX 后普通 ChipMate QA、Word、Mermaid、artifact、Agent Terminal smoke 均通过。
 
 ### Internal embedded C validation
 
@@ -95,7 +94,6 @@ It also does not migrate ChipMate contract/repair/gating behavior such as `nextT
 | Code understanding | No runtime or tool-routing change | Final no-regression review remains open |
 | Document RAG | No provider or retrieval-path change | Readiness rerun is still not enough for final pass if provider is unavailable |
 | Autocomplete | No qwen autocomplete source change | S16 needs explicit product/user decision and read-only smoke evidence |
-| Terminal / Agent Terminal | No terminal implementation change | Visible installed UX evidence remains pending |
 | Tool registry | No tool registration change | Final review still must confirm no registry breakage |
 | VS Code activation/package | No activation/package change | Installed VSIX smoke remains pending |
 
@@ -128,7 +126,6 @@ It also does not migrate ChipMate contract/repair/gating behavior such as `nextT
 - Return at least one internal embedded-C source-backed detail-design end-to-end run.
 - Return a real company `.docx` template validation result.
 - Return Windows x86-64 and Linux x86-64 offline target execution evidence.
-- Return visible Agent Terminal UX evidence from an installed VSIX run.
 - Resolve or rerun Document RAG readiness after the provider/upstream is available.
 - Record the S16 autocomplete decision and run the accepted read-only smoke path.
 - Then run M11 final review and explicitly decide PASS or PASS_WITH_KNOWN_LIMITS.

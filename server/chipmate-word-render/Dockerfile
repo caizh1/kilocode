@@ -7,7 +7,9 @@ COPY apps/web/package.json /src/apps/web/package.json
 COPY packages/contracts/package.json /src/packages/contracts/package.json
 COPY packages/market-db/package.json /src/packages/market-db/package.json
 COPY packages/skill-spec/package.json /src/packages/skill-spec/package.json
-RUN npm ci
+RUN npm_config_registry=https://registry.npmmirror.com \
+    npm_config_replace_registry_host=always \
+    npm ci --fetch-retries=10 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=5000 --fetch-timeout=120000
 COPY apps /src/apps
 COPY packages /src/packages
 COPY scripts /src/scripts
@@ -17,6 +19,7 @@ FROM node:24-bookworm-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# 服务不使用 GStreamer PTP 网络校时；移除该辅助程序的文件特权，避免离线镜像携带 SCHILY.xattr。
 RUN apt-get -o Acquire::Retries=5 update \
   && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates \
   && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
@@ -34,6 +37,8 @@ RUN apt-get -o Acquire::Retries=5 update \
     python3 \
     python3-uno \
     poppler-utils \
+    libcap2-bin \
+  && find /usr/lib -type f -name gst-ptp-helper -exec setcap -r {} \; \
   && rm -rf /var/lib/apt/lists/*
 
 COPY fontconfig/99-chipmate-cjk.conf /etc/fonts/conf.d/99-chipmate-cjk.conf
@@ -57,10 +62,17 @@ COPY apps/web/package.json /app/apps/web/package.json
 COPY packages/contracts/package.json /app/packages/contracts/package.json
 COPY packages/market-db/package.json /app/packages/market-db/package.json
 COPY packages/skill-spec/package.json /app/packages/skill-spec/package.json
-RUN npm ci --omit=dev
+RUN npm_config_registry=https://registry.npmmirror.com \
+    npm_config_replace_registry_host=always \
+    npm_config_maxsockets=1 \
+    npm ci --omit=dev --fetch-retries=20 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=10000 --fetch-timeout=600000
 COPY server.js /app/server.js
+COPY word-to-images.js /app/word-to-images.js
 COPY scripts/refresh-word-fields.py /app/scripts/refresh-word-fields.py
 COPY scripts/merge-managed-seeds.mjs /app/scripts/merge-managed-seeds.mjs
+COPY scripts/merge-runtime-packages.mjs /app/scripts/merge-runtime-packages.mjs
+COPY scripts/verify-runtime-packages.mjs /app/scripts/verify-runtime-packages.mjs
+COPY .runtime-seed/deepseek-harness /app/packages/runtimes/deepseek-harness
 COPY apps/api/src /app/apps/api/src
 COPY packages/contracts/src /app/packages/contracts/src
 COPY packages/market-db/src /app/packages/market-db/src
@@ -69,6 +81,7 @@ COPY --from=build /src/apps/web/dist /app/apps/web/dist
 
 ENV PORT=6001 \
     PACKAGE_ROOT=/packages \
+    BUILTIN_RUNTIME_ROOT=/packages \
     MARKET_DB_ROOT=/data/skill-market/.market-db \
     MARKET_IMPORT_ROOT=/data/skill-market \
     MARKET_LEGACY_ROOT=/data/skill-market/.legacy-latest \
@@ -96,7 +109,8 @@ ENV PORT=6001 \
     MAX_RENDER_PAGE_TOTAL_BYTES=268435456 \
     MAX_RENDER_RESPONSE_BYTES=402653184
 
-RUN mkdir -p /packages /data/skill-market/extensions/drop /data/skill-market/extensions/artifacts /data/skill-market/extensions/.tmp /data/review-rules
+RUN node /app/scripts/verify-runtime-packages.mjs /app/packages/runtimes \
+  && mkdir -p /packages /data/skill-market/extensions/drop /data/skill-market/extensions/artifacts /data/skill-market/extensions/.tmp /data/review-rules
 
 EXPOSE 6001
 

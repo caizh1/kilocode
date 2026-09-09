@@ -329,20 +329,16 @@ Evidence to record:
 - State table.
 - Mermaid artifact paths.
 
-## Agent Terminal and Autocomplete
 
-### S14: Agent Terminal open and build-plan advice
 
 Action:
 
 ```text
-Run command: ChipMate Agent Terminal: Open
 Then ask: 帮我分析这个项目应该怎么构建，但先不要执行命令。
 ```
 
 Expected behavior:
 
-- `chipmate.agentTerminal.enabled` is disabled by default.
 - User is prompted before enabling/opening.
 - The terminal helper provides safe command planning.
 - Native ChipMate terminal/session manager remains available.
@@ -353,9 +349,7 @@ Evidence to record:
 - Prompt/enable behavior.
 - Suggested command plan.
 
-### S15: Agent Terminal dangerous command confirmation
 
-Prompt/action inside Agent Terminal:
 
 ```text
 删除这些临时产物：<temp-paths>
@@ -384,7 +378,6 @@ Expected behavior:
 
 - Qwen direct provider still registers.
 - Completion can be requested without document artifact tools involved.
-- New document/Agent Terminal settings do not alter autocomplete defaults.
 
 Evidence to record:
 

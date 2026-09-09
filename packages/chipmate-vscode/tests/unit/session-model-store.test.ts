@@ -17,7 +17,7 @@ function makeProvider(id: string, models: string[]): Provider {
 }
 
 const providers: Record<string, Provider> = {
-  chipmate: makeProvider("chipmate", ["chipmate-auto/free"]),
+  chipmate: makeProvider("chipmate", ["chipmate-auto/free", "qwen", "deepseek"]),
   anthropic: makeProvider("anthropic", ["claude-sonnet-4"]),
   openai: makeProvider("openai", ["gpt-4.1"]),
 }
@@ -43,8 +43,27 @@ function emptyStore(): ModelStore {
 
 const claude: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
 const gpt: ModelSelection = { providerID: "openai", modelID: "gpt-4.1" }
+const qwen: ModelSelection = { providerID: "chipmate", modelID: "qwen" }
+const deepseek: ModelSelection = { providerID: "chipmate", modelID: "deepseek" }
 
 describe("per-session model selection", () => {
+  it("uses the saved Qwen global default for a new session and after a restart", () => {
+    const store = emptyStore()
+    const qwenEnv = { ...env(), getGlobalModel: () => qwen }
+
+    expect(getSessionModel(store, qwenEnv, "session-new", "code")).toEqual(qwen)
+    expect(getSessionModel(emptyStore(), qwenEnv, "session-after-restart", "code")).toEqual(qwen)
+  })
+
+  it("keeps manual and mode-specific selections above the global default", () => {
+    const store = emptyStore()
+    const modeEnv = { ...env(), getModeModel: () => deepseek, getGlobalModel: () => qwen }
+    expect(getSessionModel(store, modeEnv, "session-mode", "code")).toEqual(deepseek)
+
+    store.sessionOverrides["session-manual"] = gpt
+    expect(getSessionModel(store, modeEnv, "session-manual", "code")).toEqual(gpt)
+  })
+
   it("selecting a model in session A does not write per-mode globally", () => {
     const store = emptyStore()
     const e = env()

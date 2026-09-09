@@ -22,7 +22,6 @@ returned evidence through typed intake helpers before M11 review.
 | Offline Linux x86-64 | Run target-side Linux package/runtime evidence and target intake. | `linux-target/target-intake-summary.md` with `Final status: PASS`. |
 | Internal embedded-C detail design | Run installed source-backed detail-design flow on one representative internal embedded-C module, then run internal intake. | `internal-embedded-c/summary.md` with `Status: PASS`. |
 | Company DOCX template | Validate a real company `.docx` style/template source and generated ChipMate output. | `company-template/summary.md` with `Status: PASS`, or explicitly accepted `PASS_WITH_LIMITS`. |
-| Visible Agent Terminal UX | Capture installed VS Code visible UX evidence and run visible UX intake. | `agent-terminal-visible-ux/summary.md` with `Status: PASS`. |
 
 ## Standard return workflow
 

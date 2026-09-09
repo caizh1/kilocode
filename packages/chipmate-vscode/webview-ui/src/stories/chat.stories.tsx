@@ -1,3 +1,4 @@
+import { TurnChangesProvider } from "../context/turn-changes"
 /** @jsxImportSource solid-js */
 /**
  * Stories for high-priority chat components:
@@ -22,11 +23,13 @@ import { QuestionDock } from "../components/chat/QuestionDock"
 import { SuggestBar } from "../components/chat/SuggestBar"
 import { MessageList } from "../components/chat/MessageList"
 import { VscodeUserMessage } from "../components/chat/VscodeUserMessage"
+import { CompactionStatusCard } from "../components/chat/CompactionStatusCard"
 import { TurnOutcome } from "../components/shared/TurnOutcome"
 import { SessionContext } from "../context/session"
 import { MemoryContext, type MemoryContextValue } from "../context/memory"
 import { ProviderContext } from "../context/provider"
-import { ServerContext } from "../context/server"
+import { ServerContext, useServer } from "../context/server"
+import { ManualCompactionProvider } from "../context/manual-compaction"
 import { WorktreeModeProvider } from "../context/worktree-mode"
 import type {
   Config,
@@ -194,6 +197,181 @@ const meta: Meta = {
 }
 export default meta
 type Story = StoryObj
+
+const forkUserID = "fork-user-001"
+const forkAssistantFirstID = "fork-assistant-001"
+const forkAssistantFinalID = "fork-assistant-002"
+const forkMessages: Message[] = [
+  {
+    id: forkUserID,
+    sessionID: SESSION_ID,
+    role: "user",
+    createdAt: new Date(1_700_000_000_000).toISOString(),
+    time: { created: 1_700_000_000_000 },
+  },
+  {
+    id: forkAssistantFirstID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: forkUserID,
+    createdAt: new Date(1_700_000_001_000).toISOString(),
+    time: { created: 1_700_000_001_000, completed: 1_700_000_001_500 },
+    finish: "stop",
+    modelID: "deepseek-v4-flash",
+    providerID: "myprovider",
+    mode: "default",
+    agent: "code",
+    path: { cwd: "/project", root: "/project" },
+  },
+  {
+    id: forkAssistantFinalID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: forkUserID,
+    createdAt: new Date(1_700_000_002_000).toISOString(),
+    time: { created: 1_700_000_002_000, completed: 1_700_000_003_000 },
+    finish: "stop",
+    modelID: "deepseek-v4-flash",
+    providerID: "myprovider",
+    mode: "default",
+    agent: "code",
+    path: { cwd: "/project", root: "/project" },
+  },
+]
+const forkParts: Record<string, Part[]> = {
+  [forkUserID]: [
+    {
+      id: "fork-user-part-001",
+      sessionID: SESSION_ID,
+      messageID: forkUserID,
+      type: "text",
+      text: "请给出修复结论。",
+    },
+  ],
+  [forkAssistantFirstID]: [
+    {
+      id: "fork-assistant-part-001",
+      sessionID: SESSION_ID,
+      messageID: forkAssistantFirstID,
+      type: "text",
+      text: "正在汇总结论。",
+    },
+  ],
+  [forkAssistantFinalID]: [
+    {
+      id: "fork-assistant-part-002",
+      sessionID: SESSION_ID,
+      messageID: forkAssistantFinalID,
+      type: "text",
+      text: "修复结论已经确认。",
+    },
+  ],
+}
+const forkData = {
+  ...defaultMockData,
+  message: { [SESSION_ID]: forkMessages },
+  part: forkParts,
+}
+
+const QASessionAnswerForkSurface: Component<{
+  connected?: boolean
+  readonly?: boolean
+}> = (props) => {
+  const server = useServer()
+  const [clicks, setClicks] = createSignal(0)
+  const [boundary, setBoundary] = createSignal("")
+  const [forkState, setForkState] = createSignal<{
+    sessionID: string
+    afterMessageID: string
+    state: "pending" | "slow"
+  }>()
+  let slow: ReturnType<typeof setTimeout> | undefined
+  onCleanup(() => {
+    if (slow) clearTimeout(slow)
+  })
+  const onFork = (sessionID: string, afterMessageID: string) => {
+    if (forkState()) return
+    setClicks((value) => value + 1)
+    setBoundary(afterMessageID)
+    setForkState({ sessionID, afterMessageID, state: "pending" })
+    slow = setTimeout(() => setForkState({ sessionID, afterMessageID, state: "slow" }), 50)
+  }
+  return (
+    <ServerContext.Provider value={{ ...server, isConnected: () => props.connected ?? true }}>
+      <div
+        data-story="session-answer-fork"
+        data-clicks={clicks()}
+        data-boundary={boundary()}
+        style={{ height: "720px", display: "flex", "flex-direction": "column" }}
+      >
+        <TurnChangesProvider><MessageList
+          onForkMessage={onFork}
+          forkState={forkState()}
+          readonly={props.readonly}
+          sessionID={() => SESSION_ID}
+        /></TurnChangesProvider>
+      </div>
+    </ServerContext.Provider>
+  )
+}
+
+function renderSessionAnswerFork(input: {
+  locale: "en" | "zh" | "zht"
+  status?: "idle" | "busy"
+  connected?: boolean
+  readonly?: boolean
+}) {
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status: input.status ?? "idle", closeReason: "completed" }),
+    messages: () => forkMessages,
+    visibleMessages: () => forkMessages,
+    userMessages: () => forkMessages.filter((message) => message.role === "user"),
+    getParts: (id: string) => forkParts[id] ?? [],
+  }
+  return (
+    <StoryProviders
+      data={forkData}
+      sessionID={SESSION_ID}
+      status={input.status ?? "idle"}
+      locale={input.locale}
+      noPadding
+    >
+      <SessionContext.Provider value={session as any}>
+        <QASessionAnswerForkSurface connected={input.connected} readonly={input.readonly} />
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const QASessionAnswerFork: Story = {
+  name: "QA — 从模型回答创建唯一分支",
+  render: () => renderSessionAnswerFork({ locale: "zh" }),
+}
+
+export const QASessionAnswerForkEnglish: Story = {
+  name: "QA — Fork from assistant response in English",
+  render: () => renderSessionAnswerFork({ locale: "en" }),
+}
+
+export const QASessionAnswerForkTraditionalChinese: Story = {
+  name: "QA — 從模型回答建立唯一分支",
+  render: () => renderSessionAnswerFork({ locale: "zht" }),
+}
+
+export const QASessionAnswerForkBusy: Story = {
+  name: "QA — 回答生成中禁用分支",
+  render: () => renderSessionAnswerFork({ locale: "zh", status: "busy" }),
+}
+
+export const QASessionAnswerForkReadonly: Story = {
+  name: "QA — 只读会话禁用分支",
+  render: () => renderSessionAnswerFork({ locale: "zh", readonly: true }),
+}
+
+export const QASessionAnswerForkDisconnected: Story = {
+  name: "QA — 断线时禁用分支",
+  render: () => renderSessionAnswerFork({ locale: "zh", connected: false }),
+}
 
 // ---------------------------------------------------------------------------
 // ChatView stories
@@ -738,6 +916,15 @@ const completedElapsedModesParts = {
       type: "text",
       text: "构建已完成，未发现阻塞问题。",
     },
+    {
+      id: "part-finish-completion-code-001",
+      sessionID: SESSION_ID,
+      messageID: completionCodeAssistantID,
+      type: "step-finish",
+      metrics: { generation: 40, ttftMs: 300, source: "computed" },
+      tokens: { input: 40, output: 120, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { start: toolNow - 17_000, end: toolNow - 13_700, elapsed: 3_300 },
+    },
   ],
   [completionUltraUserID]: [
     {
@@ -756,6 +943,15 @@ const completedElapsedModesParts = {
       type: "text",
       text: "关键路径已复核，结果符合预期。",
     },
+    {
+      id: "part-finish-completion-ultra-001",
+      sessionID: SESSION_ID,
+      messageID: completionUltraAssistantID,
+      type: "step-finish",
+      metrics: { generation: 28.7, ttftMs: 820, source: "computed" },
+      tokens: { input: 120, output: 200, reasoning: 87, cache: { read: 0, write: 0 } },
+      time: { start: toolNow - 20_000, end: toolNow - 9_180, elapsed: 10_820 },
+    },
   ],
 }
 const completedElapsedModesData = {
@@ -767,6 +963,7 @@ const completedElapsedModesData = {
 function QATelemetryEnabled() {
   onMount(() => {
     window.dispatchEvent(new MessageEvent("message", { data: { type: "telemetryState", enabled: true } }))
+    window.dispatchEvent(new MessageEvent("message", { data: { type: "throughputSettingLoaded", visible: true } }))
   })
   return null
 }
@@ -822,26 +1019,36 @@ export const QACompletedElapsed420: Story = {
   },
 }
 
+function renderCompletedElapsedModes(width = "100%") {
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status: "idle", closeReason: "completed" }),
+    messages: () => completedElapsedModesMessages,
+    visibleMessages: () => completedElapsedModesMessages,
+    userMessages: () => completedElapsedModesMessages.filter((message) => message.role === "user"),
+    getParts: (id: string) => completedElapsedModesParts[id as keyof typeof completedElapsedModesParts] ?? [],
+  }
+  return (
+    <StoryProviders data={completedElapsedModesData} sessionID={SESSION_ID} status="idle" locale="zh" noPadding>
+      <SessionContext.Provider value={session as any}>
+        <QATelemetryEnabled />
+        <div style={{ width, height: "720px", display: "flex", "flex-direction": "column" }}>
+          <ChatView />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
 export const QACompletedElapsedModes420: Story = {
   name: "QA — completed elapsed action rail, 420px",
-  render: () => {
-    const session = {
-      ...mockSessionValue({ id: SESSION_ID, status: "idle", closeReason: "completed" }),
-      messages: () => completedElapsedModesMessages,
-      visibleMessages: () => completedElapsedModesMessages,
-      userMessages: () => completedElapsedModesMessages.filter((message) => message.role === "user"),
-      getParts: (id: string) => completedElapsedModesParts[id as keyof typeof completedElapsedModesParts] ?? [],
-    }
-    return (
-      <StoryProviders data={completedElapsedModesData} sessionID={SESSION_ID} status="idle" locale="zh" noPadding>
-        <SessionContext.Provider value={session as any}>
-          <QATelemetryEnabled />
-          <div style={{ height: "720px", display: "flex", "flex-direction": "column" }}>
-            <ChatView />
-          </div>
-        </SessionContext.Provider>
-      </StoryProviders>
-    )
+  render: () => renderCompletedElapsedModes(),
+}
+
+export const QACompletedElapsedModes200: Story = {
+  name: "QA — response performance, 200px",
+  render: () => renderCompletedElapsedModes("200px"),
+  parameters: {
+    layout: "fullscreen",
   },
 }
 
@@ -872,6 +1079,126 @@ export const QAAlignedConversationSurface: Story = {
       </StoryProviders>
     )
   },
+}
+
+const navigationNow = new Date("2026-08-18T10:42:00+08:00").getTime()
+const navigationMessages: Message[] = []
+const navigationParts: Record<string, Part[]> = {}
+
+for (let index = 1; index <= 160; index += 1) {
+  const created = navigationNow - (160 - index) * 8 * 60_000
+  const userID = `navigation-user-${index}`
+  const assistantID = `navigation-assistant-${index}`
+  const user: Message = {
+    id: userID,
+    sessionID: SESSION_ID,
+    role: "user",
+    createdAt: new Date(created).toISOString(),
+    time: { created },
+  }
+  const assistant: Message = {
+    id: assistantID,
+    sessionID: SESSION_ID,
+    role: "assistant",
+    parentID: userID,
+    createdAt: new Date(created + 1_000).toISOString(),
+    time: { created: created + 1_000, completed: created + 3_000 },
+    agent: "code",
+    providerID: "chipmate",
+    modelID: "deepseek-v4-flash",
+    path: { cwd: "/project", root: "/project" },
+  }
+  navigationMessages.push(user, assistant)
+  navigationParts[userID] = [
+    {
+      id: `${userID}-text`,
+      sessionID: SESSION_ID,
+      messageID: userID,
+      type: "text",
+      text:
+        index === 160
+          ? "所有用户输入都要收录，最新内容排在最前面\n只覆盖普通 QA，先不要影响 DeepSeek Harness"
+          : `第 ${index} 个历史问题：如何验证长对话中的稳定定位？\n这是用于筛选和远距离跳转的完整原文。`,
+    },
+  ]
+  navigationParts[assistantID] = [
+    {
+      id: `${assistantID}-text`,
+      sessionID: SESSION_ID,
+      messageID: assistantID,
+      type: "text",
+      text: `已记录第 ${index} 个问题。`,
+    },
+  ]
+}
+
+function QANavigationLongStory() {
+  const [loaded, setLoaded] = createSignal(20)
+  const [loadingOlder, setLoadingOlder] = createSignal(false)
+  const [streamTick, setStreamTick] = createSignal(0)
+  const [sessionID, setSessionID] = createSignal(SESSION_ID)
+  const onStreamTick = () => setStreamTick((value) => value + 1)
+  const onSwitchSession = () => setSessionID((value) => (value === SESSION_ID ? `${SESSION_ID}-alternate` : SESSION_ID))
+  onMount(() => {
+    window.addEventListener("qaNavigationStreamTick", onStreamTick)
+    window.addEventListener("qaNavigationSwitchSession", onSwitchSession)
+  })
+  onCleanup(() => {
+    window.removeEventListener("qaNavigationStreamTick", onStreamTick)
+    window.removeEventListener("qaNavigationSwitchSession", onSwitchSession)
+  })
+  const loadedMessages = () => {
+    streamTick()
+    return navigationMessages.slice(Math.max(0, navigationMessages.length - loaded() * 2))
+  }
+  const loadOlderMessages = () => {
+    if (loadingOlder() || loaded() >= 160) return
+    setLoadingOlder(true)
+    window.setTimeout(() => {
+      setLoaded((value) => Math.min(160, value + 35))
+      setLoadingOlder(false)
+    }, 120)
+  }
+  const session = {
+    ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
+    currentSessionID: sessionID,
+    currentSession: () => ({
+      id: sessionID(),
+      title: "长对话导航验收",
+      createdAt: new Date(navigationNow - 2 * 86_400_000).toISOString(),
+      updatedAt: new Date(navigationNow).toISOString(),
+    }),
+    messages: loadedMessages,
+    visibleMessages: loadedMessages,
+    userMessages: () => loadedMessages().filter((message) => message.role === "user"),
+    getParts: (id: string) => {
+      const parts = navigationParts[id] ?? []
+      if (id !== "navigation-assistant-160" || streamTick() === 0) return parts
+      return parts.map((part) =>
+        part.type === "text" ? { ...part, text: `${part.text}\n流式追加片段 ${streamTick()}` } : part,
+      )
+    },
+    loadingOlderMessages: loadingOlder,
+    hasOlderMessages: () => loaded() < 160,
+    loadOlderMessages,
+    costBreakdown: () => [{ label: "QA session", cost: 0.0012 }],
+    contextUsage: () => ({ tokens: 23_600, percentage: 2 }),
+  }
+
+  return (
+    <StoryProviders sessionID={sessionID()} status="busy" locale="zh" config={{} as Config} noPadding>
+      <SessionContext.Provider value={session as any}>
+        <div style={{ width: "100%", height: "720px", display: "flex", "flex-direction": "column" }}>
+          <ChatView />
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const QANavigationLong420: Story = {
+  name: "QA — 对话导航 160 轮长会话",
+  render: () => <QANavigationLongStory />,
 }
 
 const mermaidUserID = "user-msg-mermaid-001"
@@ -1288,7 +1615,7 @@ export const QAUserMessageLengths: Story = {
             data-story="qa-message-lengths"
             style={{ height: "720px", display: "flex", "flex-direction": "column" }}
           >
-            <MessageList onForkMessage={() => undefined} />
+            <TurnChangesProvider><MessageList onForkMessage={() => undefined} /></TurnChangesProvider>
           </div>
         </SessionContext.Provider>
       </StoryProviders>
@@ -1314,7 +1641,7 @@ export const MessageListToolToQueuedUserSpacing: Story = {
             data-ui="qa-shell"
             style={{ height: "420px", display: "flex", "flex-direction": "column" }}
           >
-            <MessageList />
+            <TurnChangesProvider><MessageList /></TurnChangesProvider>
           </div>
         </SessionContext.Provider>
       </StoryProviders>
@@ -1422,7 +1749,7 @@ export const MessageListSubagentToQueuedUserSpacing: Story = {
             data-ui="qa-shell"
             style={{ height: "420px", display: "flex", "flex-direction": "column" }}
           >
-            <MessageList />
+            <TurnChangesProvider><MessageList /></TurnChangesProvider>
           </div>
         </SessionContext.Provider>
       </StoryProviders>
@@ -1474,6 +1801,73 @@ export const TurnOutcomeFailed: Story = {
       </StoryProviders>
     )
   },
+}
+
+export const CompactionLifecycleStates: Story = {
+  name: "Compaction — running and terminal states",
+  render: () => (
+    <StoryProviders sessionID={SESSION_ID} status="busy" noPadding>
+      <div style={{ display: "grid", gap: "12px", padding: "12px", "max-width": "520px" }}>
+        <CompactionStatusCard
+          status={{
+            state: "running",
+            source: "manual",
+            startedAt: Date.now(),
+            attempt: 1,
+            attemptMode: "selected",
+            phase: "chunk",
+            completedUnits: 2,
+            totalUnits: 5,
+          }}
+        />
+        <CompactionStatusCard
+          status={{
+            state: "running",
+            source: "manual",
+            startedAt: Date.now(),
+            attempt: 2,
+            attemptMode: "none",
+            phase: "generating",
+          }}
+        />
+        <CompactionStatusCard
+          status={{
+            state: "succeeded",
+            source: "auto",
+            startedAt: 1_000,
+            completedAt: 2_000,
+            attempt: 1,
+            attemptMode: "selected",
+            phase: "committing",
+          }}
+        />
+        <CompactionStatusCard
+          status={{
+            state: "failed",
+            source: "manual",
+            startedAt: 1_000,
+            completedAt: 2_000,
+            attempt: 1,
+            attemptMode: "selected",
+            phase: "generating",
+          }}
+        />
+        <CompactionStatusCard
+          status={{
+            state: "interrupted",
+            source: "manual",
+            startedAt: 1_000,
+            completedAt: 2_000,
+            attempt: 1,
+            attemptMode: "selected",
+            phase: "chunk",
+            completedUnits: 1,
+            totalUnits: 4,
+          }}
+        />
+      </div>
+    </StoryProviders>
+  ),
 }
 
 // ---------------------------------------------------------------------------
@@ -1907,6 +2301,32 @@ export const TaskHeaderWithTodos: Story = {
   },
 }
 
+export const TaskHeaderReadonlySearch: Story = {
+  name: "TaskHeader — 只读会话保留全文搜索",
+  render: () => {
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "idle" }),
+      messages: () => headerMessages,
+      currentSession: () => ({
+        id: SESSION_ID,
+        title: "只读会话搜索回归",
+        createdAt: new Date(headerNow - 12_000).toISOString(),
+        updatedAt: new Date(headerNow).toISOString(),
+      }),
+      getParts: (id: string) => headerParts[id] ?? [],
+    }
+    return (
+      <StoryProviders sessionID={SESSION_ID} status="idle" locale="zh" noPadding>
+        <SessionContext.Provider value={session as any}>
+          <div class="chat-view" data-ui="qa-shell" style={{ width: "420px" }}>
+            <TaskHeader readonly navigation={false} />
+          </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
 export const TaskHeaderWithTodosAllDone: Story = {
   name: "TaskHeader — with todos (all done)",
   render: () => {
@@ -2019,15 +2439,45 @@ const usageData = {
   totals: {
     steps: 4,
     cost: 0.097214,
+    billing: {
+      amountCNY: 0.0068,
+      settledSteps: 3,
+      pendingSteps: 0,
+      unavailableSteps: 0,
+      otherCostUSD: 0.03,
+      groups: [{ name: "default", steps: 3, amountCNY: 0.0068 }],
+    },
     tokens: { input: 25_908_400, output: 52_710, reasoning: 4_220, cache: { read: 10_514_000, write: 80_900 } },
   },
   models: [
-    { providerID: "chipmate", modelID: "qwen/qwen3.7-plus-20260602", steps: 3, cost: 0.067214, tokens: usageTokens },
+    {
+      providerID: "chipmate",
+      modelID: "qwen/qwen3.7-plus-20260602",
+      steps: 3,
+      cost: 0.067214,
+      billing: {
+        amountCNY: 0.0068,
+        settledSteps: 3,
+        pendingSteps: 0,
+        unavailableSteps: 0,
+        otherCostUSD: 0,
+        groups: [{ name: "default", steps: 3, amountCNY: 0.0068 }],
+      },
+      tokens: usageTokens,
+    },
     {
       providerID: "minimax",
       modelID: "minimax-m3",
       steps: 1,
       cost: 0.03,
+      billing: {
+        amountCNY: 0,
+        settledSteps: 0,
+        pendingSteps: 0,
+        unavailableSteps: 0,
+        otherCostUSD: 0.03,
+        groups: [],
+      },
       tokens: { input: 8_400, output: 710, reasoning: 120, cache: { read: 14_000, write: 900 } },
     },
   ],
@@ -2058,23 +2508,25 @@ const usageProvider = {
   isModelValid: () => true,
 }
 
-const usageStory = (open: boolean) => () => (
-  <StoryProviders sessionID={SESSION_ID} status="idle" noPadding>
-    <ProviderContext.Provider value={usageProvider as any}>
-      <div style={{ "max-height": "560px", overflow: "auto" }}>
-        <TaskUsage
-          defaultOpen={open}
-          usage={usageData}
-          tokens={{
-            input: usageData.totals.tokens.input,
-            output: usageData.totals.tokens.output,
-            cached: usageData.totals.tokens.cache.read,
-          }}
-        />
-      </div>
-    </ProviderContext.Provider>
-  </StoryProviders>
-)
+const usageStory =
+  (open: boolean, width = "100%") =>
+  () => (
+    <StoryProviders sessionID={SESSION_ID} status="idle" noPadding>
+      <ProviderContext.Provider value={usageProvider as any}>
+        <div style={{ width, "max-height": "560px", overflow: "auto" }}>
+          <TaskUsage
+            defaultOpen={open}
+            usage={usageData}
+            tokens={{
+              input: usageData.totals.tokens.input,
+              output: usageData.totals.tokens.output,
+              cached: usageData.totals.tokens.cache.read,
+            }}
+          />
+        </div>
+      </ProviderContext.Provider>
+    </StoryProviders>
+  )
 
 export const TaskUsageCollapsed: Story = {
   name: "Task usage — collapsed",
@@ -2086,9 +2538,14 @@ export const TaskUsageExpanded: Story = {
   render: usageStory(true),
 }
 
-export const TaskUsageExpanded200: Story = {
-  name: "Task usage — provider and model breakdown, narrow",
-  render: usageStory(true),
+export const TaskUsageExpanded300: Story = {
+  name: "Task usage — provider and model breakdown, 300px",
+  render: usageStory(true, "300px"),
+}
+
+export const TaskUsageExpanded420: Story = {
+  name: "Task usage — provider and model breakdown, 420px",
+  render: usageStory(true, "420px"),
 }
 
 // ---------------------------------------------------------------------------
@@ -2126,6 +2583,75 @@ const mockServer = {
   languageOverride: () => undefined,
   workspaceDirectory: () => "/project",
   gitInstalled: () => true,
+}
+
+export const ManualCompactionConfirmation: Story = {
+  name: "会话精简 — 风险确认",
+  render: () => {
+    const [currentSessionID, setCurrentSessionID] = createSignal(SESSION_ID)
+    const [status, setStatus] = createSignal<"idle" | "busy">("idle")
+    const [connected, setConnected] = createSignal(true)
+    const [hasMessages, setHasMessages] = createSignal(true)
+    const [hasModel, setHasModel] = createSignal(true)
+    const [readonly, setReadonly] = createSignal(false)
+    const [compactCount, setCompactCount] = createSignal(0)
+    const messages = [
+      { id: "manual-compact-user", role: "user", time: { created: headerNow - 4_000 } },
+      { id: "manual-compact-assistant", role: "assistant", time: { created: headerNow - 3_000 } },
+    ] as Message[]
+    const session = {
+      ...mockSessionValue({ id: SESSION_ID, status: "idle" }),
+      currentSessionID,
+      currentSession: () => ({
+        id: currentSessionID(),
+        title: "MPBL 警告全量分类与候选台账",
+        createdAt: new Date(headerNow - 12_000).toISOString(),
+        updatedAt: new Date(headerNow).toISOString(),
+      }),
+      status,
+      statusInfo: () => ({ type: status() }),
+      messages: () => (hasMessages() ? messages : []),
+      visibleMessages: () => (hasMessages() ? messages : []),
+      userMessages: () => (hasMessages() ? messages.filter((message) => message.role === "user") : []),
+      selected: () => (hasModel() ? { providerID: "anthropic", modelID: "claude-sonnet-4" } : undefined),
+      compact: () => setCompactCount((count) => count + 1),
+      contextUsage: () => ({ tokens: 212_930, percentage: 68 }),
+    }
+    const server = {
+      ...mockServer,
+      isConnected: connected,
+      connectionState: () => (connected() ? ("connected" as const) : ("disconnected" as const)),
+    }
+    const changeState = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return
+      if (typeof event.detail?.sessionID === "string") setCurrentSessionID(event.detail.sessionID)
+      if (event.detail?.status === "idle" || event.detail?.status === "busy") setStatus(event.detail.status)
+      if (typeof event.detail?.connected === "boolean") setConnected(event.detail.connected)
+      if (typeof event.detail?.hasMessages === "boolean") setHasMessages(event.detail.hasMessages)
+      if (typeof event.detail?.hasModel === "boolean") setHasModel(event.detail.hasModel)
+      if (typeof event.detail?.readonly === "boolean") setReadonly(event.detail.readonly)
+    }
+    onMount(() => window.addEventListener("manualCompactionStoryState", changeState))
+    onCleanup(() => window.removeEventListener("manualCompactionStoryState", changeState))
+
+    return (
+      <StoryProviders sessionID={SESSION_ID} status="idle" locale="zh" noPadding>
+        <ServerContext.Provider value={server as any}>
+          <SessionContext.Provider value={session as any}>
+            <ManualCompactionProvider>
+              <div
+                data-testid="manual-compaction-story"
+                data-compact-count={compactCount()}
+                style={{ width: "100%", height: "760px", display: "flex", "flex-direction": "column" }}
+              >
+                <ChatView readonly={readonly()} />
+              </div>
+            </ManualCompactionProvider>
+          </SessionContext.Provider>
+        </ServerContext.Provider>
+      </StoryProviders>
+    )
+  },
 }
 
 export const WelcomeWithSwitcherAndNotification: Story = {

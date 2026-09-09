@@ -12,7 +12,7 @@ describe("session response metadata", () => {
           id: "response-1",
           timestamp: new Date(0),
           modelId: "gpt-test",
-          headers: { "X-Vercel-Id": "fra1::abc" },
+          headers: { "X-Vercel-Id": "fra1::abc", "X-Oneapi-Request-Id": "req-adapter-1" },
         },
         finishReason: "other",
         rawFinishReason: undefined,
@@ -31,6 +31,7 @@ describe("session response metadata", () => {
     const event = events[0]
     if (event?.type !== "step-finish") throw new Error("expected step-finish")
     expect(ChipMateResponseMetadata.read(event.providerMetadata)).toBe("fra1::abc")
+    expect(ChipMateResponseMetadata.readNewAPI(event.providerMetadata)).toBe("req-adapter-1")
   })
 
   test("does not add metadata when the header is absent", () => {
@@ -46,5 +47,16 @@ describe("session response metadata", () => {
     expect(ChipMateResponseMetadata.write(undefined, { "x-vercel-id": "fra1::<script>" })).toBeUndefined()
     expect(ChipMateResponseMetadata.write(undefined, { "x-vercel-id": "x".repeat(201) })).toBeUndefined()
     expect(ChipMateResponseMetadata.read({ chipmate: { vercelID: "fra1::abc\nsecret" } })).toBeUndefined()
+  })
+
+  test("按大小写不敏感的响应头保存 New API 请求 ID", () => {
+    const metadata = ChipMateResponseMetadata.write(undefined, { "X-OneAPI-Request-ID": "  req_abc-123  " })
+    expect(ChipMateResponseMetadata.readNewAPI(metadata)).toBe("req_abc-123")
+  })
+
+  test("拒绝不安全或过长的 New API 请求 ID", () => {
+    expect(ChipMateResponseMetadata.write(undefined, { "x-oneapi-request-id": "req/secret" })).toBeUndefined()
+    expect(ChipMateResponseMetadata.write(undefined, { "x-oneapi-request-id": "x".repeat(201) })).toBeUndefined()
+    expect(ChipMateResponseMetadata.readNewAPI({ chipmate: { newAPIRequestID: "req\nsecret" } })).toBeUndefined()
   })
 })

@@ -20,7 +20,13 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, PermissionNotFoundError, SessionBusyError } from "../errors"
+import {
+  ApiNotFoundError,
+  ConflictError,
+  InvalidRequestError,
+  PermissionNotFoundError,
+  SessionBusyError,
+} from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -141,7 +147,7 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.status",
             summary: "Get session status",
-            description: "Retrieve the current status of all sessions, including active, idle, and completed states.",
+            description: "Retrieve non-idle active session states. Missing sessions are idle.",
           }),
         ),
         HttpApiEndpoint.get("get", SessionPaths.get, {
@@ -257,7 +263,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: [HttpApiSchema.NoContent, ForkPayload], // chipmate_change - carry upstream bodyless full-session fork support
           success: described(Session.Info, "200"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError], // chipmate_change - carry upstream malformed payload response
+          error: [HttpApiError.BadRequest, InvalidRequestError, ConflictError, SessionBusyError, ApiNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.fork",

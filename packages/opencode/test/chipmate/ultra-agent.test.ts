@@ -142,7 +142,7 @@ describe("ChipMate Ultra agent", () => {
       appends: true,
     })
     expect(output.ultra?.prompt).toContain("## Mandatory Ultra three-way verification")
-    expect(output.ultra?.prompt).toContain("`ultra_verify` exactly once")
+    expect(output.ultra?.prompt).toContain("runtime starts `ultra_verify` locally exactly once")
     expect(output.council.ultra_verify).toEqual({ code: false, ultra: true })
     for (const [id, access] of Object.entries(output.council)) {
       if (id === "ultra_verify") continue

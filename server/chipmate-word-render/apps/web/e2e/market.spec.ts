@@ -358,7 +358,7 @@ test("search, filter, sort, detail, version, preview, and status form a read-onl
   await page.locator(".topbar").getByRole("button", { name: "服务状态", exact: true }).click()
   await expect(page).toHaveURL(/\/status$/)
   await page.getByRole("button", { name: "刷新", exact: true }).click()
-  await expect(page.getByText("所有核心服务正常", { exact: true })).toBeVisible()
+  await expect(page.getByText("部分服务降级", { exact: true })).toBeVisible()
 })
 
 test("theme persists and narrow widths stay readable", async ({ page }) => {
@@ -423,7 +423,7 @@ test("primary card motion sustains the frame budget", async ({ page }) => {
   expect(await sample).toBeGreaterThanOrEqual(55)
 })
 
-test("login keeps only a server session and clears the raw API key input", async ({ page }) => {
+test("login keeps only a server session and clears the raw LDAP credentials", async ({ page }) => {
   await page.route("**/api/v1/auth/session", async (route) => {
     if (route.request().method() === "POST") {
       await route.fulfill({
@@ -462,14 +462,15 @@ test("login keeps only a server session and clears the raw API key input", async
   await page.getByRole("button", { name: "登录", exact: true }).click()
   const dialog = page.getByRole("dialog")
   await expect(dialog).toBeVisible()
-  const input = dialog.getByLabel("New API key")
-  await input.fill("raw-key-must-not-persist")
+  await dialog.getByLabel("用户名").fill("alice")
+  await dialog.getByLabel("密码").fill("raw-password-must-not-persist")
   await dialog.getByRole("button", { name: "安全登录", exact: true }).click()
   await expect(page.getByRole("button", { name: "Alice", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Alice", exact: true }).click()
   await page.getByRole("button", { name: "退出登录", exact: true }).click()
   await page.getByRole("button", { name: "登录", exact: true }).click()
-  await expect(page.getByRole("dialog").getByLabel("New API key")).toHaveValue("")
+  await expect(page.getByRole("dialog").getByLabel("用户名")).toHaveValue("")
+  await expect(page.getByRole("dialog").getByLabel("密码")).toHaveValue("")
   expect((await new AxeBuilder({ page }).include("dialog").analyze()).violations).toEqual([])
 })
 
@@ -537,7 +538,8 @@ test("publish page shows the shared validation report without changing local fil
   await page.goto("/publish")
   expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined")
   await page.getByRole("button", { name: "先登录市场身份" }).click()
-  await page.getByLabel("New API key").fill("one-time-key")
+  await page.getByLabel("用户名").fill("alice")
+  await page.getByLabel("密码").fill("password")
   await page.getByRole("button", { name: "安全登录" }).click()
   await expect.poll(() => page.evaluate(() => localStorage.getItem("chipmate-market-client"))).toMatch(pattern)
   await page
@@ -947,7 +949,8 @@ test("authors can confirm unpublishing from their publication history", async ({
   })
   await page.goto("/me")
   await page.getByRole("button", { name: "登录市场身份" }).click()
-  await page.getByLabel("New API key").fill("one-time-key")
+  await page.getByLabel("用户名").fill("alice")
+  await page.getByLabel("密码").fill("password")
   await page.getByRole("button", { name: "安全登录" }).click()
   await page.getByRole("button", { name: "下架", exact: true }).click()
   await expect(page.getByRole("group", { name: "确认下架 documents" })).toBeVisible()
@@ -992,7 +995,8 @@ test("analytics storage failures degrade without blocking trusted HTTP browsing"
   await page.goto("/")
   await expect(page.getByRole("heading", { name: "Source-backed Detail Design", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "登录", exact: true }).click()
-  await page.getByLabel("New API key").fill("one-time-key")
+  await page.getByLabel("用户名").fill("alice")
+  await page.getByLabel("密码").fill("password")
   await page.getByRole("button", { name: "安全登录" }).click()
   await expect(page.getByRole("button", { name: "Alice", exact: true })).toBeVisible()
   await expect

@@ -7,9 +7,11 @@ import {
   aggregateMetrics,
   latestMetrics,
   messageMetrics,
+  messagePerformance,
   messageThroughput,
   sessionThroughput,
   formatTG,
+  formatTTFT,
   buildFamilyCosts,
   buildFamilyParents,
   buildFamilyParentsFromTools,
@@ -848,6 +850,11 @@ describe("throughput formatters", () => {
     expect(formatTG(28.7, locale)).toBe("28.7 t/s")
   })
 
+  it("formats first-token latency in seconds with up to two decimals", () => {
+    expect(formatTTFT(820, locale)).toBe("0.82s")
+    expect(formatTTFT(1_200, locale)).toBe("1.2s")
+  })
+
   it("falls back to dash for missing or bogus values", () => {
     expect(formatTG(undefined, locale)).toBe("–")
     expect(formatTG(0, locale)).toBe("–")
@@ -870,15 +877,15 @@ describe("messageThroughput", () => {
     expect(messageThroughput(parts)).toBeUndefined()
   })
 
-  it("computes a single-step rate from tokens and elapsed ms", () => {
+  it("computes a single-step rate after excluding TTFT", () => {
     const parts: Part[] = [
       stepFinish("f1", {
+        metrics: { generation: 250, ttftMs: 200, source: "computed" },
         tokens: { input: 10, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 0, end: 1000, elapsed: 1000 },
       }),
     ]
-    // (200 + 0) * 1000 / 1000 = 200
-    expect(messageThroughput(parts)).toEqual({ generation: 200, source: "computed" })
+    expect(messageThroughput(parts)).toEqual({ generation: 250, ttftMs: 200, source: "computed" })
   })
 
   it("weights multiple steps by their elapsed time rather than averaging rates", () => {
@@ -887,38 +894,41 @@ describe("messageThroughput", () => {
     // step's value.
     const parts: Part[] = [
       stepFinish("f1", {
+        metrics: { generation: (100 * 1000) / 900, ttftMs: 100, source: "computed" },
         tokens: { input: 10, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 0, end: 1000, elapsed: 1000 },
       }),
       stepFinish("f2", {
+        metrics: { generation: (200 * 1000) / 3500, ttftMs: 500, source: "computed" },
         tokens: { input: 10, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 1000, end: 5000, elapsed: 4000 },
       }),
     ]
-    expect(messageThroughput(parts)).toEqual({ generation: 60, source: "computed" })
+    expect(messageThroughput(parts)).toEqual({ generation: (300 * 1000) / 4400, ttftMs: 100, source: "computed" })
   })
 
   it("includes reasoning tokens in the numerator", () => {
     const parts: Part[] = [
       stepFinish("f1", {
+        metrics: { generation: 400, ttftMs: 250, source: "computed" },
         tokens: { input: 10, output: 100, reasoning: 200, cache: { read: 0, write: 0 } },
         time: { start: 0, end: 1000, elapsed: 1000 },
       }),
     ]
-    // (100 + 200) * 1000 / 1000 = 300
-    expect(messageThroughput(parts)).toEqual({ generation: 300, source: "computed" })
+    expect(messageThroughput(parts)).toEqual({ generation: 400, ttftMs: 250, source: "computed" })
   })
 
   it("ignores step-finish parts without timing", () => {
     const parts: Part[] = [
       stepFinish("f1", {
+        metrics: { generation: 250, ttftMs: 200, source: "computed" },
         tokens: { input: 10, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 0, end: 1000, elapsed: 1000 },
       }),
       // No `time` field — older part shape, possibly replayed session.
       stepFinish("f2", { metrics: { generation: 999, source: "computed" } }),
     ]
-    expect(messageThroughput(parts)).toEqual({ generation: 200, source: "computed" })
+    expect(messageThroughput(parts)).toEqual({ generation: 250, ttftMs: 200, source: "computed" })
   })
 
   it("ignores tool-only steps that produced no output tokens", () => {
@@ -928,11 +938,12 @@ describe("messageThroughput", () => {
         time: { start: 0, end: 500, elapsed: 500 },
       }),
       stepFinish("f2", {
+        metrics: { generation: 200, ttftMs: 500, source: "computed" },
         tokens: { input: 10, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 500, end: 1500, elapsed: 1000 },
       }),
     ]
-    expect(messageThroughput(parts)).toEqual({ generation: 100, source: "computed" })
+    expect(messageThroughput(parts)).toEqual({ generation: 200, ttftMs: 500, source: "computed" })
   })
 
   it("returns undefined when only tool-only steps are present", () => {
@@ -954,29 +965,69 @@ describe("messageThroughput", () => {
     ]
     expect(messageThroughput(parts)).toBeUndefined()
   })
+
+  it("shows TTFT without fabricating speed when usage is missing", () => {
+    const parts: Part[] = [
+      stepFinish("f1", {
+        metrics: { ttftMs: 820, source: "computed" },
+        time: { start: 0, end: 1_000, elapsed: 1_000 },
+      }),
+    ]
+
+    expect(messagePerformance(parts)).toEqual({ ttftMs: 820, source: "computed" })
+  })
+
+  it("uses persisted decode rates so tool execution stays outside the weighted denominator", () => {
+    const parts: Part[] = [
+      stepFinish("f1", {
+        metrics: { generation: 100, ttftMs: 500, source: "computed" },
+        tokens: { input: 10, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
+        // Total wall time includes 1.5s of tool execution; the persisted rate
+        // represents 1s of actual decode time.
+        time: { start: 0, end: 3_000, elapsed: 3_000 },
+      }),
+    ]
+
+    expect(messagePerformance(parts)).toEqual({ generation: 100, ttftMs: 500, source: "computed" })
+  })
+
+  it("keeps legacy sessions without TTFT hidden", () => {
+    const parts: Part[] = [
+      stepFinish("f1", {
+        tokens: { input: 10, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { start: 0, end: 1_000, elapsed: 1_000 },
+      }),
+    ]
+
+    expect(messagePerformance(parts)).toBeUndefined()
+  })
 })
 
 describe("sessionThroughput", () => {
   it("aggregates the same way as messageThroughput across a flat part array", () => {
     const parts: Part[] = [
       stepFinish("f1", {
+        metrics: { generation: (100 * 1000) / 900, ttftMs: 100, source: "computed" },
         tokens: { input: 10, output: 100, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 0, end: 1000, elapsed: 1000 },
       }),
       stepFinish("f2", {
+        metrics: { generation: (200 * 1000) / 2800, ttftMs: 200, source: "computed" },
         tokens: { input: 10, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 2000, end: 5000, elapsed: 3000 },
       }),
       // From the "next" message — still rolled up correctly.
       stepFinish("f3", {
+        metrics: { generation: (500 * 1000) / 4500, ttftMs: 500, source: "computed" },
         tokens: { input: 10, output: 500, reasoning: 0, cache: { read: 0, write: 0 } },
         time: { start: 6000, end: 11000, elapsed: 5000 },
       }),
     ]
-    // (800 * 1000) / 9000 = 88.888...
+    // (800 * 1000) / ((1000-100) + (3000-200) + (5000-500))
     const result = sessionThroughput(parts)
     expect(result?.source).toBe("computed")
-    expect(result?.generation).toBeCloseTo((800 * 1000) / 9000, 5)
+    expect(result?.generation).toBeCloseTo((800 * 1000) / 8200, 5)
+    expect(result?.ttftMs).toBe(100)
   })
 
   it("returns undefined for empty input", () => {

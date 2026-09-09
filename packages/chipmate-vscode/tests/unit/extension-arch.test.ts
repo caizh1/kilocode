@@ -215,7 +215,9 @@ describe("Extension — Agent Manager remote wiring", () => {
   const host = fs.readFileSync(VSCODE_HOST_FILE, "utf-8")
 
   it("passes the shared remote service to Agent Manager", () => {
-    expect(ext).toContain("new VscodeHost(context.extensionUri, connectionService, context, remoteService)")
+    expect(ext).toMatch(
+      /new VscodeHost\([\s\S]*?context\.extensionUri,[\s\S]*?connectionService,[\s\S]*?context,[\s\S]*?remoteService,[\s\S]*?sessionForks,[\s\S]*?\)/,
+    )
   })
 
   it("wires the remote service before attaching the Agent Manager webview", () => {
@@ -224,6 +226,10 @@ describe("Extension — Agent Manager remote wiring", () => {
     expect(remote).toBeGreaterThan(-1)
     expect(attach).toBeGreaterThan(-1)
     expect(remote).toBeLessThan(attach)
+  })
+
+  it("uses a reload-stable fork owner for restored main-editor panels", () => {
+    expect(ext).toContain("forkOwnerID: `main-editor:${sessionSurfaceKey(input.key)}`")
   })
 })
 

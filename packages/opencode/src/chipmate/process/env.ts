@@ -9,5 +9,6 @@ export function model(extra?: NodeJS.ProcessEnv | null): Record<string, string> 
   delete env.CHIPMATE_CONFIG
   delete env.CHIPMATE_CONFIG_CONTENT
   delete env.CHIPMATE_CONFIG_DIR
+  delete env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS
   return env
 }

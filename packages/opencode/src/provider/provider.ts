@@ -28,6 +28,7 @@ import { optional, optionalOmitUndefined } from "@opencode-ai/core/schema" // ch
 import { ProviderTransform } from "./transform"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { consumeLongRunningTaskHeader } from "@/chipmate/provider/long-running-request"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 // chipmate_change start
@@ -37,6 +38,7 @@ import {
   CHIPMATE_MODEL_SCHEMA_EXTENSIONS,
   patchModelsDevModel as patchChipMateModel,
   patchConfigModel as patchChipMateConfigModel,
+  customProviderReasoning,
   customProviderVariants,
   patchCustomLoaderResult,
   patchChipMateProviderPrivacy,
@@ -1486,7 +1488,16 @@ const layer = Layer.effect(
               providerID: ProviderV2.ID.make(providerID),
               capabilities: {
                 temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
-                reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
+                // chipmate_change start
+                reasoning: customProviderReasoning({
+                  id: ModelV2.ID.make(modelID),
+                  api: { id: apiID },
+                  npm: apiNpm,
+                  configured: model.reasoning ?? undefined,
+                  variants: model.variants,
+                  existing: existingModel?.capabilities.reasoning,
+                }),
+                // chipmate_change end
                 attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
                 toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
                 input: {
@@ -1536,7 +1547,7 @@ const layer = Layer.effect(
             // chipmate_change start
             const generated = Object.keys(model.variants ?? {}).length
               ? {}
-              : customProviderVariants(parsedModel, model.provider?.npm ?? provider.npm, ProviderTransform.variants)
+              : customProviderVariants(parsedModel, apiNpm, ProviderTransform.variants, model.reasoning ?? undefined)
             const merged = mergeDeep(generated, model.variants ?? {})
             // chipmate_change end
             parsedModel.variants = mapValues(
@@ -1799,15 +1810,17 @@ const layer = Layer.effect(
 
         options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
           const fetchFn = customFetch ?? fetch
-          const opts = init ?? {}
-          const chunkAbortCtl = typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
-          const timeout = buildTimeoutSignal(options) // chipmate_change - use cancellable timeout for connection phase
+          const request = consumeLongRunningTaskHeader(init) // chipmate_change - Patent Radar requests remain cancellable without a wall-clock deadline
+          const opts = request.init ?? {}
+          const chunkAbortCtl =
+            !request.longRunning && typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
+          const timeout = request.longRunning ? { signal: undefined, clear() {} } : buildTimeoutSignal(options) // chipmate_change - use cancellable timeout for connection phase
           // chipmate_change start - extend the same deadline to the first response byte
-          const firstByteMs = requestTimeout(options)
+          const firstByteMs = request.longRunning ? undefined : requestTimeout(options)
           const firstByteCtl = firstByteMs === undefined ? undefined : new AbortController()
           const deadline = firstByteMs === undefined ? undefined : Date.now() + firstByteMs
           // chipmate_change end
-          const headerTimeoutMs = headerTimeout === false ? undefined : headerTimeout
+          const headerTimeoutMs = request.longRunning || headerTimeout === false ? undefined : headerTimeout
           const headerTimeoutCtl = typeof headerTimeoutMs === "number" ? timeoutController(headerTimeoutMs) : undefined
           const signals: AbortSignal[] = []
 

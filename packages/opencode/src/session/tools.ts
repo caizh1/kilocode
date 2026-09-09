@@ -1,3 +1,4 @@
+import * as TurnChanges from "@/chipmate/turn-changes/runtime" // chipmate_change
 import { Agent } from "@/agent/agent"
 import { ChipMateSessionPrompt } from "@/chipmate/session/prompt" // chipmate_change
 import { MemoryMarker } from "@/chipmate/memory/marker" // chipmate_change
@@ -80,7 +81,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
     callID: options.toolCallId,
-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
+    // chipmate_change start
+    extra: {
+      model: input.model,
+      bypassAgentCheck: input.bypassAgentCheck,
+      promptOps: input.promptOps,
+    },
+    // chipmate_change end
     agent: input.agent.name,
     messages: input.messages,
     // chipmate_change start
@@ -569,6 +576,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   tools[key] = item
 }
 
+  yield* TurnChanges.wrapTools(tools, input.session.id) // chipmate_change
   return tools
 })
 

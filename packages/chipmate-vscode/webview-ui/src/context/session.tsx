@@ -245,6 +245,7 @@ interface SessionContextValue {
   selectAgent: (name: string, sessionID?: string) => void
   getSessionAgent: (sessionID: string) => string
   getSessionModel: (sessionID: string) => ModelSelection | null
+  hasSessionModelOverride: (sessionID: string) => boolean
   setSessionModel: (sessionID: string, providerID: string, modelID: string) => void
   setSessionAgent: (sessionID: string, name: string) => void
   setSessionVariant: (sessionID: string, providerID: string, modelID: string, value: string, agent?: string) => void
@@ -279,7 +280,8 @@ interface SessionContextValue {
     context?: string,
     review?: ReviewMessageData,
     origin?: string | null,
-  ) => void
+    sessionSurfaceDraftRevision?: number,
+  ) => string | undefined
   sendCommand: (
     command: string,
     args: string,
@@ -289,7 +291,8 @@ interface SessionContextValue {
     draftID?: string,
     context?: string,
     origin?: string | null,
-  ) => void
+    sessionSurfaceDraftRevision?: number,
+  ) => string | undefined
   abort: () => void
   compact: () => void
   respondToPermission: (
@@ -996,17 +999,12 @@ export const SessionProvider: ParentComponent = (props) => {
   const [lastConfigModel, setLastConfigModel] = createSignal<ModelSelection | null>(getGlobalModel())
   createEffect(() => {
     const newConfigModel = getGlobalModel()
-    // Use untrack to read previous value without making this effect re-trigger on its own updates
     const oldConfigModel = untrack(() => lastConfigModel())
     if (oldConfigModel) {
-      // Also clear when newConfigModel is null (user removed model from config)
       if (newConfigModel) {
         const modelChanged =
           oldConfigModel.providerID !== newConfigModel.providerID || oldConfigModel.modelID !== newConfigModel.modelID
         if (modelChanged) {
-          // Clear overrides that match the OLD config model - these were likely defaults,
-          // not intentional user overrides. Overrides that differ from both old and new
-          // config are preserved (intentional user selections).
           setStore(
             "sessionOverrides",
             produce((overrides) => {
@@ -1024,9 +1022,6 @@ export const SessionProvider: ParentComponent = (props) => {
           )
         }
       } else {
-        // newConfigModel is null - clear all overrides that matched the old config model
-        // since the config no longer specifies a model. This ensures sessions fall through
-        // to provider defaults rather than using a stale removed model.
         setStore(
           "sessionOverrides",
           produce((overrides) => {
@@ -1044,7 +1039,6 @@ export const SessionProvider: ParentComponent = (props) => {
         )
       }
     }
-    // Update the tracked config model
     setLastConfigModel(newConfigModel)
   })
 
@@ -1387,7 +1381,6 @@ export const SessionProvider: ParentComponent = (props) => {
         setStore("agentSelections", session.id, pendingAgent)
         setPendingAgentSelection(null)
       }
-
       const active = currentSessionID()
       const draft = draftSessionID()
       if (draftID && (draft === draftID || active === draftID)) {
@@ -1498,7 +1491,11 @@ export const SessionProvider: ParentComponent = (props) => {
     // store churn entirely — virtualizer and rendering stay untouched.
     if (
       mode === "reconcile" &&
-      sameReconcileShape(store.messages[sessionID] ?? [], messages, (message) => store.parts[message.id] ?? message.parts)
+      sameReconcileShape(
+        store.messages[sessionID] ?? [],
+        messages,
+        (message) => store.parts[message.id] ?? message.parts,
+      )
     ) {
       const parts = messageParts(messages)
       for (const msg of messages) {
@@ -2287,7 +2284,8 @@ export const SessionProvider: ParentComponent = (props) => {
     context?: string,
     review?: ReviewMessageData,
     origin?: string | null,
-  ) {
+    sessionSurfaceDraftRevision?: number,
+  ): string | undefined {
     if (!server.isConnected()) {
       console.warn("[ChipMate New] Cannot send message: not connected")
       return
@@ -2319,8 +2317,9 @@ export const SessionProvider: ParentComponent = (props) => {
         variant: currentVariant(scope),
         files,
         review,
+        sessionSurfaceDraftRevision,
       })
-      return
+      return messageID
     }
 
     const suggestion = scopedSuggestions(sid)[0]
@@ -2342,7 +2341,6 @@ export const SessionProvider: ParentComponent = (props) => {
       }
     }
     const agent = promptAgent(scope)
-
     vscode.postMessage({
       type: "sendMessage",
       text,
@@ -2355,8 +2353,10 @@ export const SessionProvider: ParentComponent = (props) => {
       variant: currentVariant(scope),
       files,
       review,
+      sessionSurfaceDraftRevision,
       agentManagerContext: context,
     })
+    return messageID
   }
 
   function sendCommand(
@@ -2368,7 +2368,8 @@ export const SessionProvider: ParentComponent = (props) => {
     draftID?: string,
     context?: string,
     origin?: string | null,
-  ) {
+    sessionSurfaceDraftRevision?: number,
+  ): string | undefined {
     if (!server.isConnected()) {
       console.warn("[ChipMate New] Cannot send command: not connected")
       return
@@ -2378,6 +2379,7 @@ export const SessionProvider: ParentComponent = (props) => {
       return
     }
 
+    const messageID = Identifier.ascending("message")
     // Cloud previews need import-then-command; post importAndSend with command metadata
     const sid = origin === undefined ? currentSessionID() : (origin ?? undefined)
     const preview = sid?.startsWith("cloud:")
@@ -2392,7 +2394,7 @@ export const SessionProvider: ParentComponent = (props) => {
         type: "importAndSend",
         cloudSessionId: preview,
         text: `/${command} ${args}`.trim(),
-        messageID: Identifier.ascending("message"),
+        messageID,
         providerID,
         modelID,
         agent,
@@ -2400,11 +2402,11 @@ export const SessionProvider: ParentComponent = (props) => {
         files,
         command,
         commandArgs: args,
+        sessionSurfaceDraftRevision,
       })
-      return
+      return messageID
     }
 
-    const messageID = Identifier.ascending("message")
     const suggestion = scopedSuggestions(sid)[0]
     if (suggestion) dismissSuggestion(suggestion.id)
     for (const q of scopedQuestions(sid)) {
@@ -2424,7 +2426,6 @@ export const SessionProvider: ParentComponent = (props) => {
       }
     }
     const agent = promptAgent(scope)
-
     vscode.postMessage({
       type: "sendCommand",
       command,
@@ -2437,8 +2438,10 @@ export const SessionProvider: ParentComponent = (props) => {
       agent,
       variant: currentVariant(scope),
       files,
+      sessionSurfaceDraftRevision,
       agentManagerContext: context,
     })
+    return messageID
   }
 
   function abort() {
@@ -3014,25 +3017,13 @@ export const SessionProvider: ParentComponent = (props) => {
     selectedAgent: agentForScope,
     selectAgent,
     getSessionAgent: (sessionID: string) => store.agentSelections[sessionID] ?? defaultAgent(),
-    getSessionModel: (sessionID: string) => {
-      const override = store.sessionOverrides[sessionID]
-      if (override) return override
-      const agentName = store.agentSelections[sessionID] ?? defaultAgent()
-      return resolveModel(agentName, store.modelSelections[agentName])
-    },
+    getSessionModel: (sessionID: string) => selected(sessionID),
+    hasSessionModelOverride: (sessionID: string) => store.sessionOverrides[sessionID] !== undefined,
     setSessionModel: (sessionID: string, providerID: string, modelID: string) => {
-      // Only write per-session override — do NOT touch global modelSelections or
-      // userSetAgents.  The override is what selected()/getSessionModel() actually
-      // reads, and mutating the global map here is both redundant and harmful: the
-      // agent may not yet be assigned (sendInitialMessage calls setSessionModel
-      // before setSessionAgent), so the write would land on defaultAgent() and
-      // corrupt the default mode's model for later sessions.
       const model = { providerID, modelID }
       setStore("sessionOverrides", sessionID, model)
     },
-    setSessionAgent: (sessionID: string, name: string) => {
-      setStore("agentSelections", sessionID, name)
-    },
+    setSessionAgent: (sessionID: string, name: string) => setStore("agentSelections", sessionID, name),
     setSessionVariant: (sessionID: string, providerID: string, modelID: string, value: string, agent?: string) => {
       const name = agent ?? store.agentSelections[sessionID] ?? defaultAgent()
       const key = variantKey({ providerID, modelID }, name, sessionID)
@@ -3078,7 +3069,6 @@ export const SessionProvider: ParentComponent = (props) => {
     setDraftSessionID,
     userClearedSession,
   }
-
   return <SessionContext.Provider value={value}>{props.children}</SessionContext.Provider>
 }
 

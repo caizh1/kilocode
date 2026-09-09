@@ -75,7 +75,6 @@ python3 docs/chipmate-feature-migration-m11-final-signoff-intake.py \
 ```
 
 M11 can still remain `NOT_READY_FOR_FINAL_SIGNOFF` if S3, S16, installed runtime,
-target execution, internal embedded-C, company template, visible Agent Terminal
 UX, completion audit, or final review gates remain open.
 
 ## Boundary

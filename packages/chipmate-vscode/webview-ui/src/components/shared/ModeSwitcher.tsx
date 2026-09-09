@@ -7,7 +7,7 @@
  * ModeSwitcher     — thin wrapper wired to session context for chat usage.
  */
 
-import { type Accessor, Component, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
+import { type Accessor, Component, createEffect, createSignal, on, onCleanup, onMount, For, Show } from "solid-js"
 import { PopupSelector } from "./PopupSelector"
 import { Button } from "@chipmate/chipmate-ui/button"
 import { useSession } from "../../context/session"
@@ -16,8 +16,11 @@ import type { AgentInfo } from "../../types/messages"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
 import { UltraModeDialog } from "./UltraModeDialog"
 import { DocumentModeDialog } from "./DocumentModeDialog"
+import { DeepSeekHarnessDialog } from "./DeepSeekHarnessDialog"
 import { useIndexing } from "../../context/indexing"
 import { useVSCode } from "../../context/vscode"
+import { useDeepSeekHarness } from "../../context/deepseek-harness"
+import { DEEPSEEK_HARNESS_AGENT } from "../../../../src/shared/deepseek-harness"
 
 /** Format an agent for display. Uses displayName if available, otherwise title-cases the slug. */
 function formatAgentLabel(agent: AgentInfo): string {
@@ -34,9 +37,11 @@ const icons = {
   build: "code",
   code: "code",
   debug: "debug-alt",
+  "deepseek-harness": "hubot",
   document: "book",
   plan: "checklist",
   ultra: "sparkle",
+  "ufs-reviewer": "shield",
 } as const
 
 // ---------------------------------------------------------------------------
@@ -243,18 +248,28 @@ interface ModeSwitcherProps {
   sessionID?: Accessor<string | undefined>
 }
 
+const agentSelectionRequest = "chipmate:request-agent-selection"
+
+export function requestAgentSelection(name: string): void {
+  window.dispatchEvent(new CustomEvent(agentSelectionRequest, { detail: { name } }))
+}
+
 export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
   const session = useSession()
   const indexing = useIndexing()
   const vscode = useVSCode()
   const language = useLanguage()
+  const dsh = useDeepSeekHarness()
   const id = () => props.sessionID?.()
-  const [pending, setPending] = createSignal<{ sessionID: string; agent: "document" | "ultra" } | undefined>()
+  const [pending, setPending] = createSignal<
+    { sessionID: string; agent: "document" | "ultra" | typeof DEEPSEEK_HARNESS_AGENT } | undefined
+  >()
 
   createEffect(
     on(id, (next) => {
       const origin = pending()
       if (origin === undefined || origin.sessionID === next) return
+      if (origin.agent === DEEPSEEK_HARNESS_AGENT && !origin.sessionID && next) return
       setPending(undefined)
     }),
   )
@@ -264,6 +279,15 @@ export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
   }
 
   const select = (name: string) => {
+    if (name === DEEPSEEK_HARNESS_AGENT) {
+      if (dsh.active()) {
+        focus()
+        return
+      }
+      setPending({ sessionID: id() ?? "", agent: DEEPSEEK_HARNESS_AGENT })
+      return
+    }
+    if (dsh.active()) dsh.deactivate()
     const current = session.selectedAgent(id())
     const target = session.agents().find((agent) => agent.name === name)
     if (
@@ -278,18 +302,41 @@ export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
     focus()
   }
 
+  onMount(() => {
+    const handle = (event: Event) => {
+      const name = (event as CustomEvent<{ name?: string }>).detail?.name
+      if (name) select(name)
+    }
+    window.addEventListener(agentSelectionRequest, handle)
+    const cancelPending = () => setPending(undefined)
+    window.addEventListener("newTaskRequest", cancelPending)
+    onCleanup(() => {
+      window.removeEventListener(agentSelectionRequest, handle)
+      window.removeEventListener("newTaskRequest", cancelPending)
+    })
+  })
+
   const disabledReason = (agent: AgentInfo): string | undefined => {
     if (agent.name !== "document" || indexing.loading()) return undefined
     if (indexing.pipelines().documents.state !== "Disabled") return undefined
     return language.t("documentAgent.unavailable")
   }
 
-  const confirm = (agent: "document" | "ultra") => {
+  const confirm = (agent: "document" | "ultra" | typeof DEEPSEEK_HARNESS_AGENT) => {
     const origin = pending()
     if (origin === undefined || origin.agent !== agent) return
     const sid = id() ?? ""
-    const target = session.agents().find((item) => item.name === agent)
     setPending(undefined)
+    if (agent === DEEPSEEK_HARNESS_AGENT) {
+      if (origin.sessionID && sid && origin.sessionID !== sid) {
+        focus()
+        return
+      }
+      dsh.activate(session.selected(id()))
+      focus()
+      return
+    }
+    const target = session.agents().find((item) => item.name === agent)
     if (origin.sessionID !== sid || target?.native !== true) {
       focus()
       return
@@ -302,13 +349,17 @@ export const ModeSwitcher: Component<ModeSwitcherProps> = (props) => {
     <>
       <ModeSwitcherBase
         agents={session.agents()}
-        value={session.selectedAgent(id())}
+        value={dsh.active() ? DEEPSEEK_HARNESS_AGENT : session.selectedAgent(id())}
         onSelect={select}
         disabledReason={disabledReason}
         onDisabledSelect={() => vscode.postMessage({ type: "openSettingsTab", tab: "indexing" })}
       />
       <UltraModeDialog open={pending()?.agent === "ultra"} onConfirm={() => confirm("ultra")} />
       <DocumentModeDialog open={pending()?.agent === "document"} onConfirm={() => confirm("document")} />
+      <DeepSeekHarnessDialog
+        open={pending()?.agent === DEEPSEEK_HARNESS_AGENT}
+        onConfirm={() => confirm(DEEPSEEK_HARNESS_AGENT)}
+      />
     </>
   )
 }

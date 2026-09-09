@@ -220,16 +220,36 @@ export function calcTokenUsage(
  * Returns `undefined` when no step-finish part in the input carries metrics,
  * which is the signal callers use to hide the throughput UI.
  */
-export function latestMetrics(parts: readonly Part[]): { generation?: number; source: "computed" } | undefined {
+export type ResponsePerformance = {
+  generation?: number
+  ttftMs?: number
+  source: "computed"
+}
+
+function validPositive(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value > 0
+}
+
+function validNonNegative(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value >= 0
+}
+
+export function latestMetrics(parts: readonly Part[]): ResponsePerformance | undefined {
   let generation: number | undefined
+  let ttftMs: number | undefined
   for (const part of parts) {
     if (part.type !== "step-finish") continue
     const metrics = part.metrics
     if (!metrics) continue
-    if (metrics.generation !== undefined) generation = metrics.generation
+    if (validPositive(metrics.generation)) generation = metrics.generation
+    if (ttftMs === undefined && validNonNegative(metrics.ttftMs)) ttftMs = metrics.ttftMs
   }
-  if (generation === undefined) return undefined
-  return { generation, source: "computed" }
+  if (generation === undefined && ttftMs === undefined) return undefined
+  return {
+    ...(generation === undefined ? {} : { generation }),
+    ...(ttftMs === undefined ? {} : { ttftMs }),
+    source: "computed",
+  }
 }
 
 /**
@@ -238,7 +258,7 @@ export function latestMetrics(parts: readonly Part[]): { generation?: number; so
  * still appears in tests and external callers — both now resolve to the same
  * "last non-empty sample wins" snapshot semantics.
  */
-export function aggregateMetrics(parts: readonly Part[]): { generation?: number; source: "computed" } | undefined {
+export function aggregateMetrics(parts: readonly Part[]): ResponsePerformance | undefined {
   return latestMetrics(parts)
 }
 
@@ -247,8 +267,22 @@ export function aggregateMetrics(parts: readonly Part[]): { generation?: number;
  * Same selection strategy as `latestMetrics` so the per-message badge and
  * the header row stay consistent.
  */
-export function messageMetrics(parts: readonly Part[]): { generation?: number; source: "computed" } | undefined {
+export function messageMetrics(parts: readonly Part[]): ResponsePerformance | undefined {
   return latestMetrics(parts)
+}
+
+function performanceStep(part: Part) {
+  if (part.type !== "step-finish") return undefined
+  const ttftMs = part.metrics?.ttftMs
+  if (!validNonNegative(ttftMs)) return undefined
+  const tokens = part.tokens
+  const rate = part.metrics?.generation
+  if (!tokens || !validPositive(rate)) return { ttftMs }
+  const generated = tokens.output + (tokens.reasoning ?? 0)
+  if (!validPositive(generated)) return { ttftMs }
+  const generationMs = (generated * 1_000) / rate
+  if (!validPositive(generationMs)) return { ttftMs }
+  return { ttftMs, generated, generationMs }
 }
 
 /**
@@ -257,28 +291,34 @@ export function messageMetrics(parts: readonly Part[]): { generation?: number; s
  * their active model-generation durations, so the displayed value represents
  * the turn rather than whichever step happened to finish last.
  *
- * Steps without `time.elapsed`, with non-positive `elapsed`, or with no
- * generated tokens are skipped — tool-only steps, idempotent cache hits,
- * and tool re-execution should not skew the figure.
+ * Each persisted per-step rate already excludes TTFT and tool execution.
+ * We recover the active decode duration from tokens/rate so multi-step
+ * aggregation preserves that exclusion. Steps without a valid rate or
+ * generated tokens contribute only their first-token latency.
  */
-export function messageThroughput(parts: readonly Part[]): { generation?: number; source: "computed" } | undefined {
+export function messagePerformance(parts: readonly Part[]): ResponsePerformance | undefined {
   let generated = 0
-  let elapsedMs = 0
+  let generationMs = 0
+  let ttftMs: number | undefined
   for (const part of parts) {
-    if (part.type !== "step-finish") continue
-    const time = part.time
-    if (!time || !Number.isFinite(time.elapsed) || time.elapsed <= 0) continue
-    const tokens = part.tokens
-    if (!tokens) continue
-    const stepGenerated = tokens.output + (tokens.reasoning ?? 0)
-    if (stepGenerated <= 0) continue
-    generated += stepGenerated
-    elapsedMs += time.elapsed
+    const step = performanceStep(part)
+    if (!step) continue
+    if (ttftMs === undefined) ttftMs = step.ttftMs
+    generated += step.generated ?? 0
+    generationMs += step.generationMs ?? 0
   }
-  if (generated <= 0 || elapsedMs <= 0) return undefined
-  const generation = (generated * 1000) / elapsedMs
-  if (!Number.isFinite(generation) || generation <= 0) return undefined
-  return { generation, source: "computed" }
+  const generation = generated > 0 && generationMs > 0 ? (generated * 1000) / generationMs : undefined
+  if (!validPositive(generation) && ttftMs === undefined) return undefined
+  return {
+    ...(validPositive(generation) ? { generation } : {}),
+    ...(ttftMs === undefined ? {} : { ttftMs }),
+    source: "computed",
+  }
+}
+
+/** Historical name retained for callers that only used the generation field. */
+export function messageThroughput(parts: readonly Part[]): ResponsePerformance | undefined {
+  return messagePerformance(parts)
 }
 
 /**
@@ -286,8 +326,8 @@ export function messageThroughput(parts: readonly Part[]): { generation?: number
  * message in a session. Same weighted semantics as `messageThroughput` —
  * useful when a caller has already flattened parts across messages.
  */
-export function sessionThroughput(parts: readonly Part[]): { generation?: number; source: "computed" } | undefined {
-  return messageThroughput(parts)
+export function sessionThroughput(parts: readonly Part[]): ResponsePerformance | undefined {
+  return messagePerformance(parts)
 }
 
 /**
@@ -302,6 +342,12 @@ function formatRateValue(value: number | undefined, locale: string): string {
 
 export function formatTG(value: number | undefined, locale: string) {
   return formatRateValue(value, locale)
+}
+
+export function formatTTFT(value: number, locale: string) {
+  if (!Number.isFinite(value) || value < 0) return ""
+  const seconds = value / 1_000
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(seconds)}s`
 }
 
 /**

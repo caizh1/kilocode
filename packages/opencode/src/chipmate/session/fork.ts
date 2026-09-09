@@ -8,6 +8,14 @@ import { ChipMatePartLifecycle } from "./part-lifecycle"
 const task = "task"
 type Ops = Pick<Session.Interface, "get" | "messages" | "create" | "updateMessage" | "updatePart">
 
+export type FrozenForkGraph = Map<
+  string,
+  {
+    source: Session.Info
+    messages: MessageV2.WithParts[]
+  }
+>
+
 // Keep terminal task references so the fork can give them private child sessions.
 // In-flight jobs cannot be copied safely, so those remain historical errors.
 export function prepareForkedPart(part: MessageV2.Part): MessageV2.Part | undefined {
@@ -34,6 +42,37 @@ function childID(part: MessageV2.Part) {
     state.input.task_id,
   ]
   return values.find((value): value is string => typeof value === "string")
+}
+
+function childRefs(messages: readonly MessageV2.WithParts[]) {
+  return messages.flatMap((message) =>
+    message.parts.flatMap((part) => {
+      const prepared = prepareForkedPart(part)
+      const child = prepared ? childID(prepared) : undefined
+      return child ? [child] : []
+    }),
+  )
+}
+
+/** Freeze every reachable, copyable child session before the fork starts writing messages. */
+export function freezeChildren(input: {
+  messages: readonly MessageV2.WithParts[]
+  ops: Pick<Ops, "get" | "messages">
+}): Effect.Effect<FrozenForkGraph, Session.NotFound> {
+  return Effect.gen(function* () {
+    const graph: FrozenForkGraph = new Map()
+    const queue = childRefs(input.messages)
+    while (queue.length > 0) {
+      const child = queue.shift()!
+      if (graph.has(child) || !Schema.is(SessionID)(child)) continue
+      const source = yield* input.ops.get(SessionID.make(child)).pipe(Effect.orElseSucceed(() => undefined))
+      if (!source) continue
+      const frozen = structuredClone(yield* input.ops.messages({ sessionID: source.id }))
+      graph.set(child, { source: structuredClone(source), messages: frozen })
+      queue.push(...childRefs(frozen))
+    }
+    return graph
+  })
 }
 
 function mapRecord(value: Record<string, unknown> | undefined, map: Map<string, SessionID>, keys: string[]) {
@@ -79,7 +118,12 @@ function remapPart(part: MessageV2.Part, map: Map<string, SessionID>) {
   return next
 }
 
-function copy(input: { source: Session.Info; parentID: SessionID; ops: Ops }) {
+function copy(input: {
+  source: Session.Info
+  parentID: SessionID
+  ops: Ops
+  messages?: readonly MessageV2.WithParts[]
+}) {
   return Effect.gen(function* () {
     const target = yield* input.ops.create({
       parentID: input.parentID,
@@ -90,7 +134,7 @@ function copy(input: { source: Session.Info; parentID: SessionID; ops: Ops }) {
       permission: input.source.permission ? [...input.source.permission] : undefined,
       workspaceID: input.source.workspaceID,
     })
-    const msgs = yield* input.ops.messages({ sessionID: input.source.id })
+    const msgs = input.messages ?? (yield* input.ops.messages({ sessionID: input.source.id }))
     const ids = new Map<string, MessageID>()
 
     for (const msg of msgs) {
@@ -128,6 +172,7 @@ export function remapChildren(input: {
   sessionID: SessionID
   ops: Ops
   remapped?: Map<string, SessionID>
+  frozen?: FrozenForkGraph
 }): Effect.Effect<void, Session.NotFound> {
   return Effect.gen(function* () {
     const map = input.remapped ?? new Map<string, SessionID>()
@@ -142,11 +187,14 @@ export function remapChildren(input: {
     for (const ref of refs) {
       if (map.has(ref.child)) continue
       if (!Schema.is(SessionID)(ref.child)) continue
-      const source = yield* input.ops.get(SessionID.make(ref.child)).pipe(Effect.orElseSucceed(() => undefined))
+      const snapshot = input.frozen?.get(ref.child)
+      const source =
+        snapshot?.source ??
+        (yield* input.ops.get(SessionID.make(ref.child)).pipe(Effect.orElseSucceed(() => undefined)))
       if (!source) continue
-      const target = yield* copy({ source, parentID: input.sessionID, ops: input.ops })
+      const target = yield* copy({ source, parentID: input.sessionID, ops: input.ops, messages: snapshot?.messages })
       map.set(ref.child, target.id)
-      yield* remapChildren({ sessionID: target.id, ops: input.ops, remapped: map })
+      yield* remapChildren({ sessionID: target.id, ops: input.ops, remapped: map, frozen: input.frozen })
     }
 
     for (const msg of msgs) {

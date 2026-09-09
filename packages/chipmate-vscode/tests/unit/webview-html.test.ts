@@ -42,6 +42,19 @@ describe("buildCspString", () => {
     expect(result).toContain("'wasm-unsafe-eval'")
   })
 
+  it("does not allow JavaScript string evaluation by default", () => {
+    const result = buildCspString(cspSource, nonce)
+    expect(result).not.toContain("'unsafe-eval'")
+  })
+
+  it("allows JavaScript string evaluation only when explicitly enabled", () => {
+    const result = buildCspString(cspSource, nonce, undefined, true)
+    expect(result).toContain(
+      `script-src 'nonce-${nonce}' 'wasm-unsafe-eval' 'unsafe-eval'`,
+    )
+    expect(result).not.toContain("script-src 'unsafe-inline'")
+  })
+
   it("includes cspSource in style-src and font-src", () => {
     const result = buildCspString(cspSource, nonce)
     expect(result).toContain(`style-src 'unsafe-inline' ${cspSource}`)

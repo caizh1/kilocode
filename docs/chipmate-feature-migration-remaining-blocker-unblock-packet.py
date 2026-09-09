@@ -88,7 +88,6 @@ The receive wrapper runs archive/structure verification before bundle intake. If
 | Offline Linux x86-64 target | Linux target owner | Run the generated Linux target execution request on the real offline Linux x86-64 target. | Returned target evidence pack and extracted evidence directory. | Return-pack verify passes; target intake final status `PASS`; runtime intake `PASS` where required. |
 | Internal embedded-C detail design | Internal project owner | Run source-backed-detail-design skill through installed VSIX/chat on a representative internal embedded C module. | Source evidence, Markdown/design doc, diagrams, Word output, quality report, and artifact manifest. | Evidence shows ChipMate native QA/document tools plus skill instructions, not ChipMate runtime contract or repair flow. |
 | Real company `.docx` template | Document/template owner | Provide a representative company `.docx` or `.dotx` and run the template validator plus S8 Word template flow. | Template validation summary and S8 runtime/template evidence. | Validation `PASS`, or explicitly accepted `PASS_WITH_LIMITS` with documented style inheritance limits. |
-| Visible Agent Terminal UX | VS Code UX/manual operator | Run visible installed VS Code checks for command-palette prompt, terminal pane opening, default-off behavior, and dangerous-command confirmation. | Screenshots/logs/manual evidence tied to installed VSIX profile. | M11 accepts visible UX evidence; local service/runtime rollup alone is not enough. |
 | M11 final no-regression review | Release reviewer | After all upstream gates return acceptable evidence, rerun readiness, completion audit, current-state consistency, and final signoff intake. | Final review template, readiness summary, completion audit, consistency summary, final signoff summary. | Final signoff intake `READY_FOR_FINAL_SIGNOFF` and final review decision `PASS` or explicitly accepted `PASS_WITH_KNOWN_LIMITS`. |
 
 ## S3 Document RAG unblock
@@ -158,7 +157,6 @@ Acceptance:
 - Required S1-S16 statuses are explicit `PASS`
 - S3 uses native `document_search`
 - S4 uses `declare_artifact` only when artifact output is requested
-- S14/S15 prove Agent Terminal remains default-off/additive and dangerous execution is confirmation-gated
 - Old ChipMate contract/repair markers remain absent
 
 ## Offline Windows x86-64 target unblock
@@ -255,20 +253,6 @@ Acceptance:
 - Template validator reports `PASS`, or M11 explicitly accepts `PASS_WITH_LIMITS`
 - Style inheritance limitations are documented
 - Installed/tool S8 template flow is rerun if the template exposes a new compatibility issue
-
-## Visible Agent Terminal UX unblock
-
-Required visible checks:
-
-- Agent Terminal command appears only as an additive sidecar entry
-- Default-off behavior is visible and understandable
-- Opening the Agent Terminal creates a VS Code terminal pane rather than replacing ChipMate native terminal/session behavior
-- Dangerous command flow requires explicit confirmation and preserves an auditable log/artifact path
-
-Acceptance:
-
-- Evidence is tied to an installed VSIX profile/workspace
-- M11 accepts the visible UX evidence in addition to the existing local rollup
 
 ## M11 final review unblock
 

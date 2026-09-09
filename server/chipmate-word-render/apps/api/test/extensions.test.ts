@@ -7,6 +7,7 @@ import test from "node:test"
 import JSZip from "jszip"
 import { MarketDb } from "@chipmate/market-db"
 import { build } from "../src/index.ts"
+import { authentication, webLogin } from "./auth-fixture.ts"
 
 async function fixture(opts: { active?: number; free?: number; idle?: number; maximum?: number; bindings?: Record<string, string>; packages?: Array<{ name: string; data: Buffer }> } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "chipmate-extension-market-"))
@@ -14,16 +15,25 @@ async function fixture(opts: { active?: number; free?: number; idle?: number; ma
   await mkdir(packages, { recursive: true })
   for (const item of opts.packages ?? []) await writeFile(join(packages, item.name), item.data)
   const db = new MarketDb({ dir: join(dir, "db") })
-  const resolveUser = async (key: string) =>
-    key === "alice-key" || key === "bob-key"
-      ? ({
-          ok: true,
-          user: { name: key === "alice-key" ? "Alice" : "Bob", tokenName: `${key}@chipmate` },
-          status: 200,
-        } as const)
-      : ({ ok: false, code: "token-not-found", status: 404 } as const)
+  const auth = await authentication(db)
+  for (const name of Object.values(opts.bindings ?? {})) {
+    const user = await db.identity({
+      id: `market-${createHash("sha256").update(name.toLocaleLowerCase()).digest("hex").slice(0, 40)}`,
+      displayName: name,
+    })
+    await db.putExternalIdentity({
+      sourceId: "ldap",
+      subject: `guid-${name.toLocaleLowerCase()}`,
+      userId: user.id,
+      username: name.toLocaleLowerCase(),
+      email: `${name.toLocaleLowerCase()}@test.local`,
+      displayName: name,
+      isAdmin: false,
+      verifiedAt: new Date().toISOString(),
+    })
+  }
   const app = build(db, {
-    resolveUser,
+    auth,
     extensionMarket: true,
     extensionRoot: join(dir, "extensions"),
     packageRoot: packages,
@@ -170,7 +180,7 @@ test("official ChipMate upload immediately drives the dynamic update manifest an
   }
 })
 
-test("legacy system ChipMate records require the one-time owner binding before web releases", async () => {
+test("legacy system ChipMate records require owner binding and explicit LDAP identity mapping", async () => {
   const legacy = await vsix({ name: "chipmate", version: "1.0.0", updateTarget: "linux-x64-baseline" })
   const blocked = await fixture({ packages: [{ name: "chipmate-1.0.0-linux.vsix", data: legacy }] })
   try {
@@ -234,12 +244,7 @@ test("an invalid legacy package is quarantined without blocking a new web releas
 })
 
 async function login(app: Awaited<ReturnType<typeof fixture>>["app"], key = "alice-key") {
-  const response = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: key } })
-  assert.equal(response.statusCode, 200)
-  return {
-    cookie: String(response.headers["set-cookie"]).split(";", 1)[0],
-    csrf: String(response.headers["x-csrf-token"]),
-  }
+  return webLogin(app, key)
 }
 
 async function upload(

@@ -112,21 +112,6 @@ export class TerminalManager {
     return { terminalId, ptyID: entry.ptyID, worktreeId: entry.worktreeId, title: entry.title, wsUrl }
   }
 
-  /** Associate a persistent PTY with the real backend session before its first prompt. */
-  async associate(terminalId: string, sessionID: string): Promise<void> {
-    const entry = this.entries.get(terminalId)
-    if (!entry) throw new Error("Agent Console terminal is no longer available")
-    const client = this.deps.getClient()
-    const { error } = await client.pty.update({
-      directory: entry.cwd,
-      ptyID: entry.ptyID,
-      sessionID,
-    })
-    if (!error) return
-    const message = ptyError(error)
-    throw new Error(`Failed to bind Agent Console PTY: ${message}`)
-  }
-
   /** Forward a resize event to the backend PTY. Missing terminals are a no-op. */
   async resize(terminalId: string, cols: number, rows: number): Promise<void> {
     const entry = this.entries.get(terminalId)

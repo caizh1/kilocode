@@ -545,6 +545,9 @@ export namespace ChipMateIndexing {
     let revision = 0
     let applied = 0
     let serial = 0
+    let workerEpoch = 0
+    let appliedInput: string | undefined
+    let rolloverTask: Promise<void> | undefined
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined
     let recoveryAttempt = 0
     let forcedLow = false
@@ -634,19 +637,41 @@ export namespace ChipMateIndexing {
       log.error("project indexing worker failed", { err, workspacePath: dir })
       void report()
     })
+    const rollover = bind(() => {
+      const engine = base.engine
+      if (!engine) return rolloverTask ?? Promise.resolve()
+      base.engine = undefined
+      base.initialized = false
+      workerEpoch += 1
+      const previous = rolloverTask ?? Promise.resolve()
+      const task = previous
+        .then(() => engine.dispose())
+        .catch((err) => {
+          log.warn("failed to roll over superseded project indexing worker", { err, workspacePath: dir })
+        })
+      rolloverTask = task
+      void task.finally(() => {
+        if (rolloverTask === task) rolloverTask = undefined
+      })
+      return task
+    })
     const suspend = bind(async (next: Status) => {
       const engine = base.engine
       base.engine = undefined
       base.initialized = false
+      workerEpoch += 1
+      appliedInput = undefined
       await engine?.dispose().catch((err) => {
         log.warn("failed to dispose inactive project indexing worker", { err, workspacePath: dir })
       })
       box.status = next
       await report()
     })
-    const apply = bind(async () => {
+    const apply = bind(async (target: number) => {
+      let activeEpoch = workerEpoch
       try {
         const nextConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
+        if (activeEpoch !== workerEpoch || target !== revision) return
         const reason = disableReason()
         if (reason) {
           await suspend(disabledByEnvironment(reason))
@@ -662,8 +687,17 @@ export namespace ChipMateIndexing {
         }
 
         const nextInput = await inputFromConfig(nextConfig)
+        if (activeEpoch !== workerEpoch || target !== revision) return
         const nextRag = new CodeIndexConfigManager(nextInput)
         if (needsVectorRuntime(nextRag)) await LanceDBRuntime.ensure(nextRag.getConfig().vectorStoreProvider)
+        if (activeEpoch !== workerEpoch) return
+        const signature = MemoryDebug.hash(JSON.stringify(nextInput))
+        if (base.engine && appliedInput !== undefined && appliedInput !== signature) {
+          await rollover()
+        }
+        await rolloverTask
+        if (disposed || target !== revision) return
+        activeEpoch = workerEpoch
         const stamp = serial
         const next = await (async () => {
           if (base.engine) return base.engine.updateConfig(nextInput)
@@ -677,15 +711,19 @@ export namespace ChipMateIndexing {
           base.engine = engine
           return engine.init(nextInput, baseline)
         })()
+        if (activeEpoch !== workerEpoch) return
         const regressed = serial !== stamp && current().state !== "In Progress" && next.state === "In Progress"
         if (!regressed) status(next)
+        appliedInput = signature
         base.initialized = true
         await report()
       } catch (err) {
+        if (activeEpoch !== workerEpoch) return
         if (IndexingModelError.isInstance(err)) log.warn("indexing model resolution failed", { err })
         const engine = base.engine
         base.engine = undefined
         base.initialized = false
+        appliedInput = undefined
         await engine?.dispose().catch((disposeErr) => {
           log.warn("failed to dispose failed project indexing worker", { err: disposeErr, workspacePath: dir })
         })
@@ -695,13 +733,14 @@ export namespace ChipMateIndexing {
     const drain = bind(async () => {
       while (!disposed && applied < revision) {
         const target = revision
-        await apply()
+        await apply(target)
         applied = target
       }
     })
-    const refresh = bind(async () => {
+    const refresh = bind(async (supersede = false) => {
       if (disposed) return
       revision += 1
+      if (supersede && refreshTask) void rollover()
       while (!disposed && applied < revision) {
         if (!refreshTask) {
           const task = drain()
@@ -720,7 +759,7 @@ export namespace ChipMateIndexing {
       if (disposed) return
       if (event.payload?.type !== "global.config.updated") return
       if (event.directory && event.directory !== "global" && event.directory !== dir) return
-      void refresh()
+      void refresh(event.payload.properties?.indexing === true)
     }
     const warning = bind((item: IndexingWarning) => {
       if (disposed) return

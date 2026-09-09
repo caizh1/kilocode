@@ -2,8 +2,8 @@
 """
 Bootstrap offline target runtime evidence files for ChipMate migration S1-S16.
 
-This helper does not execute ChipMate, VS Code, QA, Word, Mermaid, autocomplete, or
-Agent Terminal flows. It only creates a conservative, machine-readable evidence
+This helper does not execute ChipMate, VS Code, QA, Word, Mermaid, or autocomplete
+flows. It only creates a conservative, machine-readable evidence
 skeleton so target operators can fill real results and then run the strict
 runtime/target intake verifiers.
 
@@ -36,8 +36,6 @@ S_CASES = [
     ("S11", "Mermaid PNG", "Expected .mmd/.png/diagnostics artifact"),
     ("S12", "Mermaid inserted into Word", "Expected new Word artifact with figure"),
     ("S13", "Source-backed detail design", "Expected evidence, diagrams, Word output, quality report"),
-    ("S14", "Agent Terminal open", "Expected default-off prompt or enabled terminal open"),
-    ("S15", "Agent Terminal dangerous command", "Expected explicit confirmation requirement"),
     ("S16", "Qwen direct autocomplete", "Expected provider still registers and diagnostics/log command works"),
 ]
 VALID_STATUSES = {"PASS", "FAIL", "BLOCKED_AUTH", "BLOCKED_ENV", "PARTIAL", "NOT_RUN"}

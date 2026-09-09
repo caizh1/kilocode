@@ -24,6 +24,8 @@ interface Fixture {
   dir: string
   packages: string
   path: string
+  master: string
+  breakGlass: string
 }
 
 async function port() {
@@ -85,7 +87,11 @@ async function fixture(seed = true): Promise<Fixture> {
   const wrapper = join(bin, "chromium")
   await writeFile(wrapper, `#!/bin/sh\nexec ${JSON.stringify(chrome)} "$@"\n`)
   await chmod(wrapper, 0o755)
-  return { dir, packages, path: `${bin}:${process.env.PATH ?? ""}` }
+  const master = join(dir, "master.key")
+  const breakGlass = join(dir, "break-glass.key")
+  await writeFile(master, "ChipMate-Legacy-Compatibility-Master-Key-0001\n")
+  await writeFile(breakGlass, "ChipMate-Legacy-Compatibility-Break-Glass\n")
+  return { dir, packages, path: `${bin}:${process.env.PATH ?? ""}`, master, breakGlass }
 }
 
 async function start(args: string[], value: Fixture): Promise<Running> {
@@ -99,6 +105,8 @@ async function start(args: string[], value: Fixture): Promise<Running> {
       PORT: String(selected),
       SKILL_MARKET_ROOT: join(value.packages, "skill-market"),
       UPDATE_EXTENSION_ID: "chipmate.chipmate",
+      CHIPMATE_AUTH_MASTER_KEY_FILE: value.master,
+      CHIPMATE_AUTH_BREAK_GLASS_KEY_FILE: value.breakGlass,
     },
     stdio: ["ignore", "pipe", "pipe"],
   })

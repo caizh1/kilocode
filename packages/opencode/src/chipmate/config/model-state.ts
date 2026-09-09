@@ -38,12 +38,14 @@ export namespace ChipMateModelState {
   }
 
   export async function update(input: Patch): Promise<State> {
-    const state = await get()
+    const file = target()
+    const raw = await Filesystem.readJson(file).catch(() => ({}))
+    const state = clean(raw)
     const next = {
       ...state,
       favorite: input.favorite ? refs(input.favorite) : state.favorite,
     }
-    await Filesystem.writeJson(target(), next)
+    await Filesystem.writeJson(file, { ...(isRecord(raw) ? raw : {}), ...next })
     return next
   }
 

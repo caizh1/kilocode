@@ -95,10 +95,12 @@ describe("ChipMate Server configuration", () => {
   })
 
   it("derives Marketplace and renderer runtime endpoints from the unified origin", () => {
+    const images = process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT
     const word = process.env.CHIPMATE_WORD_RENDER_ENDPOINT
     const mermaid = process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT
     const plantuml = process.env.CHIPMATE_PLANTUML_RENDER_ENDPOINT
     const review = process.env.CHIPMATE_REVIEW_RULES_ENDPOINT
+    delete process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT
     delete process.env.CHIPMATE_WORD_RENDER_ENDPOINT
     delete process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT
     delete process.env.CHIPMATE_PLANTUML_RENDER_ENDPOINT
@@ -111,11 +113,14 @@ describe("ChipMate Server configuration", () => {
       )
       expect(renderEnv()).toEqual({
         CHIPMATE_WORD_RENDER_ENDPOINT: "https://runtime.test:7443/render/word",
+        CHIPMATE_WORD_TO_IMAGES_ENDPOINT: "https://runtime.test:7443/convert/word-to-images",
         CHIPMATE_MERMAID_RENDER_ENDPOINT: "https://runtime.test:7443/render/mermaid",
         CHIPMATE_PLANTUML_RENDER_ENDPOINT: "https://runtime.test:7443/render/plantuml",
         CHIPMATE_REVIEW_RULES_ENDPOINT: "https://runtime.test:7443/api/v1/review-rule-packs/latest",
       })
     } finally {
+      if (images === undefined) delete process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT
+      else process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT = images
       if (word === undefined) delete process.env.CHIPMATE_WORD_RENDER_ENDPOINT
       else process.env.CHIPMATE_WORD_RENDER_ENDPOINT = word
       if (mermaid === undefined) delete process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT
@@ -128,10 +133,12 @@ describe("ChipMate Server configuration", () => {
   })
 
   it("keeps explicit renderer environment overrides", () => {
+    const images = process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT
     const word = process.env.CHIPMATE_WORD_RENDER_ENDPOINT
     const mermaid = process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT
     const plantuml = process.env.CHIPMATE_PLANTUML_RENDER_ENDPOINT
     const review = process.env.CHIPMATE_REVIEW_RULES_ENDPOINT
+    process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT = "https://override.test:7443/images"
     process.env.CHIPMATE_WORD_RENDER_ENDPOINT = "https://override.test:7443/word"
     process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT = "https://override.test:7443/mermaid"
     process.env.CHIPMATE_PLANTUML_RENDER_ENDPOINT = "https://override.test:7443/plantuml"
@@ -140,6 +147,8 @@ describe("ChipMate Server configuration", () => {
     try {
       expect(renderEnv()).toEqual({})
     } finally {
+      if (images === undefined) delete process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT
+      else process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT = images
       if (word === undefined) delete process.env.CHIPMATE_WORD_RENDER_ENDPOINT
       else process.env.CHIPMATE_WORD_RENDER_ENDPOINT = word
       if (mermaid === undefined) delete process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT

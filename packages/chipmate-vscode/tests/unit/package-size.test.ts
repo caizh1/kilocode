@@ -12,6 +12,13 @@ describe("internal VSIX package size", () => {
     )
   })
 
+  it("allows an explicit manual-only Windows package without weakening the default gate", () => {
+    expect(() => verifyLegacyUpdatePackageSize("win32-x64-baseline", LEGACY_UPDATE_MAX_BYTES + 1, true)).not.toThrow()
+    expect(() => verifyLegacyUpdatePackageSize("win32-x64-baseline", LEGACY_UPDATE_MAX_BYTES + 1)).toThrow(
+      "exceeds the legacy auto-update limit",
+    )
+  })
+
   it("does not apply the Windows bootstrap limit to other targets", () => {
     expect(() => verifyLegacyUpdatePackageSize("linux-x64-baseline", LEGACY_UPDATE_MAX_BYTES + 1)).not.toThrow()
   })

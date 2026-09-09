@@ -6,6 +6,7 @@ import { showToast } from "@chipmate/chipmate-ui/toast"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
 import { useConfig } from "../../context/config"
+import { useFutureSkin } from "../../hooks/useFutureSkin"
 import { useSession } from "../../context/session"
 import ModelsTab from "./ModelsTab"
 import ProvidersTab from "./ProvidersTab"
@@ -24,6 +25,7 @@ import ExperimentalTab from "./ExperimentalTab"
 import LanguageTab from "./LanguageTab"
 import AboutChipMateTab from "./AboutChipMateTab"
 import IndexingTab from "./IndexingTab"
+import PatentCenterTab from "./PatentCenterTab"
 import SandboxingTab from "./SandboxingTab"
 import * as Sandboxing from "./sandboxing"
 import { useServer } from "../../context/server"
@@ -69,6 +71,7 @@ const groups: readonly Group[] = [
     items: [
       { id: "context", key: "settings.context.title" },
       { id: "indexing", key: "settings.indexing.title", show: "indexing" },
+      { id: "patentCenter", key: "settings.patentCenter.title" },
       { id: "checkpoints", key: "settings.checkpoints.title" },
     ],
   },
@@ -123,10 +126,12 @@ const Panel: ParentComponent<{ title: string; description?: string; brand?: bool
 )
 
 const Settings: Component<SettingsProps> = (props) => {
+  const night = useFutureSkin()
   const server = useServer()
   const language = useLanguage()
   const vscode = useVSCode()
-  const { loading, isDirty, saving, canSave, saveError, saveConfig, discardConfig, features } = useConfig()
+  const { loading, isDirty, appearanceOnly, saving, canSave, saveError, saveConfig, discardConfig, features } =
+    useConfig()
   const session = useSession()
   const [active, setActive] = createSignal(props.tab ?? "models")
   const [errorExpanded, setErrorExpanded] = createSignal(false)
@@ -221,7 +226,7 @@ const Settings: Component<SettingsProps> = (props) => {
 
   const handleSave = () => {
     const busy = busyCount()
-    if (busy === 0) {
+    if (busy === 0 || appearanceOnly()) {
       saveConfig()
       return
     }
@@ -574,10 +579,10 @@ const Settings: Component<SettingsProps> = (props) => {
                   if (!open) return
                   setFocused(choices().find((item) => item.page === active())?.id ?? choices()[0]?.id)
                 }}
-                preferredWidth={520}
-                preferredHeight={560}
+                preferredWidth={night() ? 320 : 520}
+                preferredHeight={night() ? Math.min(360, window.innerHeight / 2) : 560}
                 minWidth={260}
-                minHeight={180}
+                minHeight={night() ? 80 : 180}
                 padding={8}
                 class="settings-nav-popup"
                 triggerAs={Button}
@@ -784,6 +789,14 @@ const Settings: Component<SettingsProps> = (props) => {
                 </Panel>
               </Tabs.Content>
             </Show>
+            <Tabs.Content value="patentCenter" data-ui="settings-content">
+              <Panel
+                title={language.t("settings.patentCenter.title")}
+                description={language.t("settings.patentCenter.description")}
+              >
+                <PatentCenterTab />
+              </Panel>
+            </Tabs.Content>
             <Tabs.Content value="experimental" data-ui="settings-content">
               <Panel title={language.t("settings.experimental.title")}>
                 <ExperimentalTab />

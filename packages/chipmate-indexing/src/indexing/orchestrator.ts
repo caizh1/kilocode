@@ -58,6 +58,7 @@ export class CodeIndexOrchestrator {
   private _watcherFailed = false
   private _watcherToken = 0
   private _followUpScanRequested = false
+  private _documentsPending = false
   private _followUpScanScheduled = false
   private _gapOverflows = 0
   private _active?: Promise<IndexingRunOutcome>
@@ -186,6 +187,17 @@ export class CodeIndexOrchestrator {
   private prepareWatcher(reason: string, trigger: IndexingTelemetryTrigger): void {
     if (!this._watcherStart && !this._watcherReady && !this._watcherFailed) {
       this.startWatcherInBackground(reason, trigger)
+    }
+  }
+
+  public deferForDocuments(trigger: IndexingTelemetryTrigger): () => void {
+    this._documentsPending = true
+    this.deferWatcherCollection("documents-first")
+    this.prepareWatcher("documents-first", trigger)
+    return () => {
+      if (!this._documentsPending) return
+      this._documentsPending = false
+      this.enableWatcherCollection(trigger)
     }
   }
 
@@ -321,6 +333,7 @@ export class CodeIndexOrchestrator {
 
   public startIndexing(trigger: IndexingTelemetryTrigger = "background"): Promise<IndexingRunOutcome> {
     if (this._active) return this._active
+    this._documentsPending = false
     const task = this.runIndexing(trigger).finally(() => {
       if (this._active === task) this._active = undefined
     })
@@ -503,6 +516,10 @@ export class CodeIndexOrchestrator {
       const candidate = this.vectorStore?.getLastCompatibilityDecision?.()?.action === "rebuild"
       await this.vectorStore?.abortCandidate?.()
       if (candidate) await this.cacheManager.clearCacheFile()
+      if (this._cancelRequested) {
+        this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        return { state: "cancelled", pipeline: pipeline ?? "codeGraph" }
+      }
       const restored =
         pipeline === "rag" && candidate && Boolean(await this.vectorStore?.hasIndexedData().catch(() => false))
       this.emitError("orchestrator:startIndexing", err, source, trigger, mode, pipeline)
@@ -550,10 +567,20 @@ export class CodeIndexOrchestrator {
     }
   }
 
-  public async startRagIndexing(
+  public startRagIndexing(
     trigger: IndexingTelemetryTrigger = "background",
     reason = "settings-change",
   ): Promise<IndexingRunOutcome> {
+    if (this._active) return this._active
+    const task = this.runRagIndexing(trigger, reason).finally(() => {
+      if (this._active === task) this._active = undefined
+    })
+    this._active = task
+    return task
+  }
+
+  private async runRagIndexing(trigger: IndexingTelemetryTrigger, reason: string): Promise<IndexingRunOutcome> {
+    this._documentsPending = false
     log.info("rag-only indexing start requested", {
       visible: true,
       workspacePath: this.workspacePath,
@@ -656,6 +683,10 @@ export class CodeIndexOrchestrator {
       const candidate = this.vectorStore.getLastCompatibilityDecision?.()?.action === "rebuild"
       await this.vectorStore.abortCandidate?.()
       if (candidate) await this.cacheManager.clearCacheFile()
+      if (this._cancelRequested) {
+        this.stateManager.setSystemState("Standby", "Indexing cancelled.")
+        return { state: "cancelled", pipeline: "rag" }
+      }
       this.emitError("orchestrator:startRagIndexing", err, "scan", trigger, mode, "rag")
       const msg = err instanceof Error ? err.message : "Unknown error"
       this.stateManager.upsertNotice({
@@ -1028,7 +1059,7 @@ export class CodeIndexOrchestrator {
   }
 
   private scheduleFollowUpScan(trigger: IndexingTelemetryTrigger): void {
-    if (!this._followUpScanRequested || this._followUpScanScheduled) return
+    if (this._documentsPending || !this._followUpScanRequested || this._followUpScanScheduled) return
 
     this._followUpScanRequested = false
     this._followUpScanScheduled = true
@@ -1037,8 +1068,14 @@ export class CodeIndexOrchestrator {
       workspacePath: this.workspacePath,
     })
     const wait = Math.min(30_000, 1_000 * 2 ** Math.max(0, this._gapOverflows - 1))
+    const token = this._watcherToken
     setTimeout(() => {
       this._followUpScanScheduled = false
+      if (this._cancelRequested || token !== this._watcherToken) return
+      if (this._documentsPending) {
+        this._followUpScanRequested = true
+        return
+      }
       void this.startIndexing(trigger).catch((err) => {
         log.warn("follow-up indexing scan failed", {
           visible: true,
@@ -1148,6 +1185,7 @@ export class CodeIndexOrchestrator {
 
   public stopWatcher(): void {
     log.info("stopping file watcher", { workspacePath: this.workspacePath })
+    this._documentsPending = false
     this._watcherToken += 1
     this._watcherStart = undefined
     this._watcherReady = false

@@ -74,9 +74,6 @@ python3 docs/chipmate-feature-migration-company-docx-template-validate.py \\
   --generated-docx <generated-docx-from-chipmate.docx> \\
   --output /tmp/chipmate-m11-returned-evidence-bundle/company-template/summary.md
 
-python3 docs/chipmate-feature-migration-agent-terminal-visible-ux-intake.py \\
-  --evidence-dir <agent-terminal-visible-ux-evidence-dir> \\
-  --output /tmp/chipmate-m11-returned-evidence-bundle/agent-terminal-visible-ux/summary.md
 ```
 
 ## 3. Package the bundle for return
@@ -130,7 +127,6 @@ def evaluate(text: str) -> SelfCheckResult:
         "chipmate-feature-migration-target-evidence-intake-verify.py",
         "chipmate-feature-migration-internal-embedded-c-intake.py",
         "chipmate-feature-migration-company-docx-template-validate.py",
-        "chipmate-feature-migration-agent-terminal-visible-ux-intake.py",
         "chipmate-feature-migration-m11-returned-evidence-receive.py",
         "--accept-s16-decision",
         "not final signoff",

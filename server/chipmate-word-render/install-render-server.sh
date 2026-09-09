@@ -8,7 +8,10 @@ DATA_ROOT_ON_HOST="${DATA_ROOT_ON_HOST:-/home/share/chipmate/data}"
 SKILL_MARKET_ROOT_ON_HOST="${SKILL_MARKET_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/skill-market}"
 REVIEW_RULE_ROOT_ON_HOST="${REVIEW_RULE_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/review-rules}"
 BACKUP_ROOT_ON_HOST="${BACKUP_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/backups}"
-EXTENSION_MARKET_ENABLED="${EXTENSION_MARKET_ENABLED:-0}"
+AUTH_SECRET_ROOT_ON_HOST="${AUTH_SECRET_ROOT_ON_HOST:-$DATA_ROOT_ON_HOST/auth}"
+AUTH_MASTER_KEY_FILE_ON_HOST="${AUTH_MASTER_KEY_FILE_ON_HOST:-$AUTH_SECRET_ROOT_ON_HOST/master.key}"
+AUTH_BREAK_GLASS_KEY_FILE_ON_HOST="${AUTH_BREAK_GLASS_KEY_FILE_ON_HOST:-$AUTH_SECRET_ROOT_ON_HOST/break-glass.key}"
+EXTENSION_MARKET_ENABLED="${EXTENSION_MARKET_ENABLED:-}"
 ENV_FILE="${ENV_FILE:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_MARKET_SEED_ROOT="${SKILL_MARKET_SEED_ROOT:-$SCRIPT_DIR/packages/skill-market}"
@@ -43,8 +46,22 @@ if [[ -f "${ARCHIVE}.sha256" ]]; then
 fi
 
 workdir="$(mktemp -d)"
+rollback_name=""
+rollback_pending=0
 cleanup() {
+  status=$?
+  if [[ "$rollback_pending" == "1" ]]; then
+    echo "[chipmate-render] new service failed health checks; restoring the previous container" >&2
+    docker rm -f "$SERVICE_NAME" >/dev/null 2>&1 || true
+    if [[ -n "$rollback_name" ]] && docker inspect "$rollback_name" >/dev/null 2>&1; then
+      docker rename "$rollback_name" "$SERVICE_NAME" >/dev/null 2>&1 || true
+      docker start "$SERVICE_NAME" >/dev/null 2>&1 || true
+    else
+      docker start "$SERVICE_NAME" >/dev/null 2>&1 || true
+    fi
+  fi
   rm -rf "$workdir"
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -80,7 +97,30 @@ mkdir -p \
   "$SKILL_MARKET_ROOT_ON_HOST/extensions/artifacts" \
   "$SKILL_MARKET_ROOT_ON_HOST/extensions/.tmp" \
   "$REVIEW_RULE_ROOT_ON_HOST" \
-  "$BACKUP_ROOT_ON_HOST"
+  "$BACKUP_ROOT_ON_HOST" \
+  "$AUTH_SECRET_ROOT_ON_HOST"
+chmod 700 "$AUTH_SECRET_ROOT_ON_HOST"
+
+generate_secret() {
+  target="$1"
+  label="$2"
+  if [[ -f "$target" ]]; then
+    chmod 600 "$target"
+    return
+  fi
+  echo "[chipmate-render] generating $label at $target"
+  umask 077
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 > "$target"
+  else
+    head -c 48 /dev/urandom | base64 > "$target"
+  fi
+  chmod 600 "$target"
+}
+
+generate_secret "$AUTH_MASTER_KEY_FILE_ON_HOST" "LDAP configuration master key"
+generate_secret "$AUTH_BREAK_GLASS_KEY_FILE_ON_HOST" "break-glass administrator credential"
+echo "[chipmate-render] break-glass credential is stored in $AUTH_BREAK_GLASS_KEY_FILE_ON_HOST"
 
 if [[ "$market_exists" == "1" ]]; then
   backup="$BACKUP_ROOT_ON_HOST/skill-market-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -102,6 +142,12 @@ if [[ -d "$SKILL_MARKET_SEED_ROOT" ]]; then
     node /app/scripts/merge-managed-seeds.mjs /seed /market
 fi
 
+echo "[chipmate-render] merging built-in DeepSeek Harness runtimes into $PACKAGE_ROOT_ON_HOST"
+docker run --rm \
+  -v "$PACKAGE_ROOT_ON_HOST:/packages:rw" \
+  "$IMAGE_REF" \
+  node /app/scripts/merge-runtime-packages.mjs /app/packages/runtimes /packages/runtimes
+
 if [[ ! -f "$SKILL_MARKET_ROOT_ON_HOST/skills.json" ]]; then
   echo "[chipmate-render] initializing empty skill market catalog at $SKILL_MARKET_ROOT_ON_HOST/skills.json"
   printf '{\n  "items": []\n}\n' > "$SKILL_MARKET_ROOT_ON_HOST/skills.json"
@@ -111,15 +157,31 @@ runtime_env_file="$ENV_FILE"
 if [[ -z "$runtime_env_file" ]] && docker inspect "$SERVICE_NAME" >/dev/null 2>&1; then
   preserved_env="$workdir/preserved.env"
   docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$SERVICE_NAME" \
-    | awk '/^NEW_API_[A-Z0-9_]+=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_OWNER_BINDINGS_JSON=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ || /^EXTENSION_UPLOAD_[A-Z0-9_]+=/ || /^REVIEW_RULE_[A-Z0-9_]+=/ { print }' > "$preserved_env"
+    | awk '/^CHIPMATE_PUBLIC_BASE_URL=/ || /^EXTENSION_MARKET_ROOT=/ || /^EXTENSION_OWNER_BINDINGS_JSON=/ || /^EXTENSION_DROP_[A-Z0-9_]+=/ || /^EXTENSION_UPLOAD_[A-Z0-9_]+=/ || /^REVIEW_RULE_[A-Z0-9_]+=/ { print }' > "$preserved_env"
   if [[ -s "$preserved_env" ]]; then
     chmod 600 "$preserved_env"
     runtime_env_file="$preserved_env"
-    echo "[chipmate-render] preserving existing New API resolver configuration and extension market configuration"
+    echo "[chipmate-render] preserving existing server URL, extension market, and review-rule configuration"
   fi
 fi
 
-docker rm -f "$SERVICE_NAME" >/dev/null 2>&1 || true
+if [[ -z "$EXTENSION_MARKET_ENABLED" ]] && docker inspect "$SERVICE_NAME" >/dev/null 2>&1; then
+  EXTENSION_MARKET_ENABLED="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$SERVICE_NAME" \
+    | awk -F= '$1 == "EXTENSION_MARKET_ENABLED" { print $2; exit }')"
+fi
+EXTENSION_MARKET_ENABLED="${EXTENSION_MARKET_ENABLED:-0}"
+
+if docker inspect "$SERVICE_NAME" >/dev/null 2>&1; then
+  rollback_name="${SERVICE_NAME}-rollback-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  echo "[chipmate-render] preserving the previous container as $rollback_name until health checks pass"
+  docker stop "$SERVICE_NAME" >/dev/null
+  if ! docker rename "$SERVICE_NAME" "$rollback_name"; then
+    docker start "$SERVICE_NAME" >/dev/null 2>&1 || true
+    echo "[chipmate-render] could not preserve the previous container; deployment stopped before replacement" >&2
+    exit 1
+  fi
+  rollback_pending=1
+fi
 
 echo "[chipmate-render] starting $SERVICE_NAME on port $PORT with image $IMAGE_REF"
 docker_args=(
@@ -130,6 +192,10 @@ docker_args=(
   -v "$PACKAGE_ROOT_ON_HOST:/packages:ro"
   -v "$SKILL_MARKET_ROOT_ON_HOST:/data/skill-market:rw"
   -v "$REVIEW_RULE_ROOT_ON_HOST:/data/review-rules:rw"
+  -v "$AUTH_MASTER_KEY_FILE_ON_HOST:/run/secrets/chipmate-auth-master-key:ro"
+  -v "$AUTH_BREAK_GLASS_KEY_FILE_ON_HOST:/run/secrets/chipmate-auth-break-glass:ro"
+  --env "CHIPMATE_AUTH_MASTER_KEY_FILE=/run/secrets/chipmate-auth-master-key"
+  --env "CHIPMATE_AUTH_BREAK_GLASS_KEY_FILE=/run/secrets/chipmate-auth-break-glass"
 )
 if [[ -n "$runtime_env_file" ]]; then
   docker_args+=(--env-file "$runtime_env_file")
@@ -145,6 +211,10 @@ for _ in $(seq 1 30); do
     echo
     if curl -fsS "http://127.0.0.1:$PORT/api/v1/status" >/tmp/chipmate-market-status.json 2>/dev/null \
       && curl -fsS "http://127.0.0.1:$PORT/" >/tmp/chipmate-market-web.html 2>/dev/null; then
+      rollback_pending=0
+      if [[ -n "$rollback_name" ]]; then
+        docker rm -f "$rollback_name" >/dev/null 2>&1 || true
+      fi
       echo "[chipmate-render] aligned market and Web ready"
       echo "[chipmate-render] ready: http://127.0.0.1:$PORT"
       exit 0

@@ -342,7 +342,7 @@ describe("extract_plantuml_source", () => {
     const agent = (name: string): Agent.Info => ({ name, mode: "primary", permission: [], options: {} })
 
     for (const name of ["ask", "code", "ultra"]) expect(ChipMateToolRegistry.available(def, agent(name))).toBe(true)
-    for (const name of ["plan", "debug", "explore", "orchestrator", "agent-console", "compaction", "summary"]) {
+    for (const name of ["plan", "debug", "explore", "orchestrator", "compaction", "summary"]) {
       expect(ChipMateToolRegistry.available(def, agent(name))).toBe(false)
     }
     expect(def.description).toContain("This is not OCR")

@@ -4,9 +4,8 @@ import type { Provider } from "@/provider/provider"
 import type { LLM } from "@/session/llm"
 import { MessageV2 } from "@/session/message-v2"
 import type { SessionProcessor } from "@/session/processor"
-import type { MessageID, SessionID } from "@/session/schema"
+import type { SessionID } from "@/session/schema"
 
-type Update = <T extends MessageV2.Part>(part: T) => Effect.Effect<T>
 type UpdateMessage = <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
 
 const pattern = /request entity too large|function_payload_too_large/i
@@ -26,28 +25,27 @@ export namespace ChipMateCompactionPayloadRecovery {
     ].join("\n\n")
   }
 
-  export function strip(input: { messages: MessageV2.WithParts[]; update: Update }) {
-    return Effect.forEach(
-      input.messages,
-      (msg) =>
-        Effect.forEach(msg.parts, (part) => {
-          if (part.type === "tool" && part.state.status === "completed" && !part.state.time.compacted) {
-            part.state.time.compacted = Date.now()
-            return input.update(part)
+  export function strip(input: { messages: MessageV2.WithParts[] }) {
+    const messages = structuredClone(input.messages)
+    for (const msg of messages) {
+      msg.parts = msg.parts.map((part) => {
+        if (part.type === "tool" && part.state.status === "completed" && !part.state.time.compacted) {
+          part.state.time.compacted = Date.now()
+          return part
+        }
+        if (part.type === "file" && MessageV2.isMedia(part.mime)) {
+          return {
+            id: part.id,
+            messageID: part.messageID,
+            sessionID: part.sessionID,
+            type: "text",
+            text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
           }
-          if (part.type === "file" && MessageV2.isMedia(part.mime)) {
-            return input.update({
-              id: part.id,
-              messageID: part.messageID,
-              sessionID: part.sessionID,
-              type: "text",
-              text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
-            })
-          }
-          return Effect.void
-        }),
-      { concurrency: 1 },
-    )
+        }
+        return part
+      })
+    }
+    return messages
   }
 
   export function process(input: {
@@ -60,7 +58,6 @@ export namespace ChipMateCompactionPayloadRecovery {
     prompt: string
     recovery: MessageV2.WithParts[]
     updateMessage: UpdateMessage
-    updatePart: Update
   }) {
     const run = Effect.fn("ChipMateCompactionPayloadRecovery.process")(function* (
       messages: LLM.StreamInput["messages"],
@@ -95,8 +92,8 @@ export namespace ChipMateCompactionPayloadRecovery {
           input.processor.message.error = undefined
           input.processor.message.finish = undefined
           yield* input.updateMessage(input.processor.message)
-          yield* strip({ messages: input.recovery, update: input.updatePart })
-          const stripped = yield* MessageV2.toModelMessagesEffect(input.recovery, input.model, {
+          const recovery = strip({ messages: input.recovery })
+          const stripped = yield* MessageV2.toModelMessagesEffect(recovery, input.model, {
             stripMedia: true,
             toolOutputMaxChars: 0,
           })

@@ -33,13 +33,13 @@ describe("buildThroughputSettingMessage", () => {
     stubConfig(state)
   })
 
-  it("hides token throughput by default", () => {
-    expect(buildThroughputSettingMessage().visible).toBe(false)
+  it("shows response performance by default", () => {
+    expect(buildThroughputSettingMessage().visible).toBe(true)
   })
 
-  it("returns the persisted ChipMate preference", () => {
-    state.set("showTokenThroughput", true)
+  it("preserves an explicit disabled preference", () => {
+    state.set("showTokenThroughput", false)
 
-    expect(buildThroughputSettingMessage().visible).toBe(true)
+    expect(buildThroughputSettingMessage().visible).toBe(false)
   })
 })

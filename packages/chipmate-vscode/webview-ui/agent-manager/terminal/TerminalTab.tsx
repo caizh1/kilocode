@@ -44,8 +44,6 @@ interface Props {
   active: boolean
   focus?: boolean
   bind?: (writer: TerminalWriter) => () => void
-  resizeType?: "agentManager.terminal.resize" | "agentConsole.terminal.resize"
-  fontType?: "agentManager.terminal.fontChanged" | "agentConsole.terminal.fontChanged"
   shortcuts?: boolean
   output?: (data: string) => void
   inputEnabled?: boolean
@@ -79,7 +77,7 @@ export interface TerminalSocket {
  *  every observation, so the visible terminal is never stale; only
  *  the backend dimension sync is debounced. */
 const RESIZE_DEBOUNCE_MS = 100
-const AGENT_CONSOLE_SURFACE = "#101113"
+const TERMINAL_SURFACE = "#101113"
 
 /** Resolve a VS Code CSS custom property to a concrete color string.
  *
@@ -134,7 +132,7 @@ function readTheme(foreground?: string) {
       brightWhite: cssVar("--vscode-terminal-ansiBrightWhite", "#e5e5e5"),
     },
     foreground,
-    foreground ? AGENT_CONSOLE_SURFACE : undefined,
+    foreground ? (document.documentElement.dataset.chipmateSkin === "night-city" ? "#080b16" : TERMINAL_SURFACE) : undefined,
   )
 }
 
@@ -397,7 +395,7 @@ export const TerminalTab: Component<Props> = (props) => {
       lastCols = term.cols
       lastRows = term.rows
       vscode.postMessage({
-        type: props.resizeType ?? "agentManager.terminal.resize",
+        type: "agentManager.terminal.resize",
         terminalId: props.terminalId,
         cols: term.cols,
         rows: term.rows,
@@ -462,7 +460,7 @@ export const TerminalTab: Component<Props> = (props) => {
         return
       }
 
-      if (message.type === (props.fontType ?? "agentManager.terminal.fontChanged")) {
+      if (message.type === "agentManager.terminal.fontChanged") {
         term.options.fontFamily = message.font.fontFamily
         term.options.fontSize = message.font.fontSize
         term.options.lineHeight = message.font.lineHeight ?? 1
@@ -518,6 +516,7 @@ export const TerminalTab: Component<Props> = (props) => {
     }
     const themeObserver = new MutationObserver(applyTheme)
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] })
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-chipmate-skin"] })
 
     onCleanup(() => {
       if (pendingFrame !== null) cancelAnimationFrame(pendingFrame)

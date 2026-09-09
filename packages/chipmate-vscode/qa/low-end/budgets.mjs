@@ -26,8 +26,7 @@ export const budgets = {
   settingsScrollMaxMs: 50,
   settingsScrollOver32Percent: 1,
   stallMaxMs: 500,
-  consoleOpenMs: 1_500,
-  consoleOutputMs: 1_000,
+  agentManagerOpenMs: 1_500,
   heapGrowthPercent: 20,
   heapGrowthBytes: 50 * 1024 * 1024,
 }

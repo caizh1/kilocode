@@ -16,9 +16,8 @@ type Meta = {
   ultraVerify?: UltraVerify.Snapshot
 }
 
-const Params = Schema.Struct({
-  requestKind: Schema.Literals(["analysis", "review", "implementation"]),
-})
+const Params = Schema.Struct({})
+const SYNTHESIS_MARKER = "ULTRA_VERIFY_REQUEST_KIND="
 
 function message(ctx: Tool.Context) {
   return ctx.messages.findLast((item) => item.info.role === "user")?.info.id ?? ""
@@ -39,6 +38,15 @@ function text(output: string) {
 
 function trail(output: string) {
   return output.match(/<ultra_baseline_trace>([\s\S]*?)<\/ultra_baseline_trace>/)?.[1]?.trim() ?? "[]"
+}
+
+function synthesis(output: string): { kind: UltraVerify.Kind; answer: string } | undefined {
+  const value = text(output)
+  const match = value.match(/^ULTRA_VERIFY_REQUEST_KIND=(analysis|review|implementation)\r?\n([\s\S]+)$/)
+  if (!match) return undefined
+  const answer = match[2]?.trim()
+  if (!answer || !UltraVerify.isKind(match[1])) return undefined
+  return { kind: match[1], answer }
 }
 
 function child(ctx: Tool.Context, id: string, internal = false): Tool.Context {
@@ -103,7 +111,9 @@ function synth(input: string, answer: string, reports: string[]) {
     "不使用 Council、投票或结构化协议。不得因为调查数量而采纳结论；只采用能被当前源码支持的内容。",
     "三份验证报告彼此独立。发生冲突时以可复核源码证据为准，而不是采用多数意见。",
     "目标是保留已证实的 Code 内容，删除或降级无证据结论，修正错误，并补入经过验证的重要遗漏。",
-    "输出一份自包含的最终技术答案，不提调查员、基准、实验、评分或本提示。引用源码路径、行号或符号，并区分确定事实与未验证推断。",
+    "独立判断原始请求属于 analysis、review 或 implementation；仅当用户明确要求修改、创建、修复、构建或执行其他会改变状态的工作时才使用 implementation。",
+    `第一行必须严格输出 ${SYNTHESIS_MARKER}analysis、${SYNTHESIS_MARKER}review 或 ${SYNTHESIS_MARKER}implementation 之一。`,
+    "从第二行开始输出一份自包含的最终技术答案，不提内部标记、调查员、基准、实验、评分或本提示。引用源码路径、行号或符号，并区分确定事实与未验证推断。",
     `用户问题：\n${input}`,
     `冻结的 Code 答案：\n<code-answer>\n${answer}\n</code-answer>`,
     reports
@@ -122,7 +132,7 @@ export function UltraVerifyTool(task: Task) {
           "Run the complete Ultra verification pipeline once: freeze a normal read-only Code answer, verify it through three parallel Explore sessions, then synthesize one final answer in an independent Ask session.",
         parameters: Params,
         execute: (
-          params: Schema.Schema.Type<typeof Params>,
+          _params: Schema.Schema.Type<typeof Params>,
           ctx: Tool.Context,
         ): Effect.Effect<Tool.ExecuteResult<Meta>> =>
           Effect.gen(function* () {
@@ -140,7 +150,7 @@ export function UltraVerifyTool(task: Task) {
               messageID: id,
               messages: ctx.messages,
             })
-            const denied = UltraVerify.begin(state, params.requestKind)
+            const denied = UltraVerify.begin(state)
             if (denied) {
               return {
                 title: "Ultra verification rejected",
@@ -247,13 +257,21 @@ export function UltraVerifyTool(task: Task) {
                 output: UltraVerify.result(state),
               }
             }
-            const result = text(final.value.output)
+            const result = synthesis(final.value.output)
+            if (!result) {
+              UltraVerify.fail(state, "Independent synthesis did not return a valid request kind and answer.")
+              return {
+                title: "Ultra synthesis invalid",
+                metadata: { rejected: true, ultraVerify: UltraVerify.snapshot(state) },
+                output: UltraVerify.result(state),
+              }
+            }
             const sessions = [
               first.value.metadata.sessionId,
               ...reports.value.map((item) => item.session),
               final.value.metadata.sessionId,
             ].filter((item): item is string => typeof item === "string")
-            UltraVerify.complete(state, { baseline: answer, answer: result, sessions })
+            UltraVerify.complete(state, { kind: result.kind, baseline: answer, answer: result.answer, sessions })
             return {
               title: "Ultra 三路独立验证完成",
               metadata: {
@@ -273,8 +291,9 @@ export function UltraVerifyTool(task: Task) {
               output: [
                 "ULTRA_VERIFY_RESULT",
                 JSON.stringify({
+                  kind: result.kind,
                   baseline: answer,
-                  answer: result,
+                  answer: result.answer,
                   sessions,
                 }),
               ].join("\n"),

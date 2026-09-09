@@ -11,6 +11,9 @@ const ROUTES = [
   "/analytics",
   "/status",
   "/login",
+  "/device",
+  "/admin/auth",
+  "/admin/login",
   "/extensions",
   "/extensions/*",
 ] as const

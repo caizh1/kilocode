@@ -1,3 +1,4 @@
+import { AppearanceMessageIdentity } from "./AppearanceMessageIdentity"
 /**
  * AssistantMessage component
  * Renders all parts of an assistant message as a flat list — no context grouping.
@@ -16,7 +17,7 @@ import {
   ToolApprovalProvider,
   resolveToolApproval,
 } from "@chipmate/chipmate-ui/message-part"
-import type { MessageFeedbackControls } from "@chipmate/chipmate-ui/message-part"
+import type { MessageFeedbackControls, MessagePartProps } from "@chipmate/chipmate-ui/message-part"
 import type {
   AssistantMessage as SDKAssistantMessage,
   Part as SDKPart,
@@ -32,7 +33,7 @@ import { useServer } from "../../context/server"
 import { planDisplayPath } from "../../utils/plan-path"
 import type { ToolPart as WebToolPart } from "../../types/messages"
 import { isRenderable, UPSTREAM_SUPPRESSED_TOOLS } from "../../utils/transcript-parts"
-import { messageThroughput, formatTG } from "../../context/session-utils"
+import { formatTG, formatTTFT, type ResponsePerformance } from "../../context/session-utils"
 import { color as timelineColor } from "../../utils/timeline/colors"
 import type { Part as TimelinePart } from "../../types/messages"
 import type { TimelineHighlight } from "../../utils/timeline/highlight"
@@ -120,6 +121,8 @@ interface AssistantMessageProps {
   showAssistantCopyPartID?: string | null
   /** Completed-turn metadata displayed in the copied text part's action row. */
   completion?: () => JSX.Element | undefined
+  /** Latest successful turn's decode speed and first-token latency. */
+  performance?: ResponsePerformance
   feedback?: MessageFeedbackControls
   /** id of the part containing the current chat-search match, if any — forces
    * that part's collapsed tool/reasoning content open so the user can see
@@ -130,6 +133,7 @@ interface AssistantMessageProps {
   forceOpenFile?: string
   /** Part behind the currently hovered/focused task-timeline bar, if any. */
   highlight?: () => TimelineHighlight | undefined
+  fork?: MessagePartProps["fork"]
 }
 
 type ToolStateProps = {
@@ -204,24 +208,48 @@ function BashToolCard(props: { part: ToolPart; defaultOpen: boolean; forceOpen?:
  * rate across the turn's model-generation steps (output + reasoning
  * tokens over active generation time).
  *
- * Visibility is gated by the same `chipmate-code.new.showTokenThroughput`
- * toggle that previously controlled the multi-row badge. The metric only
- * renders when the message has at least one step-finish part carrying both
- * a token count and elapsed timing.
+ * Visibility is gated by `chipmate.v2.showTokenThroughput`. Speed and TTFT
+ * are validated independently, so a step with timing but no usage can still
+ * show first-token latency without inventing a generation rate.
  */
-function ThroughputBadge(props: { metrics: { generation?: number } }) {
+function ThroughputBadge(props: { metrics: ResponsePerformance }) {
   const language = useLanguage()
-  const speedText = createMemo(() => formatTG(props.metrics.generation, language.locale()))
-  const tooltip = createMemo(() => {
-    if (props.metrics.generation === undefined) {
-      return language.t("chat.throughput.tooltip.missing")
-    }
-    return language.t("chat.throughput.tooltip", { speed: speedText() })
+  const speed = createMemo(() => {
+    const value = props.metrics.generation
+    if (value === undefined || !Number.isFinite(value) || value <= 0) return undefined
+    return formatTG(value, language.locale())
+  })
+  const latency = createMemo(() => {
+    const value = props.metrics.ttftMs
+    if (value === undefined || !Number.isFinite(value) || value < 0) return undefined
+    return formatTTFT(value, language.locale())
   })
   return (
-    <Tooltip value={tooltip()} placement="top">
-      <span data-component="assistant-throughput">{speedText()}</span>
-    </Tooltip>
+    <span data-component="assistant-throughput">
+      <Show when={speed()}>
+        {(value) => (
+          <Tooltip value={language.t("chat.throughput.tooltip", { speed: value() })} placement="top">
+            <span data-slot="assistant-throughput-speed">{value()}</span>
+          </Tooltip>
+        )}
+      </Show>
+      <Show when={latency()}>
+        {(value) => (
+          <span data-slot="assistant-throughput-ttft-group">
+            <Show when={speed()}>
+              <span data-slot="assistant-throughput-separator" aria-hidden="true">
+                ·
+              </span>
+            </Show>
+            <Tooltip value={language.t("chat.throughput.ttft.tooltip", { latency: value() })} placement="top">
+              <span data-slot="assistant-throughput-ttft">
+                {language.t("chat.throughput.ttft.label", { latency: value() })}
+              </span>
+            </Tooltip>
+          </span>
+        )}
+      </Show>
+    </span>
   )
 }
 
@@ -249,22 +277,9 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
       return !!matchToolRequest(part, "question", session.questions())
     })
   })
-  // Pull the weighted generation rate across the turn's step-finish parts
-  // (output + reasoning tokens over active generation duration) so the badge
-  // represents the turn as a whole rather than whichever step happened to
-  // finish most recently. We intentionally read from the full message parts
-  // in the data store rather than `props.parts` — the parent chunks
-  // messages into rows of ~8 parts, and step-finish may land in a row
-  // different from the one currently rendered.
-  const throughput = createMemo(() =>
-    messageThroughput(
-      (data.store.part?.[props.message.id] as TimelinePart[] | undefined) ??
-        (props.parts as TimelinePart[] | undefined) ??
-        ([] as TimelinePart[]),
-    ),
-  )
   return (
     <>
+      <Show when={parts().length > 0}><AppearanceMessageIdentity role="assistant" created={props.message.time?.created} /></Show>
       <For each={parts()}>
         {(part) => {
           // Upstream PART_MAPPING["tool"] returns null for todowrite/todoread,
@@ -297,13 +312,12 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             return h?.msgId === props.message.id && h?.partId === part.id
           })
 
-          // Throughput badge renders inside the copy/feedback action row of the
-          // text part that carries the copy button (the last text part of the
-          // message), pushed to the right of the buttons rather than below the
-          // message. Only built for that part so non-text parts skip the work.
+          // Response performance is attached to the copy-bearing text part.
+          // The shared Part component keeps actions on row one and renders the
+          // completion/performance metadata group on the following flex row.
           const throughputEl = createMemo<JSX.Element | undefined>(() => {
             if (!throughputVisible()) return undefined
-            const metrics = throughput()
+            const metrics = props.performance
             if (!metrics) return undefined
             if (part.id !== props.showAssistantCopyPartID) return undefined
             return <ThroughputBadge metrics={metrics} />
@@ -361,6 +375,8 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                         reasoningAutoCollapse={display.reasoningAutoCollapse()}
                                         feedback={props.feedback}
                                         completion={completionEl()}
+                                        throughput={throughputEl()}
+                                        fork={part.id === props.showAssistantCopyPartID ? props.fork : undefined}
                                         working={session.status() !== "idle"}
                                         animate={
                                           part.type === "tool" &&

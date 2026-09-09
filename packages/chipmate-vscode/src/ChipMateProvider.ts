@@ -1,3 +1,7 @@
+import { diagnosticsService } from "./services/diagnostics/service"
+import { saveAppearance, bindAppearance } from "./appearance"
+import { handleTurnChanges, rejectTurnChanges } from "./chipmate-provider/turn-changes"
+import { introductionStore } from "./chipmate-provider/command-introduction"
 import * as path from "path"
 import { realpath } from "fs/promises"
 import * as vscode from "vscode"
@@ -30,6 +34,7 @@ import {
 import {
   sessionToWebview,
   indexProvidersById,
+  excludeReservedAgents,
   filterVisibleAgents,
   mapSSEEventToWebviewMessage,
   getErrorMessage,
@@ -66,6 +71,7 @@ import { renameSession } from "./chipmate-provider/rename-session"
 import { handleFileSearch } from "./chipmate-provider/file-search"
 import { handleSessionSearch } from "./chipmate-provider/session-search"
 import { handleFilePicker } from "./chipmate-provider/file-picker"
+import { EditorReferenceSource } from "./chipmate-provider/editor-reference"
 import { watchFontSizeConfig } from "./chipmate-provider/font-size"
 import { getTerminalContents } from "./services/terminal/context"
 import { disposeGitChangesTarget } from "./chipmate-provider/git-changes-target"
@@ -111,6 +117,13 @@ import { getUpdateCheckService, updateAutoDownload } from "./services/update-che
 import { formatDocumentDiagnosticReport } from "./chipmate-provider/document-diagnostics"
 import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "./shared/chipmate-server"
 import {
+  PATENT_RADAR_SERVER_KEY,
+  normalizePatentServerBaseUrl,
+  validPatentRadarSetting,
+} from "./shared/patent-center"
+import { patentCenterSettings, runPatentCenterAction, testPatentServer } from "./services/patent-center"
+import { PatentRadarClient, patentRadarErrorMessage } from "./patent-radar/client"
+import {
   LocalSkillRemoval,
   type SkillRemovePhase,
   type SkillRemoveRequest,
@@ -146,6 +159,27 @@ import { parseReview, reviewMetadata, type ReviewMessageData } from "./shared/re
 import { completesWithoutStatus } from "./chipmate-provider/command-completion"
 import { modelSelection } from "./shared/provider-model"
 import { ChipMateProviderMemory } from "./chipmate-provider/memory"
+import { resolveDeepSeekHarnessCredential } from "./chipmate-provider/deepseek-harness-config"
+import {
+  chooseDeepSeekHarnessSelection,
+  inspectDeepSeekHarnessProviders,
+  type DeepSeekHarnessProviderCatalog,
+} from "./chipmate-provider/deepseek-harness-provider-selection"
+import {
+  DEEPSEEK_HARNESS_AGENT,
+  isDeepSeekHarnessMessage,
+  isDeepSeekModel,
+  type DeepSeekHarnessModel,
+  type DeepSeekHarnessProviderOption,
+  type DeepSeekHarnessWebviewMessage,
+} from "./shared/deepseek-harness"
+import { getDeepSeekHarnessService, type DeepSeekHarnessService } from "./services/deepseek-harness/service"
+import type { DeepSeekHarnessConfig } from "./services/deepseek-harness/runtime"
+import {
+  isSessionSurfaceWebviewMessage,
+  type SessionSurfaceExtensionMessage,
+  type SessionSurfaceKey,
+} from "./shared/session-surface"
 
 import {
   buildActionContext,
@@ -305,10 +339,71 @@ export function unwrapSyncEvent(event: SSEPayload | RawSyncPayload): ProviderEve
 type ContextRequestMessage =
   | { type: "requestFileSearch"; query: string; requestId: string; sessionID?: string }
   | { type: "requestSessionSearch"; requestId: string; sessionID?: string }
-  | { type: "requestFilePicker"; requestId: string }
+  | { type: "requestFilePicker"; requestId: string; kind?: "file" | "folder" }
+  | { type: "requestEditorReference"; requestId: string; kind: "file" | "selection" }
   | { type: "requestTerminalContext"; requestId: string; sessionID?: string }
 
+const deepSeekHarnessAgent = {
+  name: DEEPSEEK_HARNESS_AGENT,
+  displayName: "ChipMate DeepSeek Harness",
+  description: "在 ChipMate QA 中使用未经修改的官方 DSH Web Profile",
+  mode: "primary" as const,
+  native: true,
+}
+const reservedAgentNames = new Set([DEEPSEEK_HARNESS_AGENT])
+
+const CONFIG_SAVE_TIMEOUT_MS = 30_000
+type ConfigSaveStage = "drain-prompts" | "write-global" | "write-project" | "confirm"
+type ConfigSaveReason = "timeout" | "request-failed" | "protocol-mismatch"
+type ConfigOverlayResult = { effective: Config; global: Config; project: Config }
+type ResolvedDeepSeekHarnessConfig = {
+  workspace: string
+  config: DeepSeekHarnessConfig
+  models: DeepSeekHarnessModel[]
+  selected: DeepSeekHarnessModel
+}
+
+class ConfigProtocolMismatchError extends Error {
+  constructor() {
+    super("扩展与后台版本不一致，请重载窗口或安装匹配版本。")
+    this.name = "ConfigProtocolMismatchError"
+  }
+}
+
+function isConfigObject(value: unknown): value is Config {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function configOverlayResult(value: unknown): ConfigOverlayResult | undefined {
+  if (!isConfigObject(value)) return undefined
+  const result = value as Partial<ConfigOverlayResult>
+  if (!isConfigObject(result.effective) || !isConfigObject(result.global) || !isConfigObject(result.project)) {
+    return undefined
+  }
+  return { effective: result.effective, global: result.global, project: result.project }
+}
+
+function hasConfigChanges(config: Partial<Config>, unset: string[][]): boolean {
+  return Object.keys(config).length > 0 || unset.length > 0
+}
+
+function isIndexingOnlyScope(config: Partial<Config>, unset: string[][]): boolean {
+  if (!hasConfigChanges(config, unset)) return true
+  return Object.keys(config).every((key) => key === "indexing") && unset.every((parts) => parts[0] === "indexing")
+}
+
+function isIndexingOnlySave(
+  global: Partial<Config>,
+  project: Partial<Config>,
+  globalUnset: string[][],
+  projectUnset: string[][],
+): boolean {
+  const changed = hasConfigChanges(global, globalUnset) || hasConfigChanges(project, projectUnset)
+  return changed && isIndexingOnlyScope(global, globalUnset) && isIndexingOnlyScope(project, projectUnset)
+}
+
 export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPropertiesProvider {
+  private readonly editorReferences = new EditorReferenceSource()
   public static readonly viewType = "chipmate.v2.SidebarProvider"
   private readonly instanceId = crypto.randomUUID()
 
@@ -333,6 +428,8 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private providersRefresh: Promise<void> | null = null
   private providersQueued = false
   private providersGeneration = 0
+  private providersSkipDeepSeekHarnessCoordinationThroughGeneration = 0
+  private deepSeekHarnessModeGeneration = 0
   private sandboxRevision = 0
   private cachedAgentsMessage: unknown = null
   /** Cached skillsLoaded payload so requestSkills can be served before client is ready */
@@ -363,6 +460,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private cachedMcpStatusMessage: unknown = null
   /** Ref-count of in-flight handleUpdateConfig calls; prevents fetchAndSendConfig from sending stale data */
   private pending = 0
+  private configSaveTimeoutMs = CONFIG_SAVE_TIMEOUT_MS
   private configWarningsShown = false
   /** Cached notificationsLoaded payload */
   private cachedNotificationsMessage: NotificationsMessage | null = null
@@ -383,7 +481,12 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private readonly refreshes = new Map<string, number>()
   private readonly anacondaDesktop = new AnacondaDesktopBridge()
   private sessionStatusMap = new Map<string, SessionStatus["type"]>() // Latest status used for destructive config warnings.
+  private readonly sessionStatusRevisions = new Map<string, number>()
+  private sessionStatusRevision = 0
+  private readonly sessionExportWaiters = new Set<() => void>()
+  private sessionExportDisposed = false
   private sessionDirectories = new Map<string, string>() // Per-session directory overrides, such as Agent Manager worktrees.
+  private readonly sessionMetadataUpdates = new Map<string, Promise<void>>()
   private readonly aborts = new SessionAbort()
   private projectID: string | undefined // Current workspace project ID used to filter sessions.
   private loadMessagesAbort: AbortController | null = null // Current load request cancellation.
@@ -450,6 +553,10 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private remoteService: RemoteStatusService | null = null
   private unsubscribeRemote: (() => void) | null = null
   private readonly requirements: AgentRequirementsController
+  private readonly deepSeekHarness?: DeepSeekHarnessService
+  private readonly deepSeekHarnessSubscription?: vscode.Disposable
+  private readonly sessionSurfaceRegistration?: vscode.Disposable
+  private readonly sessionForkSubscription?: vscode.Disposable
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -461,6 +568,44 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       extensionContext?.extension.packageJSON.version ??
       vscode.extensions.getExtension("chipmate.chipmate")?.packageJSON?.version ??
       "unknown"
+    if (extensionContext) {
+      this.deepSeekHarness = getDeepSeekHarnessService(extensionContext)
+      this.deepSeekHarnessSubscription = this.deepSeekHarness.subscribe(
+        (snapshot) => this.postMessage({ type: "chipmateDeepSeekHarness.connectionState", snapshot }),
+        (channel, payload, connectionGeneration) => {
+          const surface = this.opts.surface
+          if (surface && !surface.coordinator.canUseDshTransport(surface.id)) return
+          this.postMessage({
+            type: "chipmateDeepSeekHarness.transport.downlink",
+            channel,
+            ...payload,
+            connectionGeneration,
+          })
+        },
+      )
+    }
+    const surface = this.opts.surface
+    if (surface) {
+      this.sessionSurfaceRegistration = surface.coordinator.registerSurface({
+        id: surface.id,
+        kind: surface.kind,
+        pinnedKey: surface.pinnedKey,
+        post: (message) => this.postMessage(message),
+      })
+    }
+    if (this.opts.sessionForks) {
+      const ownerID = this.opts.forkOwnerID ?? surface?.id ?? "sidebar"
+      this.sessionForkSubscription = this.opts.sessionForks.subscribe((event) => {
+        if (event.type !== "complete" || event.operation.ownerID !== ownerID) return
+        if (!this.opts.sessionForks?.claim(event.session.id, ownerID)) return
+        this.registerSession(event.session)
+        this.postMessage({
+          type: "sessionForked",
+          sessionID: event.session.id,
+          forkedFromID: event.operation.sourceSessionID,
+        })
+      })
+    }
     this.marketplaceRemove = createMarketplaceRemover(
       extensionContext ? path.join(extensionContext.globalStorageUri.fsPath, "config") : undefined,
     )
@@ -510,6 +655,17 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     }
     this.currentSession = session
     this.opts.tabTitle?.(nativeTitle(session))
+    const surface = this.opts.surface
+    if (surface && session) {
+      surface.coordinator.bindSurface(
+        surface.id,
+        { kind: "session", id: session.id },
+        {
+          title: session.title,
+          directory: this.getWorkspaceDirectory(session.id),
+        },
+      )
+    }
     this.updateIndexingTarget(dir)
   }
 
@@ -635,12 +791,15 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private get forkCtx() {
     return {
       connection: this.connectionService,
-      post: (msg: { type: "error"; message: string }) => this.postMessage(msg),
+      post: (msg: Record<string, unknown> & { type: string }) =>
+        this.postMessage(msg as Parameters<typeof this.postMessage>[0]),
       register: (session: Session) => this.registerSession(session),
       forked: (session: Session, sourceID: string) =>
         this.postMessage({ type: "sessionForked", sessionID: session.id, forkedFromID: sourceID }),
       status: (sessionID: string) => this.sessionStatusMap.get(sessionID),
       directory: (sessionID: string) => this.getWorkspaceDirectory(sessionID),
+      coordinator: this.opts.sessionForks,
+      ownerID: this.opts.forkOwnerID ?? this.opts.surface?.id ?? "sidebar",
     }
   }
 
@@ -721,12 +880,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
 
       // Seed session status map so the Settings panel knows about already-running sessions.
       // Must run after webview is ready (postMessage is a no-op before that).
-      // Only reconcile (reset missing busy→idle) when the map is empty, i.e.
-      // on the very first seed before any real-time SSE events have arrived.
-      // On SSE reconnects or webview recreations the live SSE data is
-      // authoritative and reconciliation risks race-resetting busy sessions.
-      const reconcile = this.sessionStatusMap.size === 0
-      void this.seedSessionStatusMap(reconcile)
+      // Revision guards make absence reconciliation safe even after a reload:
+      // a newer SSE event can never be overwritten by this HTTP snapshot.
+      void this.seedSessionStatusMap(true)
 
       this.sendRemoteStatus()
     }
@@ -745,7 +901,8 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       localResourceRoots: [this.extensionUri],
     }
 
-    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview)
+    bindAppearance(webviewView)
+    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview, true)
     this.setupWebviewMessageHandler(webviewView.webview)
 
     this.setSidebarVisible(webviewView.visible)
@@ -777,6 +934,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       localResourceRoots: [this.extensionUri],
     }
 
+    bindAppearance(panel)
     panel.webview.html = this._getHtmlForWebview(panel.webview)
 
     this.setupWebviewMessageHandler(panel.webview)
@@ -974,6 +1132,16 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     // Protocol dispatch intentionally remains centralized so every webview message has one ordered routing path.
     // eslint-disable-next-line complexity
     this.webviewMessageDisposable = webview.onDidReceiveMessage(async (message) => {
+      const surface = this.opts.surface
+      if (surface && isSessionSurfaceWebviewMessage(message)) {
+        await surface.coordinator.handleMessage(surface.id, message)
+        return
+      }
+      if (surface && !surface.coordinator.authorize(surface.id, message as Record<string, unknown>)) {
+        this.rejectSurfaceSubmission(message as Record<string, unknown>)
+        return
+      }
+      if (await diagnosticsService()?.handle(message, { directory: this.getWorkspaceDirectory(this.currentSession?.id) ?? "", sessionID: this.currentSession?.id, post: (reply) => this.postMessage(reply) })) return
       const intercepted = await interceptMessage(message, {
         workspaceDir: (sid) => this.getWorkspaceDirectory(sid ?? this.currentSession?.id),
         post: (m) => this.postMessage(m),
@@ -982,6 +1150,11 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       })
       if (intercepted === null) return
       message = intercepted
+
+      if (isDeepSeekHarnessMessage(message)) {
+        await this.handleDeepSeekHarnessMessage(message)
+        return
+      }
 
       if (
         await routeEarlyMessage(message, {
@@ -995,6 +1168,14 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           openSessions: (ids) => this.trackOpenSessions(ids),
         })
       ) {
+        return
+      }
+      if (message.type === "turnChangesRequest" || message.type === "turnChangesMutate") {
+        if (!this.client) {
+          this.postMessage({ type: "turnChangesResult", sessionID: message.sessionID, messageID: message.messageID, requestID: message.requestID, result: { ok: false, message: "后端尚未连接" } })
+          return
+        }
+        await handleTurnChanges(message, { client: this.client, directory: this.getWorkspaceDirectory(message.sessionID), current: () => this.currentSession?.id, post: (reply) => this.postMessage(reply) })
         return
       }
       if (this.handleEditorOpenMessage(message)) return
@@ -1044,6 +1225,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
               .catch((err) => console.warn("[ChipMate New] 更新激活 Webview 回执记录失败：", err))
           }
           this.isWebviewReady = true
+          this.postSessionSurfaceBootstrap()
           this.visibleTaskStreams.clear()
           this.flushPendingChipMateModel()
           await this.syncWebviewState("webviewReady")
@@ -1066,6 +1248,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
             parseReview(message.review, message.text),
             typeof message.agentManagerContext === "string" ? message.agentManagerContext : undefined,
             typeof msg.contextDirectory === "string" ? msg.contextDirectory : undefined,
+            typeof message.sessionSurfaceDraftRevision === "number" ? message.sessionSurfaceDraftRevision : undefined,
           )
           break
         }
@@ -1084,6 +1267,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
             parseMessageFiles(message.files),
             typeof message.agentManagerContext === "string" ? message.agentManagerContext : undefined,
             typeof msg.contextDirectory === "string" ? msg.contextDirectory : undefined,
+            typeof message.sessionSurfaceDraftRevision === "number" ? message.sessionSurfaceDraftRevision : undefined,
           )
           break
         }
@@ -1182,7 +1366,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           this.openMarketplacePanel(message.directory)
           break
         case "forkSession":
-          handleForkSession(this.forkCtx, message.sessionId, message.messageId).catch((e) =>
+          handleForkSession(this.forkCtx, message.sessionId, message.afterMessageId ?? message.messageId).catch((e) =>
             console.error("[ChipMate New] handleForkSession failed:", e),
           )
           break
@@ -1249,6 +1433,12 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
             })
             .catch((e) => console.error("[ChipMate New] fetchAndSendAgentRequirements failed:", e))
           break
+        case "commandIntroduction": {
+          if (!this.extensionContext) break
+          const result = await introductionStore(this.extensionContext.globalState).handle(this, message)
+          if (result) this.postMessage(result)
+          break
+        }
         case "requestCommands":
           this.fetchAndSendCommands().catch((e) => console.error("[ChipMate New] fetchAndSendCommands failed:", e))
           break
@@ -1256,7 +1446,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           await this.handleRemoveLocalSkill(message)
           break
         case "removeAgent":
-          this.handleRemoveAgent(message.name).catch((e) => console.error("[ChipMate New] handleRemoveAgent failed:", e))
+          this.handleRemoveAgent(message.name).catch((e) =>
+            console.error("[ChipMate New] handleRemoveAgent failed:", e),
+          )
           break
         case "removeMcp":
           this.handleRemoveMcp(message.name).catch((e) => console.error("[ChipMate New] handleRemoveMcp failed:", e))
@@ -1321,7 +1513,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           this.fetchAndSendConfig().catch((e) => console.error("[ChipMate New] fetchAndSendConfig failed:", e))
           break
         case "requestGlobalConfig":
-          this.fetchAndSendGlobalConfig().catch((e) => console.error("[ChipMate New] fetchAndSendGlobalConfig failed:", e))
+          this.fetchAndSendGlobalConfig().catch((e) =>
+            console.error("[ChipMate New] fetchAndSendGlobalConfig failed:", e),
+          )
           break
         case "updateConfig":
           await this.handleUpdateConfig(
@@ -1361,6 +1555,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         case "requestFileSearch":
         case "requestSessionSearch":
         case "requestFilePicker":
+        case "requestEditorReference":
         case "requestTerminalContext":
           await this.handleContextRequest(message)
           break
@@ -1383,6 +1578,19 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         case "renameSession":
           await this.handleRenameSession(message.sessionID, message.title)
           break
+        case "requestAppearance":
+        case "appearanceAction":
+          break
+        case "updateAppearance":
+          try {
+            await saveAppearance(message.appearance)
+            for (const key of ["skin", "motion"] as const) {
+              this.postMessage({ type: "settingUpdated", key: `appearance.${key}`, value: message.appearance[key], requestId: message.requestId })
+            }
+          } catch (error) {
+            this.postMessage({ type: "settingUpdateFailed", key: "appearance.skin", requestId: message.requestId, message: error instanceof Error ? error.message : String(error) })
+          }
+          break
         case "updateSetting":
           await this.handleUpdateSetting(message.key, message.value, message.requestId)
           break
@@ -1395,6 +1603,63 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         case "testChipmateServer": {
           const result = await testChipmateServer(message.baseUrl)
           this.postMessage({ type: "chipmateServerTestResult", requestId: message.requestId, result })
+          break
+        }
+        case "requestPatentCenterSettings":
+          this.postMessage({ type: "patentCenterSettingsLoaded", settings: patentCenterSettings() })
+          break
+        case "testPatentServer": {
+          const result = await testPatentServer(message.baseUrl)
+          this.postMessage({ type: "patentServerTestResult", requestId: message.requestId, result })
+          break
+        }
+        case "runPatentCenterAction": {
+          const result = await runPatentCenterAction(message.action, message.analysisModel)
+          this.postMessage({ type: "patentRadarActionCompleted", requestId: message.requestId, action: message.action, ...result })
+          break
+        }
+        case "requestPatentRadarActivity": {
+          const requestId = message.requestId
+          const directory = getWorkspaceRoot()
+          if (!directory) {
+            this.postMessage({ type: "patentRadarActivityLoaded", requestId, run: null, error: "请先打开一个本地工作区" })
+            break
+          }
+          try {
+            const run = (await new PatentRadarClient(this.connectionService).list(directory))[0] ?? null
+            this.postMessage({ type: "patentRadarActivityLoaded", requestId, run })
+          } catch (error) {
+            this.postMessage({
+              type: "patentRadarActivityLoaded",
+              requestId,
+              run: null,
+              error: patentRadarErrorMessage(error),
+            })
+          }
+          break
+        }
+        case "cancelPatentRadarRun": {
+          const directory = getWorkspaceRoot()
+          if (!directory) {
+            this.postMessage({
+              type: "patentRadarCancelCompleted",
+              requestId: message.requestId,
+              run: null,
+              error: "请先打开一个本地工作区",
+            })
+            break
+          }
+          try {
+            const run = await new PatentRadarClient(this.connectionService).cancel(directory, message.runId)
+            this.postMessage({ type: "patentRadarCancelCompleted", requestId: message.requestId, run })
+          } catch (error) {
+            this.postMessage({
+              type: "patentRadarCancelCompleted",
+              requestId: message.requestId,
+              run: null,
+              error: patentRadarErrorMessage(error),
+            })
+          }
           break
         }
         case "requestBrowserSettings":
@@ -1450,6 +1715,16 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
               cloudSessionId: message.cloudSessionId,
               error: "Cloud sessions are disabled in this build",
             })
+            this.postMessage({
+              type: "sendMessageFailed",
+              code: "cloud-disabled",
+              error: "Cloud sessions are disabled in this build",
+              text: message.text,
+              sessionID: `cloud:${message.cloudSessionId}`,
+              messageID: typeof message.messageID === "string" ? message.messageID : undefined,
+              files: parseMessageFiles(message.files),
+              review: parseReview(message.review, message.text),
+            })
             break
           }
           const files = parseMessageFiles(message.files)
@@ -1466,6 +1741,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
             parseReview(message.review, message.text),
             typeof message.command === "string" ? message.command : undefined,
             typeof message.commandArgs === "string" ? message.commandArgs : undefined,
+            typeof message.sessionSurfaceDraftRevision === "number" ? message.sessionSurfaceDraftRevision : undefined,
           )
           break
         }
@@ -1541,6 +1817,34 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     })
     this.webviewMessageDisposable = watchFontSizeConfig((msg) => this.postMessage(msg), this.webviewMessageDisposable)
     this.webviewMessageDisposable = watchWorkStyleConfig((msg) => this.postMessage(msg), this.webviewMessageDisposable)
+  }
+
+  private rejectSurfaceSubmission(message: Record<string, unknown>): void {
+    if (rejectTurnChanges(message, (reply) => this.postMessage(reply))) return
+    if (message.type !== "sendMessage" && message.type !== "sendCommand" && message.type !== "importAndSend") return
+    const text =
+      message.type === "sendCommand"
+        ? `/${typeof message.command === "string" ? message.command : ""} ${typeof message.arguments === "string" ? message.arguments : ""}`.trim()
+        : typeof message.text === "string"
+          ? message.text
+          : ""
+    const sessionID =
+      typeof message.sessionID === "string"
+        ? message.sessionID
+        : message.type === "importAndSend" && typeof message.cloudSessionId === "string"
+          ? `cloud:${message.cloudSessionId}`
+          : undefined
+    this.postMessage({
+      type: "sendMessageFailed",
+      code: "surface-ownership-changed",
+      error: "会话写入权限已切换，请重试",
+      text,
+      sessionID,
+      draftID: typeof message.draftID === "string" ? message.draftID : undefined,
+      messageID: typeof message.messageID === "string" ? message.messageID : undefined,
+      files: parseMessageFiles(message.files),
+      review: parseReview(message.review, text),
+    })
   }
 
   private handleEditorOpenMessage(message: Parameters<typeof handleEditorAction>[0]): boolean {
@@ -1633,6 +1937,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     console.log("[ChipMate New] ChipMateProvider: 🔧 Starting initializeConnection...")
 
     this.connectionState = "connecting"
+    this.notifySessionExportWaiters()
     this.connectionGeneration++
     this.postMessage({ type: "connectionState", state: "connecting" })
 
@@ -1701,6 +2006,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       this.unsubscribeState = this.connectionService.onStateChange(async (state, error) => {
         if (this.connectionState !== state) this.connectionGeneration++
         this.connectionState = state
+        this.notifySessionExportWaiters()
         this.postConnectionState(error)
 
         if (state === "connected") {
@@ -1776,6 +2082,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       // Get current state and push to webview
       const serverInfo = this.connectionService.getServerInfo()
       this.connectionState = this.connectionService.getConnectionState()
+      this.notifySessionExportWaiters()
 
       if (serverInfo) {
         const langConfig = vscode.workspace.getConfiguration("chipmate.v2")
@@ -1905,18 +2212,36 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       .catch((e: unknown) => console.warn("[ChipMate New] ChipMateProvider: getSession failed (non-critical):", e))
     this.postMessage({ type: "workspaceDirectoryChanged", directory: this.getWorkspaceDirectory(sessionID) })
     this.requirements.clear()
+    const statusRevision = this.sessionStatusRevision
+    const connectionGeneration = this.connectionGeneration
+    const client = this.client
     this.client.session
       .status({ directory: dir })
       .then((r) => {
-        if (!r.data || signal?.aborted) return
+        if (
+          !r.data ||
+          signal?.aborted ||
+          this.client !== client ||
+          this.connectionGeneration !== connectionGeneration ||
+          this.contextSessionID !== sessionID
+        )
+          return
         for (const [sid, info] of Object.entries(r.data) as [string, SessionStatus][]) {
           if (!this.trackedSessionIds.has(sid)) continue
+          if ((this.sessionStatusRevisions.get(sid) ?? 0) > statusRevision) continue
+          this.sessionStatusMap.set(sid, info.type)
           this.postMessage({
             type: "sessionStatus",
             sessionID: sid,
             status: info.type,
             ...(info.type === "retry" ? { attempt: info.attempt, message: info.message, next: info.next } : {}),
           })
+        }
+        const tracked = new Set([...this.trackedSessionIds, sessionID])
+        for (const sid of tracked) {
+          if (r.data[sid] || (this.sessionStatusRevisions.get(sid) ?? 0) > statusRevision) continue
+          this.sessionStatusMap.set(sid, "idle")
+          this.postMessage({ type: "sessionStatus", sessionID: sid, status: "idle" })
         }
       })
       .catch((e: unknown) => console.error("[ChipMate New] ChipMateProvider: Failed to fetch session statuses:", e))
@@ -2155,7 +2480,13 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       return
     }
     if (message.type === "requestFilePicker") {
-      await handleFilePicker({ requestId: message.requestId, post: (msg) => this.postMessage(msg) })
+      if (message.kind !== undefined && message.kind !== "file" && message.kind !== "folder") return
+      await handleFilePicker({ requestId: message.requestId, kind: message.kind, post: (msg) => this.postMessage(msg) })
+      return
+    }
+    if (message.type === "requestEditorReference") {
+      if (message.kind !== "file" && message.kind !== "selection") return
+      this.postMessage({ type: "editorReferenceResult", requestId: message.requestId, ...this.editorReferences.read(message.kind) })
       return
     }
     if (message.type === "requestTerminalContext") {
@@ -2223,6 +2554,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     this.indexing.authoritative.delete(sessionID)
     this.indexing.local.delete(sessionID)
     if (this.streams.focused === sessionID) this.focusSession(undefined)
+    this.opts.surface?.coordinator.delete({ kind: "session", id: sessionID })
   }
 
   /**
@@ -2310,8 +2642,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       const saved = await exportTranscript(this.client, {
         sessionID,
         dir: this.getWorkspaceDirectory(sessionID),
+        waitForIdle: (sessionIDs, token) => this.waitForSessionExportIdle(sessionIDs, token),
       })
-      if (saved) void vscode.window.showInformationMessage("Session transcript exported as Markdown.")
+      if (!saved) return
     } catch (error) {
       console.error("[ChipMate New] ChipMateProvider: Failed to export session transcript:", error)
       this.postMessage({
@@ -2322,8 +2655,21 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   }
 
   /** Fetch providers and send to webview. Coalesced: at most one in-flight + one queued. */
-  private async fetchAndSendProviders(): Promise<void> {
+  private async fetchAndSendProviders(coordinateDeepSeekHarness = true): Promise<void> {
+    if (!coordinateDeepSeekHarness && this.providersRefresh) {
+      this.providersSkipDeepSeekHarnessCoordinationThroughGeneration = Math.max(
+        this.providersSkipDeepSeekHarnessCoordinationThroughGeneration,
+        this.providersGeneration,
+      )
+      await this.providersRefresh
+      return
+    }
     const next = ++this.providersGeneration
+    if (!coordinateDeepSeekHarness)
+      this.providersSkipDeepSeekHarnessCoordinationThroughGeneration = Math.max(
+        this.providersSkipDeepSeekHarnessCoordinationThroughGeneration,
+        next,
+      )
     if (this.providersRefresh) {
       this.providersQueued = true
       await this.providersRefresh
@@ -2365,6 +2711,23 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
             authStates,
           }
           this.cachedProvidersMessage = message
+          const dshSelection =
+            generation > this.providersSkipDeepSeekHarnessCoordinationThroughGeneration
+              ? this.deepSeekHarness?.runningProviderSelection()
+              : undefined
+          if (dshSelection) {
+            try {
+              const resolved = await this.resolveDeepSeekHarnessConfig(
+                dshSelection.providerID,
+                dshSelection.modelID,
+                client,
+              )
+              this.deepSeekHarness?.noteConfiguration(resolved.config, resolved.models)
+            } catch (error) {
+              this.deepSeekHarness?.markConfigurationUnavailable(error)
+              console.warn("[DeepSeek Harness] 无法协调更新后的 NewAPI 配置：", getErrorMessage(error))
+            }
+          }
           this.postMessage(message)
         } catch (error) {
           if (generation !== this.providersGeneration) {
@@ -2473,12 +2836,14 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         this.client!.app.agents({ directory: workspaceDir }, { throwOnError: true }),
       )
 
-      const { visible, defaultAgent } = filterVisibleAgents(agents)
+      const ordinaryAgents = excludeReservedAgents(agents, reservedAgentNames)
+      const { visible, defaultAgent } = filterVisibleAgents(ordinaryAgents)
+      const deepSeekHarnessAgents = this.deepSeekHarness?.runtimeAvailable() ? [deepSeekHarnessAgent] : []
 
       const message = {
         type: "agentsLoaded",
-        agents: visible.map(mapAgent),
-        allAgents: agents.map(mapAgent),
+        agents: [...visible.map(mapAgent), ...deepSeekHarnessAgents],
+        allAgents: [...ordinaryAgents.map(mapAgent), ...deepSeekHarnessAgents],
         defaultAgent,
       }
       this.cachedAgentsMessage = message
@@ -2488,21 +2853,294 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     }
   }
 
+  private async handleDeepSeekHarnessMessage(message: DeepSeekHarnessWebviewMessage): Promise<void> {
+    const service = this.deepSeekHarness
+    if (!service) throw new Error("DeepSeek Harness 服务不可用")
+    try {
+      switch (message.type) {
+        case "chipmateDeepSeekHarness.activate": {
+          const generation = ++this.deepSeekHarnessModeGeneration
+          service.setActive(true)
+          service.beginProviderResolution(message.taskId)
+          await this.fetchAndSendProviders(false)
+          if (generation !== this.deepSeekHarnessModeGeneration) return
+          const inspected = await this.inspectDeepSeekHarnessProviders()
+          if (generation !== this.deepSeekHarnessModeGeneration) return
+          const preferred =
+            message.preferredSelection ??
+            (message.providerID && message.modelID
+              ? { providerID: message.providerID, modelID: message.modelID }
+              : undefined)
+          const selected = chooseDeepSeekHarnessSelection(
+            inspected.options,
+            service.lastSuccessfulSelection(),
+            preferred,
+          )
+          service.setProviderOptions(inspected.options, selected)
+          if (!selected) {
+            service.requireProviderSelection()
+            return
+          }
+          const resolved = this.resolveInspectedDeepSeekHarnessConfig(inspected, selected.providerID, selected.modelID)
+          try {
+            await service.activate(
+              message.taskId,
+              resolved.workspace,
+              resolved.config,
+              resolved.models,
+              resolved.selected,
+            )
+          } catch (error) {
+            if (generation === this.deepSeekHarnessModeGeneration)
+              service.rejectProviderSelection(getErrorMessage(error) || "所选 Provider 无法启动官方 DSH")
+          }
+          return
+        }
+        case "chipmateDeepSeekHarness.deactivate":
+          this.deepSeekHarnessModeGeneration += 1
+          service.setActive(false)
+          return
+        case "chipmateDeepSeekHarness.refresh":
+          await service.refresh()
+          return
+        case "chipmateDeepSeekHarness.transport.request": {
+          try {
+            const response = await service.transport(
+              message.connectionGeneration,
+              message.path,
+              message.method,
+              message.body,
+            )
+            this.postMessage({
+              type: "chipmateDeepSeekHarness.transport.response",
+              requestId: message.requestId,
+              ...response,
+            })
+          } catch (error) {
+            this.postMessage({
+              type: "chipmateDeepSeekHarness.transport.response",
+              requestId: message.requestId,
+              status: 502,
+              headers: [],
+              body: "",
+              error: getErrorMessage(error) || "官方 DSH Relay 请求失败",
+            })
+          }
+          return
+        }
+        case "chipmateDeepSeekHarness.projectionReady":
+          service.projectionReady(message.sessionId, message.connectionGeneration)
+          return
+        case "chipmateDeepSeekHarness.projectionFailed":
+          service.projectionFailed(message.sessionId, message.connectionGeneration, message.error)
+          return
+        case "chipmateDeepSeekHarness.modelSelected":
+        case "chipmateDeepSeekHarness.selectionRequested": {
+          const generation = ++this.deepSeekHarnessModeGeneration
+          service.beginProviderResolution()
+          await this.fetchAndSendProviders(false)
+          if (generation !== this.deepSeekHarnessModeGeneration) return
+          const inspected = await this.inspectDeepSeekHarnessProviders()
+          if (generation !== this.deepSeekHarnessModeGeneration) return
+          const selected = inspected.options
+            .find((option) => option.available && option.providerID === message.providerID)
+            ?.models.find((model) => model.modelID === message.modelID)
+          service.setProviderOptions(inspected.options, selected)
+          if (!selected) {
+            service.rejectProviderSelection("所选 Provider 未配置可用于官方 DSH 的直连 NewAPI 凭据")
+            return
+          }
+          const resolved = this.resolveInspectedDeepSeekHarnessConfig(inspected, selected.providerID, selected.modelID)
+          try {
+            await service.requestSelection(
+              service.currentTaskId() ?? "",
+              resolved.workspace,
+              resolved.config,
+              resolved.models,
+              resolved.selected,
+            )
+          } catch (error) {
+            if (generation === this.deepSeekHarnessModeGeneration)
+              service.rejectProviderSelection(getErrorMessage(error) || "所选 Provider 无法用于官方 DSH")
+          }
+          return
+        }
+        case "chipmateDeepSeekHarness.confirmProviderSwitch": {
+          const pending = service.pendingProviderSelection()
+          if (!pending) return
+          const generation = ++this.deepSeekHarnessModeGeneration
+          await this.fetchAndSendProviders(false)
+          if (generation !== this.deepSeekHarnessModeGeneration) return
+          const inspected = await this.inspectDeepSeekHarnessProviders()
+          if (generation !== this.deepSeekHarnessModeGeneration) return
+          const resolved = this.resolveInspectedDeepSeekHarnessConfig(
+            inspected,
+            pending.selected.providerID,
+            pending.selected.modelID,
+          )
+          service.setProviderOptions(inspected.options, resolved.selected)
+          await service.confirmProviderSwitch(resolved.config, resolved.models, resolved.selected)
+          return
+        }
+        case "chipmateDeepSeekHarness.cancelProviderSwitch":
+          this.deepSeekHarnessModeGeneration += 1
+          service.cancelProviderSwitch()
+          return
+        case "chipmateDeepSeekHarness.createPreferredSession":
+          await service.createPreferredSession()
+          return
+        case "chipmateDeepSeekHarness.createMinimalSession":
+          await service.createMinimalSession()
+          return
+        case "chipmateDeepSeekHarness.openMappedSession":
+          await service.openMappedSession(message.mappingKey)
+          return
+        case "chipmateDeepSeekHarness.returnToActiveSession":
+          await service.returnToActiveSession()
+          return
+        case "chipmateDeepSeekHarness.stop":
+          await service.stop(true)
+          return
+        case "chipmateDeepSeekHarness.restart": {
+          await this.fetchAndSendProviders(false)
+          const selection = service.currentSelection()
+          if (!selection) throw new Error("当前没有可用的 DeepSeek 模型")
+          const inspected = await this.inspectDeepSeekHarnessProviders()
+          service.setProviderOptions(inspected.options, selection)
+          const resolved = this.resolveInspectedDeepSeekHarnessConfig(
+            inspected,
+            selection.providerID,
+            selection.modelID,
+          )
+          await service.restart(resolved.workspace, resolved.config, resolved.models, resolved.selected)
+          return
+        }
+        case "chipmateDeepSeekHarness.retryRuntime":
+          await service.retryRuntime()
+          return
+      }
+    } catch (error) {
+      const detail = getErrorMessage(error) || "DeepSeek Harness 操作失败"
+      if (
+        message.type === "chipmateDeepSeekHarness.activate" ||
+        message.type === "chipmateDeepSeekHarness.selectionRequested" ||
+        message.type === "chipmateDeepSeekHarness.modelSelected" ||
+        message.type === "chipmateDeepSeekHarness.confirmProviderSwitch"
+      )
+        service.rejectProviderSelection(detail)
+      console.error("[DeepSeek Harness] 操作失败：", detail)
+      void vscode.window.showErrorMessage(detail)
+    }
+  }
+
+  private async resolveDeepSeekHarnessConfig(
+    providerID: string,
+    modelID: string,
+    client = this.client,
+  ): Promise<ResolvedDeepSeekHarnessConfig> {
+    const workspace = this.projectDirectory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    if (!workspace) throw new Error("请选择有效工作区后再启动 DeepSeek Harness")
+    if (!client) throw new Error("ChipMate 后端未连接，无法读取所选 Provider 的受保护凭据")
+    const cached = this.cachedProvidersMessage as { providers?: DeepSeekHarnessProviderCatalog } | undefined
+    const provider = cached?.providers?.[providerID]
+    if (!provider) throw new Error("所选 DeepSeek 模型所属 Provider 已不存在")
+    const models = Object.values(provider.models)
+      .filter((model) => isDeepSeekModel(provider.id, provider.name, model.id, model.name))
+      .map((model) => ({ providerID: provider.id, modelID: model.id, name: model.name }))
+    const selected = models.find((model) => model.modelID === modelID)
+    if (!selected) throw new Error("只能为 DeepSeek Harness 选择已配置的 DeepSeek 模型")
+    const credential = await resolveDeepSeekHarnessCredential(
+      client,
+      providerID,
+      provider,
+      this.storedProviderKeys[providerID],
+    )
+    return {
+      workspace,
+      config: { ...credential, models: models.map((model) => ({ id: model.modelID, name: model.name })) },
+      models,
+      selected,
+    }
+  }
+
+  private async inspectDeepSeekHarnessProviders(client = this.client): Promise<{
+    workspace: string
+    options: DeepSeekHarnessProviderOption[]
+    resolved: Awaited<ReturnType<typeof inspectDeepSeekHarnessProviders>>["resolved"]
+  }> {
+    const workspace = this.projectDirectory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    if (!workspace) throw new Error("请选择有效工作区后再启动 DeepSeek Harness")
+    if (!client) throw new Error("ChipMate 后端未连接，无法读取 Provider 的受保护凭据")
+    const cached = this.cachedProvidersMessage as { providers?: DeepSeekHarnessProviderCatalog } | undefined
+    const inspected = await inspectDeepSeekHarnessProviders(cached?.providers ?? {}, (providerID, provider) =>
+      resolveDeepSeekHarnessCredential(client, providerID, provider, this.storedProviderKeys[providerID]),
+    )
+    return { workspace, ...inspected }
+  }
+
+  private resolveInspectedDeepSeekHarnessConfig(
+    inspected: {
+      workspace: string
+      options: DeepSeekHarnessProviderOption[]
+      resolved: Awaited<ReturnType<typeof inspectDeepSeekHarnessProviders>>["resolved"]
+    },
+    providerID: string,
+    modelID: string,
+  ): ResolvedDeepSeekHarnessConfig {
+    const provider = inspected.resolved.get(providerID)
+    const selected = provider?.models.find((model) => model.modelID === modelID)
+    if (!provider || !selected) throw new Error("所选 Provider 未配置可用于官方 DSH 的直连 NewAPI 凭据")
+    return {
+      workspace: inspected.workspace,
+      config: {
+        ...provider.credential,
+        models: provider.models.map((model) => ({ id: model.modelID, name: model.name })),
+      },
+      models: provider.models,
+      selected,
+    }
+  }
+
   private async handleSetDocumentAgentScope(sessionID: string, scope: "documents"): Promise<void> {
     if (!this.client) return
     if (scope !== "documents") return
-    const directory = this.getWorkspaceDirectory(sessionID)
     try {
-      const current = await this.client.session.get({ sessionID, directory }, { throwOnError: true })
-      const metadata = { ...current.data.metadata }
-      delete metadata["chipmate.documentAgent.scope"]
-      const updated = await this.client.session.update({ sessionID, directory, metadata }, { throwOnError: true })
-      if (this.currentSession?.id === sessionID) this.setCurrentSession(updated.data)
-      this.postMessage({ type: "sessionUpdated", session: this.sessionToWebview(updated.data) })
+      await this.updateSessionMetadata(sessionID, (metadata) => {
+        delete metadata["chipmate.documentAgent.scope"]
+        return metadata
+      })
     } catch (error) {
       console.error("[ChipMate New] ChipMateProvider: Failed to restore document-only scope:", error)
       this.postMessage({ type: "error", message: getErrorMessage(error) || "Failed to restore document-only scope" })
     }
+  }
+
+  private async updateSessionMetadata(
+    sessionID: string,
+    update: (metadata: Record<string, unknown>) => Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.client) throw new Error("Not connected to CLI backend")
+    const client = this.client
+    const directory = this.getWorkspaceDirectory(sessionID)
+    const previous = this.sessionMetadataUpdates.get(sessionID) ?? Promise.resolve()
+    const operation = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const current = await client.session.get({ sessionID, directory }, { throwOnError: true })
+        const metadata = update({ ...current.data.metadata })
+        const updated = await client.session.update({ sessionID, directory, metadata }, { throwOnError: true })
+        if (this.currentSession?.id === sessionID) this.setCurrentSession(updated.data)
+        this.postMessage({ type: "sessionUpdated", session: this.sessionToWebview(updated.data) })
+      })
+    const settled = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    this.sessionMetadataUpdates.set(sessionID, settled)
+    void settled.finally(() => {
+      if (this.sessionMetadataUpdates.get(sessionID) === settled) this.sessionMetadataUpdates.delete(sessionID)
+    })
+    return operation
   }
 
   private async fetchAndSendSkills(): Promise<void> {
@@ -3022,7 +3660,54 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private async seedSessionStatusMap(reconcile = true): Promise<void> {
     if (!this.client || this.connectionState !== "connected") return
     const dir = this.getWorkspaceDirectory()
-    await seedSessionStatuses(this.client, dir, this.sessionStatusMap, (msg) => this.postMessage(msg), reconcile)
+    const client = this.client
+    const generation = this.connectionGeneration
+    const revision = this.sessionStatusRevision
+    await seedSessionStatuses(
+      client,
+      dir,
+      this.sessionStatusMap,
+      (msg) => this.postMessage(msg),
+      reconcile,
+      (sessionID) =>
+        this.client === client &&
+        this.connectionGeneration === generation &&
+        (this.sessionStatusRevisions.get(sessionID) ?? 0) <= revision,
+    )
+    this.notifySessionExportWaiters()
+  }
+
+  private waitForSessionExportIdle(sessionIDs: string[], token: vscode.CancellationToken): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let cancellation: vscode.Disposable | undefined
+      let settled = false
+      const finish = (error?: Error) => {
+        if (settled) return
+        settled = true
+        this.sessionExportWaiters.delete(check)
+        cancellation?.dispose()
+        if (error) reject(error)
+        else resolve()
+      }
+      const check = () => {
+        if (token.isCancellationRequested) {
+          finish(new Error("已取消导出。"))
+          return
+        }
+        if (this.sessionExportDisposed || this.connectionState !== "connected" || !this.client) {
+          finish(new Error("ChipMate 后端连接已断开，导出已停止。"))
+          return
+        }
+        if (sessionIDs.every((sessionID) => this.sessionStatusMap.get(sessionID) === "idle")) finish()
+      }
+      this.sessionExportWaiters.add(check)
+      cancellation = token.onCancellationRequested(check)
+      check()
+    })
+  }
+
+  private notifySessionExportWaiters(): void {
+    for (const check of [...this.sessionExportWaiters]) check()
   }
 
   /**
@@ -3086,7 +3771,11 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
 
       const first = list[0]!
       const summary = list.length === 1 ? first.message : `${first.message} (and ${list.length - 1} more)`
-      console.warn("[ChipMate New] ChipMateProvider: showing config warnings", { from, count: list.length, path: first.path })
+      console.warn("[ChipMate New] ChipMateProvider: showing config warnings", {
+        from,
+        count: list.length,
+        path: first.path,
+      })
 
       const action = await vscode.window.showWarningMessage(`Config: ${summary}`, "Show Details")
       if (action === "Show Details") {
@@ -3406,61 +4095,60 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       project.agent !== undefined
     const hasGlobal = Object.keys(partial).length > 0 || globalUnset.length > 0
     const hasProject = Object.keys(project).length > 0 || projectUnset.length > 0
+    const indexingOnly = isIndexingOnlySave(partial, project, globalUnset, projectUnset)
 
     this.pending++
     const dir = this.getWorkspaceDirectory()
     const operation = MemoryDebug.operation("settings-save", requestId)
+    const started = Date.now()
+    const controller = new AbortController()
+    const timeout = setTimeout(
+      () => controller.abort(new Error(`Settings save timed out after ${this.configSaveTimeoutMs}ms`)),
+      this.configSaveTimeoutMs,
+    )
+    let stage: ConfigSaveStage = indexingOnly ? (hasGlobal ? "write-global" : "write-project") : "drain-prompts"
     void MemoryDebug.append({
       event: "settings.save.begin",
       operationId: operation,
-      data: { globalKeys: Object.keys(partial), projectKeys: Object.keys(project), workspace: MemoryDebug.hash(dir) },
+      data: { stage },
     })
 
     try {
-      void MemoryDebug.append({ event: "settings.save.drain-prompts.begin", operationId: operation })
-      await this.connectionService.drainPendingPrompts()
-      void MemoryDebug.append({ event: "settings.save.drain-prompts.end", operationId: operation })
-      if (hasGlobal)
-        await this.client.global.config.update(
-          { config: partial },
-          { throwOnError: true, headers: MemoryDebug.header(operation) },
-        )
-      if (hasProject) await this.client.config.update({ config: project, directory: dir }, { throwOnError: true })
+      if (!indexingOnly) {
+        void MemoryDebug.append({ event: "settings.save.drain-prompts.begin", operationId: operation })
+        await this.connectionService.drainPendingPrompts(controller.signal)
+        void MemoryDebug.append({ event: "settings.save.drain-prompts.end", operationId: operation })
+      }
+      if (!hasGlobal && !hasProject) return
+
+      let output: unknown
       if (hasGlobal) {
-        await this.client.config.overlayUpdate(
+        stage = "write-global"
+        const response = await this.client.config.overlayUpdate(
           { scope: "global", set: partial, unset: globalUnset, directory: dir },
-          { throwOnError: true },
+          { throwOnError: true, signal: controller.signal, headers: MemoryDebug.header(operation) },
         )
+        output = response.data
       }
       if (hasProject) {
-        await this.client.config.overlayUpdate(
+        stage = "write-project"
+        const response = await this.client.config.overlayUpdate(
           { scope: "project", set: project, unset: projectUnset, directory: dir },
-          { throwOnError: true },
+          { throwOnError: true, signal: controller.signal, headers: MemoryDebug.header(operation) },
         )
+        output = response.data
       }
-    } catch (error) {
-      void MemoryDebug.append({
-        event: "settings.save.failed",
-        operationId: operation,
-        data: { error: getErrorMessage(error) },
-      })
-      this.postConfigFailure(error, requestId)
-      this.pending--
-      return
-    }
 
-    try {
-      const [{ data: merged }, { data: global }, { data: overlay }] = await Promise.all([
-        retry(() => this.client!.config.get({ directory: dir }, { throwOnError: true })),
-        this.client.global.config.get({ throwOnError: true }),
-        this.client.config.overlay({ directory: dir, scope: "project" }, { throwOnError: true }),
-      ])
-      this.cachedGlobalConfig = global ?? null
+      stage = "confirm"
+      const resolved = configOverlayResult(output)
+      if (!resolved) throw new ConfigProtocolMismatchError()
+      const merged = resolved.effective
+      this.cachedGlobalConfig = resolved.global
       this.cachedConfigMessage = {
         type: "configLoaded",
         config: merged,
-        globalConfig: global,
-        projectConfig: overlay?.project,
+        globalConfig: resolved.global,
+        projectConfig: resolved.project,
         settings: { maxCost: this.maxCostSetting(), languageCommitMessage: this.commitMessageLanguageSetting() },
         features: configFeatures(merged),
       }
@@ -3468,50 +4156,63 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         type: "configUpdated",
         requestId,
         config: merged,
-        globalConfig: global,
-        projectConfig: overlay?.project,
+        globalConfig: resolved.global,
+        projectConfig: resolved.project,
         settings: { maxCost: this.maxCostSetting(), languageCommitMessage: this.commitMessageLanguageSetting() },
         features: configFeatures(merged),
       })
       this.requirements.clear()
-      await Promise.all([
+      void MemoryDebug.append({
+        event: "settings.save.end",
+        operationId: operation,
+        data: { stage, durationMs: Date.now() - started },
+      })
+
+      void Promise.all([
         refreshProviders ? this.fetchAndSendProviders() : Promise.resolve(),
         refreshAgents ? this.fetchAndSendAgents() : Promise.resolve(),
-      ])
-      void MemoryDebug.append({ event: "settings.save.end", operationId: operation })
-    } catch (error) {
-      console.error("[ChipMate New] ChipMateProvider: Config write succeeded but post-write refresh failed:", error)
-      const patch =
-        partial.indexing === undefined && project.indexing === undefined
-          ? { ...partial, ...project }
-          : { ...partial, ...project, indexing: { ...(partial.indexing ?? {}), ...(project.indexing ?? {}) } }
-      const cached = (this.cachedConfigMessage as { config?: unknown } | null)?.config
-      const features = (this.cachedConfigMessage as { features?: unknown } | null)?.features
-      const optimistic =
-        cached && typeof cached === "object" ? { ...(cached as Record<string, unknown>), ...patch } : patch
-      this.postMessage({
-        type: "configUpdated",
-        requestId,
-        config: optimistic,
-        globalConfig: this.cachedGlobalConfig ?? undefined,
-        settings: { maxCost: this.maxCostSetting(), languageCommitMessage: this.commitMessageLanguageSetting() },
-        features: features ?? configFeatures(optimistic as Config),
+      ]).catch((error) => {
+        console.warn("[ChipMate New] ChipMateProvider: Post-save config refresh failed:", getErrorMessage(error))
       })
-      this.requirements.clear()
+    } catch (error) {
+      const reason: ConfigSaveReason = controller.signal.aborted
+        ? "timeout"
+        : error instanceof ConfigProtocolMismatchError
+          ? "protocol-mismatch"
+          : "request-failed"
+      void MemoryDebug.append({
+        event: "settings.save.failed",
+        operationId: operation,
+        data: { reason, stage, durationMs: Date.now() - started },
+      })
+      this.postConfigFailure(error, requestId, reason, stage)
     } finally {
+      clearTimeout(timeout)
       this.pending--
     }
   }
-  private postConfigFailure(error: unknown, requestId: string): void {
+  private postConfigFailure(
+    error: unknown,
+    requestId: string,
+    reason: ConfigSaveReason = "request-failed",
+    stage?: ConfigSaveStage,
+  ): void {
     console.error("[ChipMate New] ChipMateProvider: Failed to update config:", error)
     this.postMessage({
       type: "configUpdateFailed",
       requestId,
+      reason,
+      stage,
       message: getErrorMessage(error) || "Failed to update config",
       details: getConfigErrorDetails(error),
     })
   }
-  private async resolveSession(sessionID?: string, draftID?: string, context?: string, contextDirectory?: string) {
+  private async resolveSession(
+    sessionID?: string,
+    draftID?: string,
+    context?: string,
+    contextDirectory?: string,
+  ) {
     if (!this.client) return undefined
 
     const dir = resolveNewSessionDirectory({
@@ -3562,6 +4263,13 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           session: this.sessionToWebview(session),
           draftID,
         })
+        if (draftID && this.opts.surface) {
+          this.opts.surface.coordinator.promote(
+            { kind: "draft", id: draftID },
+            { kind: "session", id: session.id },
+            { title: session.title, directory: dir },
+          )
+        }
         const resolved = { sid: session.id, dir }
         if (draftID) this.draftSessions.set(key, { ...resolved, expires: Date.now() + 60_000 })
         return resolved
@@ -3621,7 +4329,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         }
 
         const delay = backoff(attempt, result.response?.headers)
-        console.log(`[ChipMate New] ChipMateProvider: Retry on ${status}, attempt ${attempt}/${MAX_RETRIES}, delay ${delay}ms`)
+        console.log(
+          `[ChipMate New] ChipMateProvider: Retry on ${status}, attempt ${attempt}/${MAX_RETRIES}, delay ${delay}ms`,
+        )
 
         this.postMessage({
           type: "sessionStatus",
@@ -3736,6 +4446,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     review?: ReviewMessageData,
     context?: string,
     contextDirectory?: string,
+    sessionSurfaceDraftRevision?: number,
   ): Promise<void> {
     const model = modelSelection(providerID, modelID)
     if (!model) {
@@ -3771,7 +4482,20 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         this.sandboxKey({ sessionID, draftID, agentManagerContext: context, contextDirectory }),
       )
       resolved = await this.resolveSession(sessionID, draftID, context, contextDirectory)
-      if (!resolved) return
+      if (!resolved) {
+        this.postMessage({
+          type: "sendMessageFailed",
+          code: "submission-cancelled",
+          error: "消息提交已取消",
+          text,
+          sessionID,
+          draftID,
+          messageID,
+          files,
+          review,
+        })
+        return
+      }
       if (sandbox) await sandbox
       const sid = resolved.sid
       const dir = resolved.dir
@@ -3790,6 +4514,17 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       const editorContext = await this.gatherEditorContext(dir)
       if (draftID && this.closedDrafts.delete(draftID)) {
         for (const [k, v] of this.draftSessions) if (v.sid === sid) this.draftSessions.delete(k)
+        this.postMessage({
+          type: "sendMessageFailed",
+          code: "submission-cancelled",
+          error: "消息提交已取消",
+          text,
+          sessionID: sid,
+          draftID,
+          messageID,
+          files,
+          review,
+        })
         return
       }
 
@@ -3816,6 +4551,20 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           messageID,
         ),
       )
+      await this.opts.surface?.coordinator.acceptDraft(
+        this.opts.surface.id,
+        { kind: "session", id: sid },
+        sessionSurfaceDraftRevision,
+      )
+      if (messageID) {
+        this.postMessage({
+          type: "sendMessageAccepted",
+          messageID,
+          sessionID: sid,
+          draftID,
+          revision: sessionSurfaceDraftRevision,
+        })
+      }
     } catch (error) {
       console.error("[ChipMate New] ChipMateProvider: Failed to send message:", error)
       this.postMessage({
@@ -3844,6 +4593,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     files?: MessageFile[],
     context?: string,
     contextDirectory?: string,
+    sessionSurfaceDraftRevision?: number,
   ): Promise<void> {
     const model = modelSelection(providerID, modelID)
     if (!model) {
@@ -3877,7 +4627,19 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         this.sandboxKey({ sessionID, draftID, agentManagerContext: context, contextDirectory }),
       )
       resolved = await this.resolveSession(sessionID, draftID, context, contextDirectory)
-      if (!resolved) return
+      if (!resolved) {
+        this.postMessage({
+          type: "sendMessageFailed",
+          code: "submission-cancelled",
+          error: "命令提交已取消",
+          text: `/${command} ${args}`.trim(),
+          sessionID,
+          draftID,
+          messageID,
+          files,
+        })
+        return
+      }
       if (sandbox) await sandbox
       const sid = resolved.sid
       const dir = resolved.dir
@@ -3915,6 +4677,20 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           messageID,
         ),
       )
+      await this.opts.surface?.coordinator.acceptDraft(
+        this.opts.surface.id,
+        { kind: "session", id: sid },
+        sessionSurfaceDraftRevision,
+      )
+      if (messageID) {
+        this.postMessage({
+          type: "sendMessageAccepted",
+          messageID,
+          sessionID: sid,
+          draftID,
+          revision: sessionSurfaceDraftRevision,
+        })
+      }
       if (messageID && completesWithoutStatus(command)) {
         this.postMessage({ type: "sessionCommandCompleted", messageID })
       }
@@ -4125,7 +4901,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
 
     await this.client.global
       .dispose()
-      .catch((e: unknown) => console.warn("[ChipMate New] ChipMateProvider: global.dispose() after org switch failed:", e))
+      .catch((e: unknown) =>
+        console.warn("[ChipMate New] ChipMateProvider: global.dispose() after org switch failed:", e),
+      )
 
     // Org switch succeeded — refresh profile and providers independently (best-effort)
     try {
@@ -4148,6 +4926,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
    */
   private async handleUpdateSetting(key: string, value: unknown, requestId?: string): Promise<void> {
     try {
+      if (key.startsWith("appearance.")) {
+        throw new Error("外观设置必须通过完整外观保存通道更新。")
+      }
       if (key === "maxCost") {
         const normalized = this.setMaxCost(value)
         await vscode.workspace
@@ -4183,13 +4964,19 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       if (section === "chat" && !validChatSetting(leaf, value)) {
         throw new Error(`Invalid chat setting: ${leaf}`)
       }
+      if (section === "patentRadar" && !validPatentRadarSetting(leaf, value)) {
+        throw new Error(`Invalid Patent Radar setting: ${leaf}`)
+      }
       const config = vscode.workspace.getConfiguration(`chipmate.v2${section ? `.${section}` : ""}`)
       // Normalize a webview-side clear to `undefined` so VS Code removes the
       // key from settings.json rather than persisting a literal `null`. This
       // lets the runtime fall back to the resolved default.
       const raw = value === null ? undefined : value
-      const next = key === CHIPMATE_SERVER_KEY && typeof raw === "string" ? normalizeChipmateServerBaseUrl(raw) : raw
-      await config.update(leaf, next, vscode.ConfigurationTarget.Global)
+      const next = normalizeSetting(key, leaf, raw)
+      const target = section === "patentRadar" && leaf !== "serverBaseUrl" && vscode.workspace.workspaceFolders?.length
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global
+      await config.update(leaf, next, target)
       if (isWorkStyleSetting(key)) this.sendWorkStyle()
       if (!requestId) return
       this.postMessage({ type: "settingUpdated", key, value: next, requestId })
@@ -4500,6 +5287,11 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
    * Filters events by project ID and tracked session IDs so each webview only sees its own sessions.
    */
   private handleEvent(event: ProviderEvent, directory?: string): void {
+    if (event.type === "session.turn.changes") {
+      this.postMessage({ type: "turnChangesUpdated", sessionID: event.properties.sessionID, messageID: event.properties.messageID })
+      return
+    }
+
     if (event.type === "chipmate-sessions.remote-status-changed") {
       this.remoteService?.updateFromEvent({ enabled: event.properties.enabled, connected: event.properties.connected })
       return
@@ -4577,11 +5369,14 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     // busy-session warning on Save.
     if (event.type === "session.status") {
       const sid = event.properties.sessionID
+      this.sessionStatusRevision += 1
+      this.sessionStatusRevisions.set(sid, this.sessionStatusRevision)
       const prev = this.sessionStatusMap.get(sid)
       if ((prev === undefined || prev === "idle") && event.properties.status.type !== "idle") {
         this.costs.rearm(sid)
       }
       this.sessionStatusMap.set(sid, event.properties.status.type)
+      this.notifySessionExportWaiters()
       this.aborts.observe(sid, event.properties.status.type, directory)
       const msg = mapSSEEventToWebviewMessage(event, sid)
       if (msg) {
@@ -4763,6 +5558,35 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   /** Wait until the webview has sent "webviewReady". Resolves immediately when already ready. */
   public waitForReady(): Promise<void> {
     return this.isWebviewReady && this.webview ? Promise.resolve() : new Promise((r) => this.readyResolvers.push(r))
+  }
+
+  public getSurfaceId(): string | undefined {
+    return this.opts.surface?.id
+  }
+
+  public getSurfaceKind(): "sidebar" | "main-editor" | undefined {
+    return this.opts.surface?.kind
+  }
+
+  public getPinnedSurfaceKey(): SessionSurfaceKey | undefined {
+    const surface = this.opts.surface
+    return surface?.coordinator.keyForSurface(surface.id) ?? surface?.pinnedKey
+  }
+
+  private postSessionSurfaceBootstrap(): void {
+    const surface = this.opts.surface
+    if (!surface) return
+    const message: SessionSurfaceExtensionMessage = {
+      type: "sessionSurface.bootstrap",
+      surfaceId: surface.id,
+      kind: surface.kind,
+      pinnedKey: this.getPinnedSurfaceKey(),
+    }
+    this.postMessage(message)
+    const key =
+      this.getPinnedSurfaceKey() ??
+      (this.currentSession ? { kind: "session" as const, id: this.currentSession.id } : undefined)
+    if (key) surface.coordinator.bindSurface(surface.id, key)
   }
   /** Post a message to the webview. Public so toolbar button commands can send messages. */
   public postMessage(message: unknown): void {
@@ -5037,7 +5861,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     )
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview): string {
+  private _getHtmlForWebview(webview: vscode.Webview, nativeNavigation = false): string {
     return buildWebviewHtml(webview, {
       scriptUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "webview.js")),
       styleUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "webview.css")),
@@ -5046,7 +5870,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       workerUri: webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "shiki-worker.js")),
       extensionVersion: this.extensionVersion,
       title: "ChipMate",
+      nativeNavigation,
       port: this.connectionService.getServerInfo()?.port,
+      allowUnsafeEval: true,
       extraStyles: `.container { height: 100%; display: flex; flex-direction: column; height: 100vh; border-right: 1px solid var(--border-weak-base); }`,
     })
   }
@@ -5085,6 +5911,10 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
    * Does NOT kill the server — that's the connection service's job.
    */
   dispose(): void {
+    if (this.extensionContext) introductionStore(this.extensionContext.globalState).release(this)
+    this.editorReferences.dispose()
+    this.sessionExportDisposed = true
+    this.notifySessionExportWaiters()
     this.indexing.dead = true
     this.indexing.revision += 1
     this.indexing.target += 1
@@ -5134,8 +5964,19 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     this.sessionStatusMap.clear()
     this.skillRemoval?.dispose()
     this.requirements.dispose()
+    this.deepSeekHarnessSubscription?.dispose()
+    this.sessionSurfaceRegistration?.dispose()
+    this.sessionForkSubscription?.dispose()
     this.ignoreController?.dispose()
     this.chatAutocomplete?.dispose()
     disposeGitChangesTarget()
   }
+}
+
+function normalizeSetting(key: string, leaf: string, value: unknown): unknown {
+  if (key === CHIPMATE_SERVER_KEY && typeof value === "string") return normalizeChipmateServerBaseUrl(value)
+  if (key === PATENT_RADAR_SERVER_KEY && typeof value === "string") {
+    return value.trim() ? normalizePatentServerBaseUrl(value) : ""
+  }
+  return value
 }

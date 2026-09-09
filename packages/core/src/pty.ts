@@ -8,7 +8,6 @@ import { Config } from "./config"
 import { EventV2 } from "./event"
 import { Location } from "./location"
 import { PtyID } from "./pty/schema"
-import { SessionSchema } from "./session/schema" // chipmate_change
 import { Shell } from "./shell"
 import { lazy } from "./util/lazy"
 import { ChipMatePtySelfCommand } from "./chipmate/pty-self-command" // chipmate_change
@@ -40,8 +39,6 @@ type Active = {
   stopping: boolean // chipmate_change
 }
 
-// chipmate_change - the ChipMate `sessionID` field now lives on the canonical shared schema (see
-// packages/schema/src/pty.ts) so the generated SDK carries it; reuse that schema verbatim here.
 export const Info = Pty.Info
 export type Info = Types.DeepMutable<typeof Info.Type>
 
@@ -49,10 +46,7 @@ export const CreateInput = Pty.CreateInput
 
 export type CreateInput = Types.DeepMutable<typeof CreateInput.Type>
 
-export const UpdateInput = Schema.Struct({
-  ...Pty.UpdateInput.fields,
-  sessionID: Schema.optional(Schema.NullOr(SessionSchema.ID)), // chipmate_change
-})
+export const UpdateInput = Pty.UpdateInput
 
 export type UpdateInput = Types.DeepMutable<typeof UpdateInput.Type>
 
@@ -291,9 +285,6 @@ const layer = Layer.effect(
     const update = Effect.fn("Pty.update")(function* (id: PtyID, input: UpdateInput) {
       const session = yield* requireSession(id)
       if (input.title) session.info.title = input.title
-      // chipmate_change start - associate nested ChipMate TUI terminals with the viewed session
-      if ("sessionID" in input) session.info.sessionID = input.sessionID ?? undefined
-      // chipmate_change end
       if (input.size && session.info.status === "running") session.process.resize(input.size.cols, input.size.rows)
       yield* events.publish(Event.Updated, { info: session.info })
       return session.info

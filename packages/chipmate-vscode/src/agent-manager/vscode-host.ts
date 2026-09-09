@@ -1,3 +1,4 @@
+import { bindAppearance } from "../appearance"
 /**
  * VS Code adapter implementing the Host interface.
  *
@@ -16,6 +17,7 @@ import { openFileInEditor, getWorkspaceRoot } from "../review-utils"
 import { TelemetryProxy, type TelemetryEventName } from "../services/telemetry"
 import type { AutoApproveController } from "../commands/toggle-auto-approve"
 import type { RemoteStatusService } from "../services/RemoteStatusService"
+import type { SessionForkCoordinator } from "../services/session-fork/coordinator"
 
 export class VscodeHost implements Host {
   private diffVirtual: DiffVirtualProvider | undefined
@@ -26,6 +28,7 @@ export class VscodeHost implements Host {
     private readonly connectionService: ChipMateConnectionService,
     private readonly context: vscode.ExtensionContext,
     private readonly remoteService: RemoteStatusService,
+    private readonly sessionForks?: SessionForkCoordinator,
   ) {}
 
   setDiffVirtualProvider(provider: DiffVirtualProvider): void {
@@ -82,6 +85,7 @@ export class VscodeHost implements Host {
     }
 
     const port = this.connectionService.getServerInfo()?.port
+    bindAppearance(panel)
     panel.webview.html = buildWebviewHtml(panel.webview, {
       scriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "agent-manager.js")),
       styleUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "agent-manager.css")),
@@ -90,6 +94,7 @@ export class VscodeHost implements Host {
       workerUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "shiki-worker.js")),
       title: "Agent Manager",
       port,
+      allowUnsafeEval: true,
     })
 
     const provider = new ChipMateProvider(this.extensionUri, this.connectionService, this.context, {
@@ -98,6 +103,8 @@ export class VscodeHost implements Host {
       slimEditMetadata: true,
       worktreeDirectories: () => opts.worktreeDirectories?.() ?? [],
       disableViewedRegistration: true,
+      sessionForks: this.sessionForks,
+      forkOwnerID: "agent-manager",
     })
     if (this.diffVirtual) {
       provider.setDiffVirtualProvider(this.diffVirtual)

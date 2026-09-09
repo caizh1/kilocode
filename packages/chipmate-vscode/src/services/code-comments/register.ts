@@ -2,6 +2,35 @@ import path from "node:path"
 import * as vscode from "vscode"
 import type { ChipMateConnectionService } from "../cli-backend"
 import {
+  declarationResultToSourceAnnotationArtifact,
+  DeclarationCommentOrchestrator,
+  resolveDeclarationTarget,
+  resolveDeclarationTargetsInRange,
+  type DeclarationTarget,
+} from "../declaration-comments"
+import {
+  fileHeaderResultToSourceAnnotationArtifact,
+  FileHeaderCommentOrchestrator,
+  meaningfulHeader,
+  resolveFileHeaderTarget,
+  type FileHeaderTarget,
+} from "../file-header-comments"
+import {
+  logicBlockResultToSourceAnnotationArtifact,
+  LogicBlockCommentOrchestrator,
+  resolveLogicBlockTarget,
+} from "../logic-block-comments"
+import {
+  applyCoordinatedSourceAnnotations,
+  primarySourceAnnotationFile,
+  resolveSourceAnnotationDocuments,
+  validateSourceAnnotationSnapshots,
+} from "../source-annotations/apply"
+import { coordinateSourceAnnotationArtifacts } from "../source-annotations/coordinator"
+import { functionResultToSourceAnnotationArtifact } from "../source-annotations/function-artifact-adapter"
+import type { CoordinatedSourceAnnotations, SourceAnnotationArtifact } from "../source-annotations/types"
+import { MAX_WHOLE_FILE_TARGETS, planWholeFileTargets } from "../source-annotations/whole-file"
+import {
   applyCommentProposals,
   applyCommentProposalsForTargets,
   buildCommentedDocument,
@@ -31,11 +60,19 @@ import type {
 
 export const GENERATE_CURRENT_FUNCTION_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForCurrentFunction"
 export const GENERATE_SELECTED_FUNCTION_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForSelectedFunctions"
+export const GENERATE_CURRENT_CODE_TARGET_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForCurrentCodeTarget"
+export const GENERATE_SELECTED_CODE_TARGETS_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForSelectedCodeTargets"
+export const GENERATE_CURRENT_FILE_HEADER_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForCurrentFileHeader"
+export const GENERATE_CURRENT_FILE_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForCurrentFile"
+export const GENERATE_SELECTED_LOGIC_BLOCK_COMMENTS_COMMAND = "chipmate.v2.generateCommentsForSelectedLogicBlock"
 
 const SHOW_DETAILS = "查看详情"
 
 type CommentCommandServices = {
   orchestrator: Pick<CodeCommentOrchestrator, "generate">
+  declarationOrchestrator: Pick<DeclarationCommentOrchestrator, "generate">
+  fileHeaderOrchestrator: Pick<FileHeaderCommentOrchestrator, "generate">
+  logicBlockOrchestrator: Pick<LogicBlockCommentOrchestrator, "generate">
   output: vscode.OutputChannel
   log: (message: string) => void
   status: vscode.StatusBarItem
@@ -64,6 +101,9 @@ export function registerHighConfidenceCodeComments(
   const log = (message: string) => output.appendLine(`[${new Date().toISOString()}] ${message}`)
   const runner = new CodeCommentSessionRunner(connection, log)
   const orchestrator = new CodeCommentOrchestrator(runner, log)
+  const declarationOrchestrator = new DeclarationCommentOrchestrator(runner, log)
+  const fileHeaderOrchestrator = new FileHeaderCommentOrchestrator(runner, log)
+  const logicBlockOrchestrator = new LogicBlockCommentOrchestrator(runner, log)
   const status = vscode.window.createStatusBarItem(
     "chipmate.v2.codeCommentsProgress",
     vscode.StatusBarAlignment.Right,
@@ -72,7 +112,16 @@ export function registerHighConfidenceCodeComments(
   status.name = "ChipMate 注释生成进度"
   status.command = "workbench.action.openNotifications"
   const preview = new CodeCommentPreviewController(undefined, log)
-  const services = { orchestrator, output, log, status, preview }
+  const services = {
+    orchestrator,
+    declarationOrchestrator,
+    fileHeaderOrchestrator,
+    logicBlockOrchestrator,
+    output,
+    log,
+    status,
+    preview,
+  }
   const activity: CommentCommandActivity = { running: false }
 
   context.subscriptions.push(
@@ -97,7 +146,550 @@ export function registerHighConfidenceCodeComments(
         activity,
       ),
     ),
+    vscode.commands.registerCommand(
+      "chipmate.v2.generateCommentsForCurrentCodeTarget",
+      commentCommandHandler(
+        GENERATE_CURRENT_CODE_TARGET_COMMENTS_COMMAND,
+        () => generateCurrentCodeTargetComments(services),
+        services,
+        activity,
+      ),
+    ),
+    vscode.commands.registerCommand(
+      "chipmate.v2.generateCommentsForSelectedCodeTargets",
+      commentCommandHandler(
+        GENERATE_SELECTED_CODE_TARGETS_COMMENTS_COMMAND,
+        () => generateSelectedCodeTargetComments(services),
+        services,
+        activity,
+      ),
+    ),
+    vscode.commands.registerCommand(
+      "chipmate.v2.generateCommentsForCurrentFileHeader",
+      commentCommandHandler(
+        GENERATE_CURRENT_FILE_HEADER_COMMENTS_COMMAND,
+        () => generateCurrentFileHeaderComments(services),
+        services,
+        activity,
+      ),
+    ),
+    vscode.commands.registerCommand(
+      "chipmate.v2.generateCommentsForCurrentFile",
+      commentCommandHandler(
+        GENERATE_CURRENT_FILE_COMMENTS_COMMAND,
+        () => generateCurrentFileComments(services),
+        services,
+        activity,
+      ),
+    ),
+    vscode.commands.registerCommand(
+      "chipmate.v2.generateCommentsForSelectedLogicBlock",
+      commentCommandHandler(
+        GENERATE_SELECTED_LOGIC_BLOCK_COMMENTS_COMMAND,
+        () => generateSelectedLogicBlockComments(services),
+        services,
+        activity,
+      ),
+    ),
   )
+}
+
+type UnifiedCodeTarget =
+  | { workflow: "function"; target: FunctionTarget }
+  | { workflow: "declaration"; target: DeclarationTarget }
+  | { workflow: "file-header"; target: FileHeaderTarget }
+
+type GeneratedSourceAnnotation =
+  | { status: "ready"; artifact: SourceAnnotationArtifact }
+  | { status: "unresolved"; displayName: string; reasons: readonly string[] }
+
+type SourceAnnotationRunSummary = Readonly<{
+  skipped: number
+  remaining: number
+}>
+
+async function generateCurrentCodeTargetComments(input: CommentCommandServices): Promise<void> {
+  const context = activeCodeEditor()
+  if (!context) return
+  const cursorOffset = context.editor.document.offsetAt(context.editor.selection.active)
+  const [functionTarget, declarationTarget] = await Promise.all([
+    resolveFunctionTarget({ ...context.targetInput, cursorOffset }),
+    resolveDeclarationTarget({ ...context.targetInput, cursorOffset }),
+  ])
+  if (declarationTarget) {
+    await generateUnifiedCodeTargets(
+      input,
+      [{ workflow: "declaration", target: declarationTarget }],
+      context.sourceView,
+    )
+    return
+  }
+  if (functionTarget) {
+    await generateCurrentFunctionComments(input)
+    return
+  }
+  void vscode.window.showInformationMessage(
+    "光标不在支持的 C/C++ 函数、struct、union、enum、typedef、全局变量或函数外宏内。",
+  )
+}
+
+async function generateCurrentFileHeaderComments(input: CommentCommandServices): Promise<void> {
+  const context = activeCodeEditor()
+  if (!context) return
+  const target = await resolveFileHeaderTarget(context.targetInput)
+  if (!target) {
+    void vscode.window.showInformationMessage("当前文件为空或无法形成可靠的模块说明锚点。")
+    return
+  }
+  await generateUnifiedCodeTargets(input, [{ workflow: "file-header", target }], context.sourceView)
+}
+
+async function generateCurrentFileComments(input: CommentCommandServices): Promise<void> {
+  const context = activeCodeEditor()
+  if (!context) return
+  const documentLength = context.targetInput.documentText.length
+  const rangeInput = {
+    ...context.targetInput,
+    selectionStartOffset: 0,
+    selectionEndOffset: documentLength,
+  }
+  const [functions, declarations, fileHeader] = await Promise.all([
+    resolveFunctionTargetsInRange(rangeInput),
+    resolveDeclarationTargetsInRange(rangeInput),
+    resolveFileHeaderTarget(context.targetInput),
+  ])
+  const plan = planWholeFileTargets(functions, declarations, MAX_WHOLE_FILE_TARGETS)
+  const targets: UnifiedCodeTarget[] = [
+    ...(fileHeader && (!fileHeader.existingHeader || !meaningfulHeader(fileHeader.existingHeader.text))
+      ? [{ workflow: "file-header" as const, target: fileHeader }]
+      : []),
+    ...plan.selected.map((item): UnifiedCodeTarget => item),
+  ]
+  input.log(
+    `whole-file planned file=${context.targetInput.relativePath} selected=${plan.selected.length} eligible=${plan.eligible} skipped=${plan.skipped} remaining=${plan.remaining} fileHeader=${targets[0]?.workflow === "file-header"}`,
+  )
+  if (targets.length === 0) {
+    void vscode.window.showInformationMessage("当前文件已有结构化说明，没有发现需要补充的受支持源码目标。")
+    return
+  }
+  if (plan.remaining > 0) {
+    void vscode.window.showWarningMessage(
+      `当前文件还有 ${plan.remaining} 个缺失注释目标未进入本轮；本轮按源码顺序处理前 ${MAX_WHOLE_FILE_TARGETS} 个，应用后可再次运行。`,
+    )
+  }
+  await generateUnifiedCodeTargets(input, targets, context.sourceView, {
+    skipped: plan.skipped,
+    remaining: plan.remaining,
+  })
+}
+
+async function generateSelectedLogicBlockComments(input: CommentCommandServices): Promise<void> {
+  const context = activeCodeEditor()
+  if (!context) return
+  if (context.editor.selection.isEmpty) {
+    void vscode.window.showInformationMessage("请先选择当前函数体内的一段完整代码。")
+    return
+  }
+  const document = context.editor.document
+  const target = await resolveLogicBlockTarget({
+    ...context.targetInput,
+    selectionStartOffset: document.offsetAt(context.editor.selection.start),
+    selectionEndOffset: document.offsetAt(context.editor.selection.end),
+  })
+  if (!target) {
+    void vscode.window.showInformationMessage("选区内没有完整、安全且尚未被注释覆盖的函数语句，请扩大选区后重试。")
+    return
+  }
+  await generateLogicBlockTarget(input, target, context.sourceView)
+}
+
+async function generateLogicBlockTarget(
+  input: CommentCommandServices,
+  target: NonNullable<Awaited<ReturnType<typeof resolveLogicBlockTarget>>>,
+  sourceView: CodeCommentSourceViewState,
+): Promise<void> {
+  const model = configuredModelOrReport()
+  if (model instanceof Error) return
+  const result = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "ChipMate 正在理解并核验选中逻辑块",
+      cancellable: true,
+    },
+    async (progress, token) => {
+      progress.report({ message: "启动临时只读 Code 会话…" })
+      return input.logicBlockOrchestrator.generate({ target, model, token })
+    },
+  )
+  if (result.status === "not-needed") {
+    input.log(`logic-block not-needed function=${target.displayName} rounds=${result.rounds}`)
+    void vscode.window.showInformationMessage(`选中逻辑无需额外注释：${result.summary}`)
+    return
+  }
+  if (result.status === "unresolved") {
+    input.log(`logic-block unresolved function=${target.displayName} reasons=${result.reasons.join("；")}`)
+    showDetailsNotification(input, "warning", `未能形成可靠逻辑注释：${result.reasons[0] ?? "证据不足"}`)
+    return
+  }
+  const coordinated = await coordinateSourceAnnotationArtifacts([logicBlockResultToSourceAnnotationArtifact(result)])
+  if (!coordinated.ok) {
+    showDetailsNotification(input, "warning", `无法构建逻辑块注释 Diff：${coordinated.reasons[0]}`)
+    return
+  }
+  await previewAndApplySourceAnnotations(input, coordinated.value, sourceView)
+}
+
+async function generateSelectedCodeTargetComments(input: CommentCommandServices): Promise<void> {
+  const context = activeCodeEditor()
+  if (!context) return
+  if (context.editor.selection.isEmpty) {
+    await generateCurrentCodeTargetComments(input)
+    return
+  }
+  const document = context.editor.document
+  const rangeInput = {
+    ...context.targetInput,
+    selectionStartOffset: document.offsetAt(context.editor.selection.start),
+    selectionEndOffset: document.offsetAt(context.editor.selection.end),
+  }
+  const [functions, declarations] = await Promise.all([
+    resolveFunctionTargetsInRange(rangeInput),
+    resolveDeclarationTargetsInRange(rangeInput),
+  ])
+  const selectionStart = rangeInput.selectionStartOffset
+  const selectionEnd = rangeInput.selectionEndOffset
+  const completeFunctions = functions.filter(
+    (target) => selectionStart <= target.startIndex && selectionEnd >= target.endIndex,
+  )
+  if (selectionShouldUseLogicBlock(functions, declarations, selectionStart, selectionEnd)) {
+    const target = await resolveLogicBlockTarget(rangeInput)
+    if (!target) {
+      void vscode.window.showInformationMessage("选区内没有完整、安全且尚未被注释覆盖的函数语句，请扩大选区后重试。")
+      return
+    }
+    await generateLogicBlockTarget(input, target, context.sourceView)
+    return
+  }
+  if (declarations.length === 0 && completeFunctions.length > 0) {
+    await generateSelectedFunctionComments(input)
+    return
+  }
+  const { functions: selectedFunctions, declarations: selectedDeclarations } = filterOverlappingCodeTargets(
+    functions,
+    declarations,
+    selectionStart,
+    selectionEnd,
+  )
+  const targets: UnifiedCodeTarget[] = [
+    ...selectedFunctions.map((target): UnifiedCodeTarget => ({ workflow: "function", target })),
+    ...selectedDeclarations.map((target): UnifiedCodeTarget => ({ workflow: "declaration", target })),
+  ].sort((left, right) => unifiedTargetStart(left) - unifiedTargetStart(right))
+  if (targets.length === 0) {
+    void vscode.window.showInformationMessage("选区内没有可可靠识别的受支持 C/C++ 函数或声明目标。")
+    return
+  }
+  if (targets.length > MAX_BATCH_COMMENT_TARGETS) {
+    void vscode.window.showWarningMessage(
+      `选区内识别到 ${targets.length} 个源码目标，一次最多处理 ${MAX_BATCH_COMMENT_TARGETS} 个，请缩小选区。`,
+    )
+    return
+  }
+  const selected = await chooseUnifiedTargets(targets)
+  if (!selected?.length) return
+  await generateUnifiedCodeTargets(input, selected, context.sourceView)
+}
+
+export function selectionShouldUseLogicBlock<
+  FunctionRange extends { startIndex: number; endIndex: number },
+  DeclarationRange extends { startIndex: number; endIndex: number },
+>(
+  functions: readonly FunctionRange[],
+  declarations: readonly DeclarationRange[],
+  selectionStart: number,
+  selectionEnd: number,
+): boolean {
+  if (functions.length !== 1) return false
+  const contains = (target: { startIndex: number; endIndex: number }) =>
+    selectionStart <= target.startIndex && selectionEnd >= target.endIndex
+  return !functions.some(contains) && !declarations.some(contains)
+}
+
+async function chooseUnifiedTargets(targets: UnifiedCodeTarget[]): Promise<UnifiedCodeTarget[] | undefined> {
+  if (targets.length === 1) return targets
+  const items = targets.map((item) => ({
+    label: `${unifiedTargetIcon(item)} ${unifiedTargetLabel(item)}`,
+    description: unifiedTargetDescription(item),
+    detail:
+      item.workflow === "file-header"
+        ? item.target.relativePath
+        : `${item.target.relativePath}:${item.target.startLine + 1}-${item.target.endLine + 1}`,
+    picked: true,
+    item,
+  }))
+  const selected = await vscode.window.showQuickPick(items, {
+    title: `选择要生成或修订注释的源码目标（最多 ${MAX_BATCH_COMMENT_TARGETS} 个）`,
+    placeHolder: "函数与声明将分别通过独立流水线生成，并合并为一个 Diff",
+    canPickMany: true,
+    ignoreFocusOut: true,
+  })
+  return selected?.map((entry) => entry.item)
+}
+
+async function generateUnifiedCodeTargets(
+  input: CommentCommandServices,
+  targets: UnifiedCodeTarget[],
+  sourceView: CodeCommentSourceViewState,
+  summary?: SourceAnnotationRunSummary,
+): Promise<void> {
+  const model = configuredModelOrReport()
+  if (model instanceof Error) return
+  const startedAt = Date.now()
+  input.log(
+    `source annotations start targets=${targets.length} functions=${targets.filter((item) => item.workflow === "function").length} declarations=${targets.filter((item) => item.workflow === "declaration").length} fileHeaders=${targets.filter((item) => item.workflow === "file-header").length}`,
+  )
+  const results = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "ChipMate 正在理解并核验源码目标",
+      cancellable: true,
+    },
+    async (progress, token) =>
+      runUnifiedTargets(
+        targets,
+        model,
+        token,
+        (completed) => {
+          progress.report({
+            message: `已完成 ${completed}/${targets.length}`,
+            increment: 100 / targets.length,
+          })
+        },
+        input,
+      ),
+  )
+  const artifacts = results.flatMap((result) => (result.status === "ready" ? [result.artifact] : []))
+  const failed = results.filter(
+    (result): result is Extract<GeneratedSourceAnnotation, { status: "unresolved" }> => result.status === "unresolved",
+  )
+  input.log(
+    `source annotations generated ready=${artifacts.length} failed=${failed.length} elapsedMs=${Date.now() - startedAt}`,
+  )
+  if (artifacts.length === 0) {
+    showDetailsNotification(input, "warning", `未能形成可靠注释：${failed[0]?.reasons[0] ?? "所有候选均失败"}`)
+    return
+  }
+  if (failed.length > 0) {
+    input.log(
+      `source annotations partial failure=${failed.map((item) => `${item.displayName}:${item.reasons.join("；")}`).join(" | ")}`,
+    )
+    void vscode.window
+      .showWarningMessage(
+        `${artifacts.length} 个源码目标已生成可靠候选，${failed.length} 个失败${summary ? `，跳过 ${summary.skipped} 个，剩余 ${summary.remaining} 个` : ""}；将只预览成功候选。`,
+        SHOW_DETAILS,
+      )
+      .then((choice) => {
+        if (choice === SHOW_DETAILS) input.output.show(true)
+      })
+  }
+  const coordinated = await coordinateSourceAnnotationArtifacts(artifacts)
+  if (!coordinated.ok) {
+    showDetailsNotification(input, "warning", `无法合并源码注释：${coordinated.reasons[0]}`)
+    return
+  }
+  if (coordinated.value.files.length !== 1) {
+    showDetailsNotification(input, "warning", "本版本统一预览仅支持单文件；多文件产物已保留但尚未开放预览。")
+    return
+  }
+  await previewAndApplySourceAnnotations(input, coordinated.value, sourceView, summary)
+}
+
+export async function runUnifiedTargets(
+  targets: readonly UnifiedCodeTarget[],
+  model: { providerID: string; modelID: string } | undefined,
+  token: vscode.CancellationToken,
+  report: (completed: number) => void,
+  input: CommentCommandServices,
+): Promise<GeneratedSourceAnnotation[]> {
+  const results = new Array<GeneratedSourceAnnotation>(targets.length)
+  let cursor = 0
+  let completed = 0
+  const worker = async () => {
+    while (true) {
+      const index = cursor
+      cursor += 1
+      const item = targets[index]
+      if (!item) return
+      if (token.isCancellationRequested) throw new CodeCommentCancelledError()
+      try {
+        if (item.workflow === "function") {
+          const result = await input.orchestrator.generate(
+            {
+              targets: [item.target],
+              mode: commentModeForTarget(item.target),
+              model,
+              strategy: PRODUCTION_COMMENT_STRATEGY,
+            },
+            token,
+          )
+          results[index] =
+            result.status === "ready"
+              ? {
+                  status: "ready",
+                  artifact: functionResultToSourceAnnotationArtifact({
+                    target: result.target,
+                    result: result.result,
+                    providerID: result.providerID,
+                    modelID: result.modelID,
+                    rounds: result.rounds,
+                  }),
+                }
+              : { status: "unresolved", displayName: unifiedTargetLabel(item), reasons: result.reasons }
+        } else if (item.workflow === "declaration") {
+          const result = await input.declarationOrchestrator.generate({ target: item.target, model, token })
+          results[index] =
+            result.status === "ready"
+              ? { status: "ready", artifact: declarationResultToSourceAnnotationArtifact(result) }
+              : { status: "unresolved", displayName: item.target.displayName, reasons: result.reasons }
+        } else {
+          const result = await input.fileHeaderOrchestrator.generate({ target: item.target, model, token })
+          results[index] =
+            result.status === "ready"
+              ? { status: "ready", artifact: fileHeaderResultToSourceAnnotationArtifact(result) }
+              : { status: "unresolved", displayName: `${item.target.relativePath} 模块说明`, reasons: result.reasons }
+        }
+      } catch (error) {
+        if (error instanceof CodeCommentCancelledError) throw error
+        if (token.isCancellationRequested) throw new CodeCommentCancelledError()
+        const reason = formatError(error)
+        input.log(`source annotation target failed target=${unifiedTargetLabel(item)} reason=${reason}`)
+        results[index] = { status: "unresolved", displayName: unifiedTargetLabel(item), reasons: [reason] }
+      }
+      completed += 1
+      report(completed)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(BATCH_COMMENT_CONCURRENCY, targets.length) }, worker))
+  return results
+}
+
+async function previewAndApplySourceAnnotations(
+  input: CommentCommandServices,
+  plan: CoordinatedSourceAnnotations,
+  sourceView: CodeCommentSourceViewState,
+  summary?: SourceAnnotationRunSummary,
+): Promise<void> {
+  const file = primarySourceAnnotationFile(plan)
+  if (!file) return
+  showPreviewOpeningStatus(input.status)
+  try {
+    const initial = await validatedSourceAnnotationDocuments(input, plan, "预览")
+    if (!initial) return
+    const accepted = await input.preview.confirmSourceAnnotations(
+      file,
+      file.candidateText,
+      file.artifacts.length,
+      sourceView,
+      () => {
+        input.status.hide()
+        input.log(`source annotations preview opened targets=${file.artifacts.length}`)
+      },
+    )
+    if (!accepted) {
+      input.log(`source annotations preview discarded targets=${file.artifacts.length}`)
+      return
+    }
+    const latest = await validatedSourceAnnotationDocuments(input, plan, "应用")
+    if (!latest) return
+    if (!(await applyCoordinatedSourceAnnotations(plan, latest)))
+      throw new Error("VS Code 拒绝原子应用源码注释 WorkspaceEdit")
+    const proposals = file.artifacts.reduce((count, artifact) => count + artifact.operations.length, 0)
+    input.log(`source annotations applied targets=${file.artifacts.length} proposals=${proposals}`)
+    const document = latest.get(file.uri)
+    if (document) await revealAppliedDocument(input, document)
+    void vscode.window.showInformationMessage(
+      `已为 ${file.artifacts.length} 个源码目标应用 ${proposals} 条高可信注释${summary ? `；本轮跳过 ${summary.skipped} 个，仍有 ${summary.remaining} 个待后续处理` : ""}。`,
+    )
+  } finally {
+    input.status.hide()
+  }
+}
+
+async function validatedSourceAnnotationDocuments(
+  input: Pick<CommentCommandServices, "log">,
+  plan: CoordinatedSourceAnnotations,
+  stage: "预览" | "应用",
+): Promise<ReadonlyMap<string, vscode.TextDocument> | undefined> {
+  const resolution = await resolveSourceAnnotationDocuments(plan)
+  if (resolution.status === "unavailable") {
+    input.log(`source documents unavailable stage=${stage} reason=${resolution.reason}`)
+    void vscode.window.showWarningMessage(`无法${stage}注释：${resolution.reason}。请重新生成。`)
+    return
+  }
+  for (const uri of resolution.reopened) input.log(`source document reopened stage=${stage} uri=${uri}`)
+  const reasons = validateSourceAnnotationSnapshots(plan, resolution.documents)
+  if (reasons.length === 0) return resolution.documents
+  input.log(`source documents stale stage=${stage} reasons=${reasons.join("；")}`)
+  void vscode.window.showWarningMessage(`无法${stage}注释：${reasons.join("；")}。请重新生成。`)
+}
+
+function unifiedTargetLabel(item: UnifiedCodeTarget): string {
+  if (item.workflow === "function") return functionLabel(item.target)
+  if (item.workflow === "declaration") return item.target.displayName
+  return `${item.target.relativePath} 模块说明`
+}
+
+function unifiedTargetStart(item: UnifiedCodeTarget): number {
+  return item.workflow === "file-header" ? -1 : item.target.startIndex
+}
+
+function unifiedTargetIcon(item: UnifiedCodeTarget): string {
+  if (item.workflow === "function") return "$(symbol-method)"
+  if (item.workflow === "declaration") return declarationIcon(item.target.kind)
+  return "$(file-code)"
+}
+
+function unifiedTargetDescription(item: UnifiedCodeTarget): string {
+  if (item.workflow === "function") return "函数注释"
+  if (item.workflow === "declaration") return declarationKindLabel(item.target.kind)
+  return "文件模块说明"
+}
+
+function declarationIcon(kind: DeclarationTarget["kind"]): string {
+  if (kind === "struct" || kind === "union" || kind === "enum" || kind === "typedef") return "$(symbol-struct)"
+  if (kind === "global-variable") return "$(symbol-variable)"
+  return "$(symbol-constant)"
+}
+
+function declarationKindLabel(kind: DeclarationTarget["kind"]): string {
+  if (kind === "global-variable") return "全局变量注释"
+  if (kind === "object-macro" || kind === "function-macro") return "宏注释"
+  return `${kind} 声明注释`
+}
+
+function rangesOverlap(
+  left: { startIndex: number; endIndex: number },
+  right: { startIndex: number; endIndex: number },
+): boolean {
+  return left.startIndex < right.endIndex && right.startIndex < left.endIndex
+}
+
+export function filterOverlappingCodeTargets<
+  FunctionRange extends { startIndex: number; endIndex: number },
+  DeclarationRange extends { startIndex: number; endIndex: number },
+>(
+  functions: readonly FunctionRange[],
+  declarations: readonly DeclarationRange[],
+  selectionStart: number,
+  selectionEnd: number,
+): { functions: FunctionRange[]; declarations: DeclarationRange[] } {
+  const selectedFunctions = functions.filter((target) => {
+    const overlapsDeclaration = declarations.some((declaration) => rangesOverlap(target, declaration))
+    return !overlapsDeclaration || (selectionStart <= target.startIndex && selectionEnd >= target.endIndex)
+  })
+  return {
+    functions: selectedFunctions,
+    declarations: declarations.filter((target) => !selectedFunctions.some((current) => rangesOverlap(current, target))),
+  }
 }
 
 export function commentCommandHandler(
@@ -345,11 +937,21 @@ async function previewAndApplyBatch(
       throw new Error("批量候选未通过非注释 token 完全一致校验")
     }
     const coverageIncomplete = items.filter((item) => item.result.result.quality === "coverage-incomplete")
-    showCoverageIncompleteWarning(input, coverageIncomplete.map((item) => item.result.result))
-    const accepted = await input.preview.confirm(first.target, candidate, items.length, sourceView, () => {
-      input.status.hide()
-      input.log(`preview opened functions=${items.length} coverageIncomplete=${coverageIncomplete.length}`)
-    }, coverageIncomplete.length)
+    showCoverageIncompleteWarning(
+      input,
+      coverageIncomplete.map((item) => item.result.result),
+    )
+    const accepted = await input.preview.confirm(
+      first.target,
+      candidate,
+      items.length,
+      sourceView,
+      () => {
+        input.status.hide()
+        input.log(`preview opened functions=${items.length} coverageIncomplete=${coverageIncomplete.length}`)
+      },
+      coverageIncomplete.length,
+    )
     if (!accepted) {
       input.log(`preview discarded functions=${items.length}`)
       return
@@ -474,10 +1076,17 @@ async function previewAndApply(
     }
     const coverageIncomplete = result.result.quality === "coverage-incomplete" ? [result.result] : []
     showCoverageIncompleteWarning(input, coverageIncomplete)
-    const accepted = await input.preview.confirm(target, candidate, 1, sourceView, () => {
-      input.status.hide()
-      input.log(`preview opened functions=1 coverageIncomplete=${coverageIncomplete.length}`)
-    }, coverageIncomplete.length)
+    const accepted = await input.preview.confirm(
+      target,
+      candidate,
+      1,
+      sourceView,
+      () => {
+        input.status.hide()
+        input.log(`preview opened functions=1 coverageIncomplete=${coverageIncomplete.length}`)
+      },
+      coverageIncomplete.length,
+    )
     if (!accepted) {
       input.log("preview discarded functions=1")
       return

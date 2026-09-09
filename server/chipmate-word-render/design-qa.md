@@ -454,3 +454,14 @@ final result: passed
 - Installed macOS Google Chrome evidence: `/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/10-extension-analytics-trend-1484x1060.jpg` and `/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/11-extension-analytics-trend-1050x1024.jpg`.
 - Both accepted desktop widths have zero root overflow. The chart fills its glass panel, keeps dates and the 30-day total readable, and reports zero Chrome console warnings/errors. No P0, P1 or P2 remains for G12.
 - `npm run check` passes generated-contract validation, typecheck, lint and all 98 package tests. The Chrome E2E project passes all 28 tests; the combined Chrome/Edge command cannot start Edge because Microsoft Edge is not installed on this Mac, so Edge remains `UNVERIFIED` rather than a product failure.
+
+### Server 本地管理员授权 — 2026-09-04
+
+- 范围：管理员导航、直接访问守卫、独立应急登录、管理员查询与确认授权、名单及最后管理员保护、会话失效清除；沿用现有玻璃面板、按钮和正常文档流布局。未提供新的视觉参考图，不宣称完成参考图逐组件比对。
+- 功能自动化：真实安装 Chrome 的 Playwright 项目通过 6 项认证测试，包含伪造前端标记、配置测试、明确授权、失效清除、应急退出和设备授权。无障碍检查及 `1484×1060`、`1440×1024`、`1050×1024` 无横向溢出断言通过；这些结果不代替视觉截图签收。
+- 后端验证：管理员、认证和 LDAP 协议目标测试共 28 项通过；覆盖 v10→v11 空管理员名单迁移、同名不同 GUID、角色独立于市场账号映射、旧 Web／设备凭据撤销、并发撤权、事务内重验授权者及轮询后撤权的发证竞态。构建、类型检查、Lint、生成契约检查通过。
+- 全套测试仍存在 `apps/api/test/sqlite-legacy.test.ts` 中旧 Skill 归档安装用例失败，不能把全套测试标记为通过。扩展生成契约目标单测通过；扩展全量单测命令因范围参数解析扩大，被停止，不作为本轮通过证据。
+- 原生视觉尝试：本机 Google Chrome 原生窗口进入本地隔离测试 Server，完成测试 break-glass 登录，页面读取到管理员管理和 LDAP 配置。测试目录和凭据均为合成数据，未连接真实 AD，未授权真实用户。
+- 阻塞：Chrome 扩展控制返回 `Browser is not available: chrome`；改用原生窗口后，固定尺寸操作遇到剪贴板超时，随后 ScreenCaptureKit 连续返回 `SCStreamErrorDomain -3812`。未取得三种规定视口的有效截图，未保存凭据截图；不使用 Playwright 截图替代。
+- 容器与组件视觉状态：面板材质、确认卡、长 GUID／账号 ID 换行、名单行、按钮状态和三尺寸完整视觉仍为未验证；真实 AD、目标服务器部署与人工效率指标也未验证。
+- 本轮视觉结论：阻塞／未验证；此前各项历史签收不代表本轮管理员页面已经视觉通过。

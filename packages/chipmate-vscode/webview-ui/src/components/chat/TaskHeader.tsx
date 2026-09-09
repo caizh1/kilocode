@@ -8,11 +8,23 @@
  * session activity) and a context window progress bar.
  */
 
-import { Component, For, Show, createMemo, createSignal, createEffect, on, onMount, onCleanup } from "solid-js"
+import {
+  Component,
+  For,
+  Show,
+  createMemo,
+  createSignal,
+  createEffect,
+  on,
+  onMount,
+  onCleanup,
+  type JSX,
+} from "solid-js"
 import { IconButton } from "@chipmate/chipmate-ui/icon-button"
 import { Tooltip } from "@chipmate/chipmate-ui/tooltip"
 import { Icon } from "@chipmate/chipmate-ui/icon"
 import { Checkbox } from "@chipmate/chipmate-ui/checkbox"
+import { Popover } from "@chipmate/chipmate-ui/popover"
 import { useSession } from "../../context/session"
 import { calcTokenUsage, collapseCostBreakdown } from "../../context/session-utils"
 import { useLanguage } from "../../context/language"
@@ -22,25 +34,32 @@ import { ContextProgress } from "./ContextProgress"
 import { TaskUsage } from "./TaskUsage"
 import { TranscriptSearch } from "./TranscriptSearch"
 import { useTranscriptSearch } from "../../context/transcript-search"
-import { hasModelUsage, tokenSummary } from "../../context/model-usage"
+import { useManualCompaction } from "../../context/manual-compaction"
+import { ConversationNavigator } from "./ConversationNavigator"
+import type { ConversationNavigationMode } from "./conversation-navigation"
+import { formatCNY, formatUSD, hasModelUsage, tokenSummary, usageBilling } from "../../context/model-usage"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
 import { target as todoTarget } from "../../context/todo-revert"
 import type { Part, TodoItem, ExtensionMessage } from "../../types/messages"
 
 interface TaskHeaderProps {
   readonly?: boolean
+  navigation?: boolean
 }
+
+const ConversationNavigatorTrigger: Component<JSX.ButtonHTMLAttributes<HTMLButtonElement>> = (props) => (
+  <button {...props} data-slot="conversation-navigator-trigger" />
+)
 
 export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
   const search = useTranscriptSearch()
+  const manualCompaction = useManualCompaction()
 
   const title = createMemo(() => session.currentSession()?.title ?? language.t("command.session.new"))
   const canRename = createMemo(() => !props.readonly && !!session.currentSession())
   const hasMessages = createMemo(() => session.messages().length > 0)
-  const busy = createMemo(() => session.status() === "busy")
-  const canCompact = createMemo(() => !busy() && session.visibleMessages().length > 0 && !!session.selected())
 
   const fmt = (n: number) => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }).format(n)
 
@@ -88,6 +107,26 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
 
   const vscode = useVSCode()
   const [expanded, setExpanded] = createSignal(true)
+  const [navigationMode, setNavigationMode] = createSignal<ConversationNavigationMode>("closed")
+  const [selectedNavigationMessageID, setSelectedNavigationMessageID] = createSignal<string>()
+  let restorePromptFrame = 0
+  let restoreNavigationTriggerFrame = 0
+  let triggerRequestedClose = false
+
+  const compactCost = createMemo(() => {
+    const totals = session.modelUsage()?.totals
+    if (!totals) return cost()
+    const billing = usageBilling(totals)
+    const values: string[] = []
+    if (billing.settledSteps > 0) values.push(formatCNY(billing.amountCNY, language.locale()))
+    if (billing.otherCostUSD > 0) values.push(formatUSD(billing.otherCostUSD, language.locale()))
+    if (billing.pendingSteps > 0) values.push(language.t("context.usage.billing.pending"))
+    if (billing.unavailableSteps > 0) values.push(language.t("context.usage.billing.unavailable"))
+    return values.join(" · ") || undefined
+  })
+  const compactCostTooltip = createMemo(() =>
+    session.modelUsage() ? <span>{language.t("context.usage.sessionCost")}</span> : costTooltip(),
+  )
 
   // Read initial value from VS Code settings
   onMount(() => vscode.postMessage({ type: "requestTimelineSetting" }))
@@ -104,9 +143,101 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   // and it also wouldn't exist anymore to react to a request to close it.
   // TaskHeader is mounted the whole time there's an active chat, so it's
   // the right place to react to the external toggle request.
-  const toggleSearch = () => (search.active() ? search.closeSearch() : search.setActive(true))
-  window.addEventListener("focusTranscriptSearch", toggleSearch)
-  onCleanup(() => window.removeEventListener("focusTranscriptSearch", toggleSearch))
+  const resetSearch = () => {
+    search.setQuery("")
+    search.setCount(0)
+    search.setIndex(0)
+  }
+  const restorePromptFocus = () => {
+    if (restorePromptFrame) cancelAnimationFrame(restorePromptFrame)
+    restorePromptFrame = requestAnimationFrame(() => {
+      restorePromptFrame = 0
+      window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } }))
+    })
+  }
+  const closeNavigation = (restoreFocus = true) => {
+    const wasSearch = search.active()
+    setNavigationMode("closed")
+    if (wasSearch && restoreFocus) search.closeSearch()
+    else search.setActive(false)
+    if (!wasSearch && restoreFocus) restorePromptFocus()
+    resetSearch()
+  }
+  const selectNavigationMode = (mode: Exclude<ConversationNavigationMode, "closed">) => {
+    setNavigationMode(mode)
+    search.setActive(mode === "search")
+  }
+  const openSearch = () => {
+    if (props.navigation === false) {
+      if (search.active()) search.closeSearch()
+      else search.setActive(true)
+      return
+    }
+    if (navigationMode() === "search") {
+      closeNavigation()
+      return
+    }
+    selectNavigationMode("search")
+  }
+  window.addEventListener("focusTranscriptSearch", openSearch)
+  onCleanup(() => window.removeEventListener("focusTranscriptSearch", openSearch))
+
+  const closeNavigationOnEscape = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || navigationMode() === "closed") return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    closeNavigation()
+  }
+  window.addEventListener("keydown", closeNavigationOnEscape, { capture: true })
+  onCleanup(() => window.removeEventListener("keydown", closeNavigationOnEscape, { capture: true }))
+
+  const changeNavigationOpen = (open: boolean) => {
+    if (open) {
+      if (navigationMode() === "closed") selectNavigationMode("inputs")
+      return
+    }
+    if (navigationMode() !== "closed") closeNavigation(false)
+    if (!triggerRequestedClose) return
+    triggerRequestedClose = false
+    if (restoreNavigationTriggerFrame) cancelAnimationFrame(restoreNavigationTriggerFrame)
+    restoreNavigationTriggerFrame = requestAnimationFrame(() => {
+      restoreNavigationTriggerFrame = 0
+      document.querySelector<HTMLElement>('[data-slot="conversation-navigator-trigger"]')?.focus()
+    })
+  }
+
+  createEffect(() => {
+    if (props.navigation === false || navigationMode() !== "inputs") return
+    if (!session.hasOlderMessages() || session.loadingOlderMessages()) return
+    session.loadOlderMessages()
+  })
+
+  createEffect(
+    on(
+      session.currentSessionID,
+      () => {
+        setNavigationMode("closed")
+        setSelectedNavigationMessageID(undefined)
+        search.setActive(false)
+        resetSearch()
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => props.navigation !== false,
+      (eligible) => {
+        if (eligible) return
+        setNavigationMode("closed")
+        setSelectedNavigationMessageID(undefined)
+        search.setActive(false)
+        resetSearch()
+      },
+      { defer: true },
+    ),
+  )
 
   // Whenever search closes via an explicit user action — the header toggle
   // button, the command palette toggle above, the search bar's own "X", or
@@ -121,11 +252,16 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     on(
       () => search.closeSignal(),
       () => {
-        window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } }))
+        restorePromptFocus()
       },
       { defer: true },
     ),
   )
+
+  onCleanup(() => {
+    if (restorePromptFrame) cancelAnimationFrame(restorePromptFrame)
+    if (restoreNavigationTriggerFrame) cancelAnimationFrame(restoreNavigationTriggerFrame)
+  })
 
   const toggle = () => {
     const next = !expanded()
@@ -186,7 +322,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
 
   return (
     <Show when={hasMessages()}>
-      <div data-component="task-header">
+      <div data-component="task-header" data-qa-navigation-compact={props.navigation !== false ? "" : undefined}>
         <div data-slot="task-header-title">
           <Show
             when={!renaming()}
@@ -219,9 +355,9 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
           </Show>
         </div>
         <div data-slot="task-header-stats">
-          <Show when={cost()}>
+          <Show when={(!expanded() || !hasTimeline()) && compactCost()}>
             {(c) => (
-              <Tooltip value={costTooltip()} placement="bottom">
+              <Tooltip value={compactCostTooltip()} placement="bottom">
                 <span>{c()}</span>
               </Tooltip>
             )}
@@ -242,25 +378,68 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                 icon="compress"
                 size="small"
                 variant="ghost"
-                disabled={!canCompact()}
-                onClick={() => session.compact()}
+                disabled={!manualCompaction.available()}
+                onClick={manualCompaction.request}
                 aria-label={language.t("command.session.compact")}
               />
             </Tooltip>
           </Show>
           <Show when={hasMessages()}>
-            <Tooltip value={language.t("chat.search.toggle")} placement="bottom">
-              <IconButton
-                icon="magnifying-glass"
-                size="small"
-                variant="ghost"
-                class="task-header-search-toggle"
-                data-active={search.active() ? "" : undefined}
-                onClick={toggleSearch}
-                aria-label={language.t("chat.search.toggle")}
-                aria-pressed={search.active()}
-              />
-            </Tooltip>
+            <Show when={props.navigation !== false}>
+              <Popover
+                placement="bottom-end"
+                gutter={6}
+                slide
+                fitViewport
+                overflowPadding={8}
+                open={navigationMode() !== "closed"}
+                onOpenChange={changeNavigationOpen}
+                modal={false}
+                contentLabel={language.t("chat.navigation.title")}
+                class={`conversation-navigator-popover conversation-navigator-popover--${navigationMode()}`}
+                triggerAs={ConversationNavigatorTrigger}
+                triggerProps={{
+                  type: "button",
+                  "aria-label": language.t("chat.navigation.title"),
+                  onClick: () => {
+                    triggerRequestedClose = navigationMode() !== "closed"
+                  },
+                }}
+                trigger={
+                  <>
+                    <Icon name="checklist" size="small" />
+                    <span>{language.t("chat.navigation.title")}</span>
+                    <Icon
+                      name="chevron-down"
+                      size="small"
+                      style={navigationMode() !== "closed" ? { transform: "rotate(180deg)" } : undefined}
+                    />
+                  </>
+                }
+              >
+                <ConversationNavigator
+                  mode={navigationMode() as Exclude<ConversationNavigationMode, "closed">}
+                  selectedMessageID={selectedNavigationMessageID()}
+                  onSelect={setSelectedNavigationMessageID}
+                  onModeChange={selectNavigationMode}
+                  onClose={closeNavigation}
+                />
+              </Popover>
+            </Show>
+            <Show when={props.navigation === false}>
+              <Tooltip value={language.t("chat.search.toggle")} placement="bottom">
+                <IconButton
+                  icon="magnifying-glass"
+                  size="small"
+                  variant="ghost"
+                  class="task-header-search-toggle"
+                  data-active={search.active() ? "" : undefined}
+                  onClick={openSearch}
+                  aria-label={language.t("chat.search.toggle")}
+                  aria-pressed={search.active()}
+                />
+              </Tooltip>
+            </Show>
             <button
               data-slot="task-header-expand"
               onClick={toggle}
@@ -272,13 +451,8 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
           </Show>
         </div>
       </div>
-      {/* Standalone search bar, directly under the header, so it has room for
-          the VS Code–style inline options and doesn't require the timeline
-          to be expanded. */}
-      <Show when={search.active()}>
-        <div data-component="task-header-search">
-          <TranscriptSearch />
-        </div>
+      <Show when={props.navigation === false && search.active()}>
+        <TranscriptSearch />
       </Show>
       {/* Expanded graph section: timeline + context bar + token breakdown */}
       <Show when={expanded() && hasTimeline()}>
@@ -291,7 +465,10 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
         </div>
       </Show>
       <Show when={hasTodos()}>
-        <div data-component="task-header-todos">
+        <div
+          data-component="task-header-todos"
+          data-qa-navigation-compact={props.navigation !== false ? "" : undefined}
+        >
           <button
             data-slot="task-header-todos-trigger"
             onClick={() => setTodosOpen((v) => !v)}

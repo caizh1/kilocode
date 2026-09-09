@@ -504,7 +504,7 @@ export const RuntimeInvalidUrlNarrow: Story = {
             checkedAt: "2026-07-20T08:05:02.000Z",
             issue: {
               summary:
-                "New API 地址格式无效，请检查 NEW_API_BASE_URL 是否包含 http:// 或 https://，并移除多余引号、空格。",
+                "ChipMate Server 地址格式无效，请检查市场 baseUrl 是否包含 http:// 或 https://，并移除多余引号、空格。",
               status: 502,
               code: "new-api-error",
               reason: "invalid-url",

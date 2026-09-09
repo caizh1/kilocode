@@ -43,6 +43,15 @@ describe("cloud session preview handler", () => {
         cloudSessionId: "cloud-session",
         error: "Select a model before sending",
       },
+      {
+        type: "sendMessageFailed",
+        error: "Select a model before sending",
+        text: "Continue",
+        sessionID: "cloud:cloud-session",
+        messageID: undefined,
+        files: undefined,
+        review: undefined,
+      },
     ])
   })
 
@@ -98,9 +107,62 @@ describe("cloud session preview handler", () => {
           cloudSessionId: "cloud-session",
           error: "The operation timed out",
         },
+        {
+          type: "sendMessageFailed",
+          error: "The operation timed out",
+          text: "Continue",
+          sessionID: "cloud:cloud-session",
+          messageID: undefined,
+          files: undefined,
+          review: undefined,
+        },
       ])
     } finally {
       AbortSignal.timeout = timeout
     }
+  })
+
+  it("returns an accepted terminal event after import and backend submission", async () => {
+    const sent: unknown[] = []
+    const value = context(sent) as unknown as {
+      client: {
+        chipmate: { cloud: { session: { import: () => Promise<{ data: unknown }> } } }
+        session: { promptAsync: () => Promise<Record<string, never>> }
+      }
+    }
+    value.client.chipmate.cloud.session.import = async () => ({
+      data: {
+        id: "local-session",
+        slug: "local-session",
+        title: "Imported",
+        directory: "/repo",
+        time: { created: Date.now(), updated: Date.now() },
+      },
+    })
+    value.client.session = { promptAsync: async () => ({}) }
+
+    await handleImportAndSend(
+      value as unknown as CloudSessionContext,
+      "cloud-session",
+      "Continue",
+      "message-1",
+      "openai",
+      "gpt-4.1",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      7,
+    )
+
+    expect(sent).toContainEqual({
+      type: "sendMessageAccepted",
+      messageID: "message-1",
+      sessionID: "local-session",
+      draftID: "cloud:cloud-session",
+      revision: 7,
+    })
   })
 })

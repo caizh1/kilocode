@@ -52,7 +52,7 @@ export class SessionTerminalManager {
       }),
       host.onActiveTerminalChanged((terminal) => {
         const managed = terminal ? this.isManaged(terminal) : false
-        void host.setContext("chipmate.v2.agentTerminalFocus", managed)
+        void host.setContext("chipmate.v2.agentManagerTerminalFocus", managed)
       }),
     )
   }
@@ -147,7 +147,7 @@ export class SessionTerminalManager {
   }
 
   dispose(): void {
-    void this.host.setContext("chipmate.v2.agentTerminalFocus", false)
+    void this.host.setContext("chipmate.v2.agentManagerTerminalFocus", false)
     for (const entry of this.terminals.values()) entry.terminal.dispose()
     this.terminals.clear()
     for (const d of this.disposables) d.dispose()
@@ -163,7 +163,7 @@ export class SessionTerminalManager {
   private updateContextKey(): void {
     const active = this.host.activeTerminal()
     const managed = active ? this.isManaged(active) : false
-    void this.host.setContext("chipmate.v2.agentTerminalFocus", managed)
+    void this.host.setContext("chipmate.v2.agentManagerTerminalFocus", managed)
   }
 
   private showOrCreate(sessionId: string, cwd: string, name: string): void {

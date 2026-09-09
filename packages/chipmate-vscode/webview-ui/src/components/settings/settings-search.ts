@@ -84,6 +84,12 @@ export const fields: readonly SettingSearchField[] = [
   field("indexing", "settings.indexing.tuning.embeddingBatchSize", ["indexing.embeddingBatchSize"], ""),
   field("indexing", "settings.indexing.tuning.scannerMaxBatchRetries", ["indexing.scannerMaxBatchRetries"], ""),
 
+  field("patentCenter", "settings.patentCenter.server.title", ["patentRadar.serverBaseUrl", "patent server", "专利服务器"]),
+  field("patentCenter", "settings.patentCenter.enabled.title", ["patentRadar.enabled", "自动扫描", "专利雷达"]),
+  field("patentCenter", "settings.patentCenter.schedule.title", ["patentRadar.scheduleDays", "扫描周期"]),
+  field("patentCenter", "settings.patentCenter.analysisModel.title", ["patentRadar.analysisModel", "Provider", "分析模型"]),
+  field("patentCenter", "settings.patentCenter.snapshot.title", ["patentRadar.uploadFullSnapshot", "源码上传"]),
+
   field("checkpoints", "settings.checkpoints.enable.title", ["snapshot", "checkpoints.enabled"]),
 
   field("agentBehaviour", "settings.agentBehaviour.defaultAgent.title", ["default_agent", "default agent"]),

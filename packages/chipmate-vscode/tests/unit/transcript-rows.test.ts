@@ -18,9 +18,26 @@ const assistant = (id: string, parentID: string, opts: Partial<Message> = {}): M
   ...opts,
 })
 const part = (id: string, messageID: string): Part => ({ id, messageID, type: "text", text: id })
+const finish = (id: string, messageID: string, ttftMs: number, output = 80, elapsed = 1_000): Part => ({
+  id,
+  messageID,
+  type: "step-finish",
+  metrics: { generation: (output * 1_000) / (elapsed - ttftMs), ttftMs, source: "computed" },
+  tokens: { input: 20, output, reasoning: 0, cache: { read: 0, write: 0 } },
+  time: { start: 0, end: elapsed, elapsed },
+})
 const lookup = (values: Record<string, Part[]>) => (id: string) => values[id] ?? []
 
 describe("transcriptRows", () => {
+  it("停止后没有模型摘要也保留普通 Agent 的按轮审阅入口", () => {
+    const u1 = user("u1")
+    const a1 = assistant("a1", "u1", { error: { name: "MessageAbortedError" } })
+    const messages = [u1, a1]
+    const rows = transcriptRows(messageTurns(messages), lookup({}), { messages, turnChanges: true })
+    expect(rows.filter((row) => row.type === "diff").map((row) => row.message.id)).toEqual(["u1"])
+    expect(transcriptRows(messageTurns(messages), lookup({}), { messages }).some((row) => row.type === "diff")).toBe(false)
+  })
+
   it("shows a completed duration only below the final assistant chunk", () => {
     const u1 = user("u1", { time: { created: 1_000 } })
     const a1 = assistant("a1", "u1", { finish: "stop", time: { created: 2_000, completed: 159_000 } })
@@ -53,6 +70,81 @@ describe("transcriptRows", () => {
       [158_000, "Ultra"],
       [undefined, undefined],
     ])
+  })
+
+  it("attaches response performance only to the latest successful completed turn", () => {
+    const u1 = user("u1", { time: { created: 1_000 } })
+    const a1 = assistant("a1", "u1", { finish: "stop", time: { created: 1_100, completed: 2_000 } })
+    const u2 = user("u2", { time: { created: 3_000 } })
+    const a2 = assistant("a2", "u2", { finish: "stop", time: { created: 3_100, completed: 4_000 } })
+    const values = {
+      a1: [part("p1", "a1"), finish("f1", "a1", 200)],
+      a2: [part("p2", "a2"), finish("f2", "a2", 400)],
+    }
+    const rows = transcriptRows(messageTurns([u1, a1, u2, a2]), lookup(values), {
+      messages: [u1, a1, u2, a2],
+    }).filter((row) => row.type === "assistant")
+
+    expect(rows.find((row) => row.message.id === "a1")?.performance).toBeUndefined()
+    expect(rows.find((row) => row.message.id === "a2")?.performance).toEqual({
+      generation: (80 * 1_000) / 600,
+      ttftMs: 400,
+      source: "computed",
+    })
+    expect(rows.find((row) => row.message.id === "a2")?.completionElapsed).toBe(1_000)
+  })
+
+  it("keeps the previous performance while a newer turn is live, failed, or cancelled", () => {
+    const u1 = user("u1", { time: { created: 1_000 } })
+    const a1 = assistant("a1", "u1", { finish: "stop", time: { created: 1_100, completed: 2_000 } })
+    const u2 = user("u2", { time: { created: 3_000 } })
+    const live = assistant("a2", "u2", { time: { created: 3_100 } })
+    const failed = assistant("a3", "u2", {
+      finish: "error",
+      error: { name: "ProviderError" },
+      time: { created: 3_200, completed: 4_000 },
+    })
+    const values = {
+      a1: [part("p1", "a1"), finish("f1", "a1", 250)],
+      a2: [part("p2", "a2"), finish("f2", "a2", 100)],
+      a3: [part("p3", "a3"), finish("f3", "a3", 100)],
+    }
+
+    for (const tail of [[live], [failed], [assistant("a4", "u2", { error: { name: "MessageAbortedError" } })]]) {
+      const messages = [u1, a1, u2, ...tail]
+      const rows = transcriptRows(messageTurns(messages), lookup(values), { messages }).filter(
+        (row) => row.type === "assistant",
+      )
+      expect(rows.find((row) => row.message.id === "a1")?.performance?.ttftMs).toBe(250)
+      expect(rows.filter((row) => row.message.id !== "a1").every((row) => !row.performance)).toBe(true)
+    }
+  })
+
+  it("does not carry response performance across session transcript inputs", () => {
+    const u1 = user("u1", { time: { created: 1_000 } })
+    const a1 = assistant("a1", "u1", { finish: "stop", time: { created: 1_100, completed: 2_000 } })
+    const first = transcriptRows(messageTurns([u1, a1]), lookup({ a1: [part("p1", "a1"), finish("f1", "a1", 300)] }), {
+      messages: [u1, a1],
+    })
+    const otherUser = user("u9", { sessionID: "other", time: { created: 3_000 } })
+    const other = transcriptRows(messageTurns([otherUser]), lookup({}), { messages: [otherUser] }, first)
+
+    expect(first.some((row) => row.type === "assistant" && row.performance?.ttftMs === 300)).toBe(true)
+    expect(other.some((row) => row.type === "assistant" && row.performance)).toBe(false)
+  })
+
+  it("renders one fork action but uses the final assistant record as its inclusive boundary", () => {
+    const u1 = user("u1")
+    const prose = assistant("a1", "u1")
+    const terminal = assistant("a2", "u1", { finish: "stop" })
+    const rows = transcriptRows(messageTurns([u1, prose, terminal]), lookup({ a1: [part("p1", "a1")] }))
+    const assistantRows = rows.filter((row) => row.type === "assistant")
+
+    expect(assistantRows.map((row) => row.forkAfterMessageID)).toEqual(["a2", undefined])
+    const live = transcriptRows(messageTurns([u1, prose, terminal]), lookup({ a1: [part("p1", "a1")] }), {
+      live: new Set(["u1"]),
+    })
+    expect(live.filter((row) => row.type === "assistant").every((row) => !row.forkAfterMessageID)).toBe(true)
   })
 
   it("keeps a resumed compaction reply tied to its original submission time", () => {
@@ -228,6 +320,127 @@ describe("transcriptRows", () => {
 
     expect(rows.map((row) => row.type)).toEqual(["error"])
     expect(rows.at(-1)).toMatchObject({ message: failed, error: failed.error })
+  })
+
+  it("renders one durable compaction row for every lifecycle state", () => {
+    const states = ["running", "succeeded", "failed", "interrupted"] as const
+    const messages = states.map((state, index) => user(`u${index}`, { time: { created: index + 1 } }))
+    const values = Object.fromEntries(
+      states.map((state, index) => {
+        const id = `u${index}`
+        return [
+          id,
+          [
+            { id: `compact-${id}`, messageID: id, type: "compaction", auto: index % 2 === 0 },
+            {
+              id: `status-${id}`,
+              messageID: id,
+              type: "text",
+              text: "",
+              synthetic: true,
+              metadata: {
+                "chipmate.compaction": {
+                  state,
+                  source: index % 2 === 0 ? "auto" : "manual",
+                  startedAt: 1_000 + index,
+                  ...(state === "running" ? {} : { completedAt: 2_000 + index }),
+                },
+              },
+            },
+          ] satisfies Part[],
+        ]
+      }),
+    )
+
+    const rows = transcriptRows(
+      messageTurns(messages, undefined, (message) => values[message.id] ?? []),
+      lookup(values),
+    )
+
+    expect(rows).toHaveLength(4)
+    expect(rows.map((row) => row.type)).toEqual(["compaction", "compaction", "compaction", "compaction"])
+    expect(rows.map((row) => (row.type === "compaction" ? [row.status.state, row.status.source] : undefined))).toEqual([
+      ["running", "auto"],
+      ["succeeded", "manual"],
+      ["failed", "auto"],
+      ["interrupted", "manual"],
+    ])
+  })
+
+  it("renders the compaction status after the triggering context error", () => {
+    const compacted = user("u1", {
+      parts: [
+        { id: "compact", messageID: "u1", type: "compaction", auto: true },
+        {
+          id: "status",
+          messageID: "u1",
+          type: "text",
+          text: "",
+          synthetic: true,
+          metadata: {
+            "chipmate.compaction": {
+              state: "running",
+              source: "auto",
+              startedAt: 1_000,
+            },
+          },
+        },
+      ],
+    })
+    const failed = assistant("a1", "u1", {
+      error: { name: "ContextOverflowError", data: { message: "maximum context length" } },
+    })
+    const rows = transcriptRows(messageTurns([compacted, failed]), lookup({ u1: compacted.parts ?? [] }))
+
+    expect(rows.map((row) => row.type)).toEqual(["assistant", "error", "compaction"])
+    expect(rows.at(-1)).toMatchObject({ type: "compaction", status: { state: "running", source: "auto" } })
+  })
+
+  it("keeps every compaction lifecycle state at the end of its turn without reordering QA rows", () => {
+    const states = ["running", "succeeded", "failed", "interrupted"] as const
+
+    for (const [index, state] of states.entries()) {
+      const id = `u${index}`
+      const compacted = user(id, {
+        summary: { diffs: [{ file: `${id}.ts` }] },
+        parts: [
+          { id: `compact-${id}`, messageID: id, type: "compaction", auto: index % 2 === 0 },
+          {
+            id: `status-${id}`,
+            messageID: id,
+            type: "text",
+            text: "",
+            synthetic: true,
+            metadata: {
+              "chipmate.compaction": {
+                state,
+                source: index % 2 === 0 ? "auto" : "manual",
+                startedAt: 1_000,
+                ...(state === "running" ? {} : { completedAt: 2_000 }),
+              },
+            },
+          },
+        ],
+      })
+      const answer = assistant(`a${index}`, id)
+      const failed = assistant(`e${index}`, id, { error: { name: "ProviderError" } })
+      const rows = transcriptRows(
+        messageTurns([compacted, answer, failed]),
+        lookup({ [id]: compacted.parts ?? [], [answer.id]: [part(`p${index}`, answer.id)] }),
+      )
+
+      expect(rows.map((row) => row.type)).toEqual(["assistant", "assistant", "diff", "error", "compaction"])
+      expect(rows.at(-1)).toMatchObject({ type: "compaction", status: { state } })
+    }
+  })
+
+  it("does not change ordinary QA transcript ordering", () => {
+    const u1 = user("u1", { summary: { diffs: [{ file: "a.ts" }] } })
+    const answer = assistant("a1", "u1")
+    const failed = assistant("a2", "u1", { error: { name: "ProviderError" } })
+    const rows = transcriptRows(messageTurns([u1, answer, failed]), lookup({ a1: [part("p1", "a1")] }))
+
+    expect(rows.map((row) => row.type)).toEqual(["user", "assistant", "assistant", "diff", "error"])
   })
 
   it("replaces only rows whose data or metadata changed", () => {

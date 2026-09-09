@@ -4,7 +4,16 @@ import { zod as toZod } from "@opencode-ai/core/effect-zod"
 import z from "zod"
 
 export const chipmateSessionFork = fn(
-  z.object({ sessionID: toZod(SessionID), messageID: toZod(MessageID).optional() }),
+  z
+    .object({
+      sessionID: toZod(SessionID),
+      messageID: toZod(MessageID).optional(),
+      afterMessageID: toZod(MessageID).optional(),
+      operationID: z.string().uuid().optional(),
+    })
+    .refine((input) => !(input.messageID && input.afterMessageID), {
+      message: "messageID 与 afterMessageID 不能同时提供",
+    }),
   async (input) => {
     const [{ AppRuntime }, { Session }] = await Promise.all([
       import("@/effect/app-runtime"),

@@ -83,8 +83,6 @@ PARTIAL, NOT_RUN.
 | S11 | Mermaid PNG | TODO | TODO | Expected .mmd/.png/diagnostics artifact |
 | S12 | Mermaid inserted into Word | TODO | TODO | Expected new Word artifact with figure |
 | S13 | Source-backed detail design | TODO | TODO | Expected evidence, diagrams, Word output, quality report |
-| S14 | Agent Terminal open | TODO | TODO | Expected default-off prompt or enabled terminal open |
-| S15 | Agent Terminal dangerous command | TODO | TODO | Expected explicit confirmation requirement |
 | S16 | Qwen direct autocomplete | TODO | TODO | Expected provider still registers and diagnostics/log command works |
 
 After filling the S1-S16 table, run the runtime smoke intake verifier and

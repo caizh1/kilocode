@@ -424,27 +424,31 @@ describe("internal offline env", () => {
     expect(env).toEqual({
       CHIPMATE_INTERNAL_OFFLINE: "1",
       CHIPMATE_DISABLE_MODELS_FETCH: "1",
-      CHIPMATE_CONFIG_CONTENT: expect.any(String),
+      CHIPMATE_INTERNAL_PROVIDER_DEFAULTS: expect.any(String),
     })
-    expect(JSON.parse(env.CHIPMATE_CONFIG_CONTENT)).toMatchObject({
-      model: "chipmate/vendor/deepseek",
+    expect(JSON.parse(env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS)).toMatchObject({
       provider: { chipmate: { options: { baseURL: "https://example.com/v1" } } },
     })
+    expect(JSON.parse(env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS)).not.toHaveProperty("model")
   })
 
-  it("replaces inherited config content with the controlled internal provider config", () => {
+  it("keeps explicit config content separate and replaces inherited internal provider defaults", () => {
     const inherited = resolveManagedServerEnv(
-      { CHIPMATE_CONFIG_CONTENT: JSON.stringify({ model: "external/forged" }) },
+      {
+        CHIPMATE_CONFIG_CONTENT: JSON.stringify({ model: "external/forged" }),
+        CHIPMATE_INTERNAL_PROVIDER_DEFAULTS: JSON.stringify({ provider: { forged: {} } }),
+      },
       "/global-storage/v2",
     )
     const defaults = internalOfflineProviderDefaults(true, "https://example.com/v1", "vendor/deepseek")
     const env = { ...inherited, ...internalOfflineEnv(true, defaults) }
 
-    expect(JSON.parse(env.CHIPMATE_CONFIG_CONTENT!)).toMatchObject({
-      model: "chipmate/vendor/deepseek",
+    expect(env.CHIPMATE_CONFIG_CONTENT).toBeUndefined()
+    expect(JSON.parse(env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS!)).toMatchObject({
       provider: { chipmate: { options: { baseURL: "https://example.com/v1" } } },
     })
-    expect(env.CHIPMATE_CONFIG_CONTENT).not.toContain("external/forged")
+    expect(JSON.parse(env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS!)).not.toHaveProperty("model")
+    expect(env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS).not.toContain("forged")
   })
 })
 

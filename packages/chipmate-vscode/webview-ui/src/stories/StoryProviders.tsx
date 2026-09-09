@@ -12,6 +12,7 @@
 
 import { createSignal, createMemo, type ParentComponent } from "solid-js"
 import { VSCodeProvider } from "../context/vscode"
+import { SessionSurfaceProvider } from "../context/session-surface"
 import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
 import { ProviderContext } from "../context/provider"
@@ -38,6 +39,7 @@ import { ChipMateEmbeddingModelsProvider } from "../context/chipmate-embedding-m
 import { ImageModelsProvider } from "../context/image-models"
 import { MemoryProvider } from "../context/memory"
 import { TranscriptSearchProvider } from "../context/transcript-search"
+import { DeepSeekHarnessContext, type DeepSeekHarnessContextValue } from "../context/deepseek-harness"
 import { dict as uiEn } from "@chipmate/chipmate-ui/i18n/en"
 import { dict as uiZh } from "@chipmate/chipmate-ui/i18n/zh"
 import { dict as uiZht } from "@chipmate/chipmate-ui/i18n/zht"
@@ -153,6 +155,33 @@ export const defaultMockData = {
 
 function noop() {}
 
+const inactiveDeepSeekHarness: DeepSeekHarnessContextValue = {
+  active: () => false,
+  snapshot: () => ({
+    state: "stopped",
+    active: false,
+    sessions: [],
+    models: [],
+    providerOptions: [],
+    selectionState: "checking",
+    connectionGeneration: 0,
+    running: false,
+  }),
+  conversation: () => undefined,
+  operationError: () => undefined,
+  pending: () => [],
+  readyForInput: () => false,
+  eligible: () => [],
+  selectedModel: () => undefined,
+  activate: noop,
+  deactivate: noop,
+  send: async () => undefined,
+  cancel: async () => undefined,
+  selectModel: async () => undefined,
+  selectReasoningEffort: async () => undefined,
+  post: noop,
+}
+
 function mockNotificationsValue(items: ChipMateNotification[] = []) {
   return {
     notifications: () => items,
@@ -244,6 +273,7 @@ export function mockSessionValue(overrides?: {
     selected: () => ({ providerID: "chipmate", modelID: "anthropic/claude-sonnet-4-6" }),
     selectModel: noop,
     hasModelOverride: () => false,
+    hasSessionModelOverride: () => false,
     clearModelOverride: noop,
     costBreakdown: () => [],
     contextUsage: () => undefined,
@@ -379,6 +409,7 @@ const ConfigWrapper: ParentComponent<{
       features,
       loading: () => false,
       isDirty: dirty,
+      appearanceOnly: () => false,
       saving: () => props.saving ?? pending(),
       canSave: () => true,
       saveError: () => props.saveError ?? null,
@@ -470,80 +501,98 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
   }
 
   return (
-    <VSCodeProvider>
-      <ServerProvider>
-        <FeedbackProvider>
-          <ConfigWrapper
-            config={props.config}
-            features={props.features}
-            globalConfig={props.globalConfig}
-            projectConfig={props.projectConfig}
-            settings={props.settings}
-            dirty={props.dirty}
-            saving={props.saving}
-            saveError={props.saveError}
-            saveDelay={props.saveDelay}
-            onConfigChange={props.onConfigChange}
-            onGlobalConfigChange={props.onGlobalConfigChange}
-            onProjectConfigChange={props.onProjectConfigChange}
-          >
-            <DisplayProvider>
-              <MockProviderProvider chipmateAuth={props.chipmateAuth} providers={props.providers} connected={props.connected}>
-                <DialogProvider>
-                  <LanguageContext.Provider
-                    value={{
-                      locale,
-                      setLocale: noop,
-                      userOverride: () => "" as any,
-                      t,
-                      text,
-                    }}
+    <LanguageContext.Provider
+      value={{
+        locale,
+        setLocale: noop,
+        userOverride: () => "" as any,
+        t,
+        text,
+      }}
+    >
+      <VSCodeProvider>
+        <SessionSurfaceProvider unmanaged>
+          <ServerProvider>
+            <FeedbackProvider>
+              <ConfigWrapper
+                config={props.config}
+                features={props.features}
+                globalConfig={props.globalConfig}
+                projectConfig={props.projectConfig}
+                settings={props.settings}
+                dirty={props.dirty}
+                saving={props.saving}
+                saveError={props.saveError}
+                saveDelay={props.saveDelay}
+                onConfigChange={props.onConfigChange}
+                onGlobalConfigChange={props.onGlobalConfigChange}
+                onProjectConfigChange={props.onProjectConfigChange}
+              >
+                <DisplayProvider>
+                  <MockProviderProvider
+                    chipmateAuth={props.chipmateAuth}
+                    providers={props.providers}
+                    connected={props.connected}
                   >
-                    <I18nProvider value={{ locale, t }}>
-                      <NotificationsContext.Provider value={notifications}>
-                        <SessionContext.Provider value={session as any}>
-                          <AgentRequirementsContext.Provider value={requirements}>
-                            <MemoryProvider>
-                              <IndexingProvider>
-                                <ImageModelsProvider>
-                                  <ChipMateEmbeddingModelsProvider>
-                                    <DataProvider
-                                      data={data()}
-                                      directory="/project/"
-                                      onOpenDiff={props.onOpenDiff}
-                                      onOpenFile={props.onOpenFile}
-                                    >
-                                      <DiffComponentProvider component={Diff}>
-                                        <CodeComponentProvider component={Code}>
-                                          <FileComponentProvider component={File}>
-                                            <MarkedProvider>
-                                              <TranscriptSearchProvider>
-                                                {props.noPadding ? (
-                                                  props.children
-                                                ) : (
-                                                  <div style={{ padding: "12px" }}>{props.children}</div>
-                                                )}
-                                              </TranscriptSearchProvider>
-                                            </MarkedProvider>
-                                          </FileComponentProvider>
-                                        </CodeComponentProvider>
-                                      </DiffComponentProvider>
-                                    </DataProvider>
-                                  </ChipMateEmbeddingModelsProvider>
-                                </ImageModelsProvider>
-                              </IndexingProvider>
-                            </MemoryProvider>
-                          </AgentRequirementsContext.Provider>
-                        </SessionContext.Provider>
-                      </NotificationsContext.Provider>
-                    </I18nProvider>
-                  </LanguageContext.Provider>
-                </DialogProvider>
-              </MockProviderProvider>
-            </DisplayProvider>
-          </ConfigWrapper>
-        </FeedbackProvider>
-      </ServerProvider>
-    </VSCodeProvider>
+                    <DialogProvider>
+                      <LanguageContext.Provider
+                        value={{
+                          locale,
+                          setLocale: noop,
+                          userOverride: () => "" as any,
+                          t,
+                          text,
+                        }}
+                      >
+                        <I18nProvider value={{ locale, t }}>
+                          <NotificationsContext.Provider value={notifications}>
+                            <SessionContext.Provider value={session as any}>
+                              <AgentRequirementsContext.Provider value={requirements}>
+                                <DeepSeekHarnessContext.Provider value={inactiveDeepSeekHarness}>
+                                  <MemoryProvider>
+                                    <IndexingProvider>
+                                      <ImageModelsProvider>
+                                        <ChipMateEmbeddingModelsProvider>
+                                          <DataProvider
+                                            data={data()}
+                                            directory="/project/"
+                                            onOpenDiff={props.onOpenDiff}
+                                            onOpenFile={props.onOpenFile}
+                                          >
+                                            <DiffComponentProvider component={Diff}>
+                                              <CodeComponentProvider component={Code}>
+                                                <FileComponentProvider component={File}>
+                                                  <MarkedProvider>
+                                                    <TranscriptSearchProvider>
+                                                      {props.noPadding ? (
+                                                        props.children
+                                                      ) : (
+                                                        <div style={{ padding: "12px" }}>{props.children}</div>
+                                                      )}
+                                                    </TranscriptSearchProvider>
+                                                  </MarkedProvider>
+                                                </FileComponentProvider>
+                                              </CodeComponentProvider>
+                                            </DiffComponentProvider>
+                                          </DataProvider>
+                                        </ChipMateEmbeddingModelsProvider>
+                                      </ImageModelsProvider>
+                                    </IndexingProvider>
+                                  </MemoryProvider>
+                                </DeepSeekHarnessContext.Provider>
+                              </AgentRequirementsContext.Provider>
+                            </SessionContext.Provider>
+                          </NotificationsContext.Provider>
+                        </I18nProvider>
+                      </LanguageContext.Provider>
+                    </DialogProvider>
+                  </MockProviderProvider>
+                </DisplayProvider>
+              </ConfigWrapper>
+            </FeedbackProvider>
+          </ServerProvider>
+        </SessionSurfaceProvider>
+      </VSCodeProvider>
+    </LanguageContext.Provider>
   )
 }

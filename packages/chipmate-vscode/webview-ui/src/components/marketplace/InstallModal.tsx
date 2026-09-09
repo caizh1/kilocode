@@ -51,6 +51,7 @@ export const InstallModal = (props: Props) => {
   const [installing, setInstalling] = createSignal(false)
   const [result, setResult] = createSignal<{
     success: boolean
+    errorCode?: "skill-identity-mismatch"
     error?: string
     scope: "project" | "global"
     path: string
@@ -115,7 +116,13 @@ export const InstallModal = (props: Props) => {
         const request = pending()
         setInstalling(false)
         if (!request) return
-        setResult({ success: msg.success, error: msg.error, ...request, path: msg.filePath ?? request.path })
+        setResult({
+          success: msg.success,
+          errorCode: msg.errorCode,
+          error: msg.error,
+          ...request,
+          path: msg.filePath ?? request.path,
+        })
         props.onInstallResult(msg.success, request.scope, {
           hasParameters: request.hasParameters,
           installationMethodName: request.method,
@@ -307,7 +314,11 @@ export const InstallModal = (props: Props) => {
               when={r().success}
               fallback={
                 <>
-                  <p class="install-modal-error-msg">{r().error ?? t("marketplace.install.failed")}</p>
+                  <p class="install-modal-error-msg">
+                    {r().errorCode === "skill-identity-mismatch"
+                      ? t("marketplace.install.identityMismatch")
+                      : (r().error ?? t("marketplace.install.failed"))}
+                  </p>
                   <div class="install-modal-footer">
                     <Button onClick={props.onClose}>{t("marketplace.install.close")}</Button>
                   </div>

@@ -13,7 +13,7 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 
-import { Effect, Layer, Context } from "effect"
+import { Cause, Effect, Layer, Context, Semaphore } from "effect"
 import * as DateTime from "effect/DateTime" // chipmate_change
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, usable } from "./overflow"
@@ -22,6 +22,9 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { ChipMateSessionPromptQueue } from "@/chipmate/session/prompt-queue"
 import { ChipMateCompactionPayloadRecovery } from "@/chipmate/session/compaction-payload-recovery"
 import { ChipMateCompactionChunks } from "@/chipmate/session/compaction-chunks"
+import { ChipMateCompactionDiagnostics } from "@/chipmate/session/compaction-diagnostics"
+import { ChipMateCompactionStatus } from "@/chipmate/session/compaction-status"
+import { ChipMatePartLifecycle } from "@/chipmate/session/part-lifecycle"
 import { SessionExport } from "@/chipmate/session-export"
 import { ChipMateSession } from "@/chipmate/session"
 // chipmate_change end
@@ -331,6 +334,7 @@ const layer = Layer.effect(
       }
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
+      const compactionStatus = ChipMateCompactionStatus.find(parent.parts) // chipmate_change
 
       let messages = input.messages
       let replay:
@@ -365,6 +369,15 @@ const layer = Layer.effect(
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      // chipmate_change start - manual compaction markers omit variant; inherit only an exact supported variant
+      const requestedVariant =
+        userMessage.model.variant ??
+        history.findLast(
+          (message): message is SessionV1.WithParts & { info: SessionV1.User } =>
+            message.info.role === "user" && !message.parts.some((part) => part.type === "compaction"),
+        )?.info.model.variant
+      const selectedVariant = requestedVariant && model.variants?.[requestedVariant] ? requestedVariant : undefined
+      // chipmate_change end
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
       const previousSummary = prior.at(-1)?.summary
@@ -407,7 +420,7 @@ const layer = Layer.effect(
         sessionID: input.sessionID,
         mode: "compaction",
         agent: "compaction",
-        variant: userMessage.model.variant,
+        variant: selectedVariant,
         summary: true,
         path: {
           cwd: ctx.directory,
@@ -427,58 +440,364 @@ const layer = Layer.effect(
         },
       }
       yield* session.updateMessage(msg)
-      const processor = yield* processors.create({
-        assistantMessage: msg,
-        sessionID: input.sessionID,
-        model,
+      // chipmate_change start - dynamically budget compaction and retry the full transaction without thinking
+      const billingProvider = yield* provider.getProvider(model.providerID) // chipmate_change
+      const billing = {
+        baseURL: billingProvider.options.baseURL ?? model.api.url,
+        apiKey: billingProvider.key ?? billingProvider.options.apiKey,
+      }
+      const progressLock = Semaphore.makeUnsafe(1)
+      const updateProgress = (value: ChipMateCompactionStatus.Progress) =>
+        progressLock
+          .withPermits(1)(
+            ChipMateCompactionStatus.progress({ part: compactionStatus, value, store: session }).pipe(Effect.asVoid),
+          )
+          .pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logWarning("compaction progress status update failed"),
+            ),
+          )
+      const clearAttempt = Effect.fn("SessionCompaction.clearAttempt")(function* (
+        baseline: Set<string>,
+        variant: string | undefined,
+      ) {
+        const parts = yield* MessageV2.parts(msg.id)
+        for (const part of parts) {
+          if (baseline.has(part.id)) continue
+          if (!["text", "reasoning", "step-start", "retry"].includes(part.type)) continue
+          yield* session.removePart({ sessionID: input.sessionID, messageID: msg.id, partID: part.id })
+        }
+        msg.variant = variant
+        msg.error = undefined
+        msg.finish = undefined
+        delete msg.time.completed
+        yield* session.updateMessage(msg)
       })
-      // chipmate_change start
-      const result = ChipMateCompactionChunks.needed({ cfg, model, tokens, outputTokenMax: flags.outputTokenMax })
-        ? "compact"
-        : yield* ChipMateCompactionPayloadRecovery.process({
-            processor,
-            user: userMessage,
-            agent,
-            sessionID: input.sessionID,
-            model,
-            messages: modelMessages,
-            prompt: nextPrompt,
-            recovery: selected.head,
-            updateMessage: session.updateMessage,
-            updatePart: session.updatePart,
-          }).pipe(Effect.provideService(Database.Service, database)) // chipmate_change
+      const runPass = (attempt: ChipMateCompactionChunks.Attempt, baseline: Set<string>) =>
+        Effect.gen(function* () {
+          const effectiveVariant = attempt.effectiveVariant
+          yield* updateProgress({
+            attempt: attempt.attempt,
+            attemptMode: attempt.mode,
+            phase: "preparing",
+          })
+          const passUser = structuredClone(userMessage)
+          passUser.model.variant = effectiveVariant
+          const passHead = structuredClone(selected.head)
+          msg.variant = effectiveVariant
+          msg.error = undefined
+          msg.finish = undefined
+          delete msg.time.completed
+          yield* session.updateMessage(msg)
 
-      const fallback = ChipMateCompactionChunks.eligible({
-        result,
-        error: processor.message.error ?? processor.compactError?.(),
-      })
-        ? yield* ChipMateCompactionChunks.process({
-            processors,
-            session,
-            user: userMessage,
-            agent,
-            sessionID: input.sessionID,
-            model,
+          const initialResult = ChipMateCompactionChunks.needed({
             cfg,
+            model,
+            tokens,
             outputTokenMax: flags.outputTokenMax,
-            messages: selected.head,
-            prompt: nextPrompt,
-            target: processor.message,
-            updateMessage: session.updateMessage,
-            updatePart: session.updatePart,
-          }).pipe(Effect.provideService(Database.Service, database)) // chipmate_change
-        : result
-      if (fallback === "compact") {
-        // chipmate_change end
-        processor.message.error = new SessionV1.ContextOverflowError({
-          message: replay
-            ? "Conversation history too large to compact - exceeds model context limit"
-            : "Session too large to compact - context exceeds model limit even after stripping media",
-        }).toObject()
-        processor.message.finish = "error"
-        yield* session.updateMessage(processor.message)
+          })
+            ? ("compact" as const)
+            : undefined
+          let outcome: ChipMateCompactionChunks.AttemptResult
+          let fallbackUsed = initialResult === "compact"
+          if (initialResult === "compact") {
+            outcome = { kind: "context_overflow" }
+          } else {
+            const request = [
+              ...modelMessages,
+              { role: "user" as const, content: [{ type: "text" as const, text: nextPrompt }] },
+            ]
+            const estimatedInputTokens = ChipMateCompactionChunks.adjustedTokens(
+              Token.estimate(JSON.stringify(request)),
+            )
+            const available = ChipMateCompactionChunks.outputBudget({
+              model,
+              estimatedInputTokens,
+              outputTokenMax: flags.outputTokenMax,
+            })
+            if (available.kind === "context_overflow") {
+              outcome = { kind: "context_overflow" }
+              fallbackUsed = true
+            } else {
+              yield* updateProgress({
+                attempt: attempt.attempt,
+                attemptMode: attempt.mode,
+                phase: "generating",
+              })
+              const passModel = {
+                ...model,
+                limit: { ...model.limit, output: available.effectiveOutputTokenLimit },
+              }
+              const processor = yield* processors.create({
+                assistantMessage: msg,
+                sessionID: input.sessionID,
+                model: passModel,
+                billing,
+              })
+              const result = yield* ChipMateCompactionPayloadRecovery.process({
+                processor,
+                user: passUser,
+                agent,
+                sessionID: input.sessionID,
+                model: passModel,
+                messages: modelMessages,
+                prompt: nextPrompt,
+                recovery: passHead,
+                updateMessage: session.updateMessage,
+              }).pipe(Effect.provideService(Database.Service, database))
+              const parts = yield* MessageV2.parts(msg.id)
+              const error = processor.message.error ?? processor.compactError?.()
+              outcome = ChipMateCompactionChunks.inspect({
+                result,
+                message: processor.message,
+                parts,
+                error,
+                stage: "full",
+              })
+              const output = parts
+                .filter((part): part is MessageV2.TextPart => part.type === "text")
+                .map((part) => part.text.trim())
+                .filter(Boolean)
+                .join("\n\n")
+              const reasoningChars = parts
+                .filter((part): part is MessageV2.ReasoningPart => part.type === "reasoning")
+                .reduce((total, part) => total + part.text.length, 0)
+              const diagnostic = ChipMateCompactionDiagnostics.worker({
+                sessionID: input.sessionID,
+                compactionMessageID: msg.id,
+                workerMessageID: msg.id,
+                providerID: model.providerID,
+                modelID: model.id,
+                stage: "full",
+                attempt: attempt.attempt,
+                attemptMode: attempt.mode,
+                selectedVariant: attempt.selectedVariant,
+                effectiveVariant,
+                estimatedInputTokens,
+                requestedOutputTokenLimit: available.requestedOutputTokenLimit,
+                effectiveOutputTokenLimit: available.effectiveOutputTokenLimit,
+                capacityKnown: available.capacityKnown,
+                fallbackReason: attempt.mode === "none" ? "selected_attempt_failed" : undefined,
+                pipelineRestarted: attempt.attempt === 2,
+                result,
+                finish: processor.message.finish,
+                textChars: output.length,
+                reasoningChars,
+                tokens: processor.message.tokens,
+                error,
+              })
+              if (outcome.kind === "success") yield* Effect.logInfo("compaction_diag", diagnostic)
+              else yield* Effect.logWarning("compaction_diag", diagnostic)
+              if (outcome.kind === "context_overflow") fallbackUsed = true
+            }
+          }
+
+          if (outcome.kind === "context_overflow") {
+            yield* clearAttempt(baseline, effectiveVariant)
+            outcome = yield* ChipMateCompactionChunks.process({
+              processors,
+              session,
+              user: passUser,
+              agent,
+              sessionID: input.sessionID,
+              model,
+              cfg,
+              outputTokenMax: flags.outputTokenMax,
+              messages: passHead,
+              prompt: nextPrompt,
+              target: msg,
+              billing,
+              attempt,
+              updateMessage: session.updateMessage,
+              updatePart: session.updatePart,
+              onProgress: (progress) => updateProgress(progress),
+            }).pipe(Effect.provideService(Database.Service, database))
+          }
+
+          if (outcome.kind !== "success")
+            return { outcome, baseline, initialResult: initialResult ?? "continue", fallbackUsed }
+          let replayResult = replay ? structuredClone(replay) : undefined
+          if (input.auto && replayResult) {
+            const compacted = yield* ChipMateCompactionChunks.replay({
+              processors,
+              session,
+              user: passUser,
+              agent,
+              sessionID: input.sessionID,
+              model,
+              cfg,
+              outputTokenMax: flags.outputTokenMax,
+              messages: passHead,
+              prompt: nextPrompt,
+              target: msg,
+              billing,
+              attempt,
+              updateMessage: session.updateMessage,
+              updatePart: session.updatePart,
+              onProgress: (progress) => updateProgress(progress),
+              replay: replayResult,
+            }).pipe(Effect.provideService(Database.Service, database))
+            if (compacted.kind !== "success") {
+              return { outcome: compacted, baseline, initialResult: initialResult ?? "continue", fallbackUsed }
+            }
+            replayResult = compacted.value
+          }
+          return {
+            outcome: {
+              kind: "success" as const,
+              value: {
+                summary: outcome.value,
+                replay: replayResult,
+                persisted: initialResult !== "compact" && !fallbackUsed,
+              },
+            },
+            baseline,
+            initialResult: initialResult ?? "continue",
+            fallbackUsed,
+          }
+        })
+
+      const firstAttempt: ChipMateCompactionChunks.Attempt = {
+        attempt: 1,
+        mode: "selected",
+        selectedVariant,
+        effectiveVariant: selectedVariant,
+      }
+      const firstBaseline = new Set((yield* MessageV2.parts(msg.id)).map((part) => part.id))
+      let pass = yield* runPass(firstAttempt, firstBaseline).pipe(
+        Effect.onInterrupt(() => clearAttempt(firstBaseline, selectedVariant)),
+      )
+      let finalAttempt = firstAttempt
+      if (ChipMateCompactionChunks.retryWithoutThinking(pass.outcome)) {
+        const none = model.variants?.none
+        if (none && selectedVariant !== "none") {
+          yield* clearAttempt(pass.baseline, selectedVariant)
+          yield* updateProgress({
+            attempt: 2,
+            attemptMode: "none",
+            phase: "retrying",
+          })
+          const status = yield* session.updatePart({
+            id: PartID.ascending(),
+            messageID: msg.id,
+            sessionID: input.sessionID,
+            type: "text",
+            text: "",
+            synthetic: true,
+            ignored: true,
+            metadata: {
+              [ChipMatePartLifecycle.key]: "transient",
+              "chipmate.compaction.status": "retrying-without-thinking",
+            },
+          })
+          finalAttempt = {
+            attempt: 2,
+            mode: "none",
+            selectedVariant,
+            effectiveVariant: "none",
+          }
+          const secondBaseline = new Set((yield* MessageV2.parts(msg.id)).map((part) => part.id))
+          pass = yield* runPass(finalAttempt, secondBaseline).pipe(
+            Effect.onInterrupt(() => clearAttempt(secondBaseline, "none")),
+            Effect.ensuring(
+              session
+                .removePart({ sessionID: input.sessionID, messageID: msg.id, partID: status.id })
+                .pipe(Effect.ignore),
+            ),
+          )
+        }
+      }
+
+      const diagnose = (outcome: { finalResult: string; summary?: string; compactedEvent: boolean }) => {
+        const error = msg.error
+        const diagnostic = ChipMateCompactionDiagnostics.result({
+          sessionID: input.sessionID,
+          compactionMessageID: msg.id,
+          providerID: model.providerID,
+          modelID: model.id,
+          auto: input.auto,
+          overflow: input.overflow,
+          initialResult: pass.initialResult,
+          fallbackUsed: pass.fallbackUsed,
+          finalResult: outcome.finalResult,
+          finish: msg.finish,
+          summaryTextChars: outcome.summary?.length ?? 0,
+          error,
+          boundaryEligible:
+            msg.summary === true && !!outcome.summary && !!msg.finish && msg.finish !== "length" && !error,
+          compactedEvent: outcome.compactedEvent,
+          attempt: finalAttempt.attempt,
+          attemptMode: finalAttempt.mode,
+          selectedVariant,
+          effectiveVariant: finalAttempt.effectiveVariant,
+          fallbackReason: finalAttempt.mode === "none" ? "selected_attempt_failed" : undefined,
+          pipelineRestarted: finalAttempt.attempt === 2,
+          finalCommitted: outcome.compactedEvent,
+          durationMs: Math.max(0, Date.now() - msg.time.created),
+        })
+        if (error || !outcome.summary || !diagnostic.boundaryEligible) {
+          return Effect.logWarning("compaction_diag", diagnostic)
+        }
+        return Effect.logInfo("compaction_diag", diagnostic)
+      }
+      if (pass.outcome.kind !== "success") {
+        yield* clearAttempt(pass.baseline, finalAttempt.effectiveVariant)
+        msg.error =
+          pass.outcome.kind === "context_overflow"
+            ? new SessionV1.ContextOverflowError({
+                message:
+                  pass.outcome.rejectionReason === "minimal_unit"
+                    ? `Compaction ${pass.outcome.stage ?? (replay ? "replay" : "chunk")} input contains a minimal unit that still exceeds the model context limit`
+                    : `Compaction ${pass.outcome.stage ?? (replay ? "replay" : "chunk")} input still exceeds the model context limit after deterministic splitting`,
+              }).toObject()
+            : pass.outcome.kind === "reasoning_exhausted"
+              ? new MessageV2.APIError({
+                  message:
+                    finalAttempt.mode === "none"
+                      ? "Compaction failed again after retrying with thinking disabled"
+                      : selectedVariant === "none"
+                        ? "Compaction reasoning exhausted the output budget while thinking was already disabled"
+                        : "Compaction reasoning exhausted the output budget, but this model has no none variant",
+                  isRetryable: false,
+                }).toObject()
+              : pass.outcome.error
+        msg.finish = "error"
+        msg.time.completed = Date.now()
+        yield* session.updateMessage(msg)
+        yield* ChipMateCompactionStatus.transition({
+          part: compactionStatus,
+          state: "failed",
+          store: session,
+        }) // chipmate_change
+        yield* diagnose({ finalResult: pass.outcome.kind, compactedEvent: false })
         return "stop"
       }
+
+      yield* updateProgress({
+        attempt: finalAttempt.attempt,
+        attemptMode: finalAttempt.mode,
+        phase: "committing",
+      })
+      const result = pass.outcome.value
+      replay = result.replay
+      if (!result.persisted) {
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: msg.id,
+          sessionID: input.sessionID,
+          type: "text",
+          text: result.summary,
+        })
+      }
+      msg.variant = finalAttempt.effectiveVariant
+      msg.finish = "stop"
+      msg.error = undefined
+      msg.time.completed = Date.now()
+      yield* session.updateMessage(msg)
+      const fallback = "continue" as const
+      // chipmate_change end
 
       if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
         yield* session.updatePart({
@@ -491,24 +810,6 @@ const layer = Layer.effect(
       if (fallback === "continue" && input.auto) {
         // chipmate_change end
         if (replay) {
-          // chipmate_change start - compact oversized replay turns instead of looping into replay overflow
-          replay = yield* ChipMateCompactionChunks.replay({
-            processors,
-            session,
-            user: userMessage,
-            agent,
-            sessionID: input.sessionID,
-            model,
-            cfg,
-            outputTokenMax: flags.outputTokenMax,
-            messages: selected.head,
-            prompt: nextPrompt,
-            target: processor.message,
-            updateMessage: session.updateMessage,
-            updatePart: session.updatePart,
-            replay,
-          }).pipe(Effect.provideService(Database.Service, database)) // chipmate_change
-          // chipmate_change end
           const original = replay.info
           const replayMsg = yield* session.updateMessage({
             id: MessageID.ascending(),
@@ -595,8 +896,6 @@ const layer = Layer.effect(
         }
       }
 
-      // chipmate_change start - compaction already invalidates cache, so collapse stale tool outputs too
-      if (processor.message.error) return "stop"
       if (fallback === "continue") {
         const summary = summaryText(
           (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
@@ -643,14 +942,21 @@ const layer = Layer.effect(
           modelId: model.id,
           durationMs: Math.max(0, Date.now() - msg.time.created),
           usage: {
-            inputTokens: processor.message.tokens.input,
-            outputTokens: processor.message.tokens.output,
+            inputTokens: msg.tokens.input,
+            outputTokens: msg.tokens.output,
           },
         })
         // chipmate_change end
         yield* prune({ sessionID: input.sessionID, reason: "post-compaction" })
         yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
+        yield* ChipMateCompactionStatus.transition({
+          part: compactionStatus,
+          state: "succeeded",
+          store: session,
+        }).pipe(Effect.uninterruptible) // chipmate_change - committed compaction must retain success across a later abort
+        yield* diagnose({ finalResult: fallback, summary, compactedEvent: true }) // chipmate_change
       }
+      if (fallback !== "continue") yield* diagnose({ finalResult: fallback, compactedEvent: false }) // chipmate_change
       return fallback
       // chipmate_change end
     })
@@ -679,6 +985,13 @@ const layer = Layer.effect(
         overflow: input.overflow,
       })
       // chipmate_change start - keep auto-compaction markers visible during queued turns
+      yield* session.updatePart(
+        ChipMateCompactionStatus.create({
+          sessionID: msg.sessionID,
+          messageID: msg.id,
+          source: input.auto ? "auto" : "manual",
+        }),
+      )
       ChipMateSessionPromptQueue.retarget(input.sessionID, msg.id)
       // chipmate_change end
       if (flags.experimentalEventSystem) {
@@ -694,7 +1007,24 @@ const layer = Layer.effect(
     return Service.of({
       isOverflow,
       prune,
-      process: (input) => processCompaction(input).pipe(Effect.orDie), // chipmate_change
+      process: (input) => {
+        // chipmate_change start - persist the real terminal outcome without changing official abort semantics
+        const parent = input.messages.findLast((message) => message.info.id === input.parentID)
+        const status = ChipMateCompactionStatus.find(parent?.parts ?? [])
+        const transition = (state: "failed" | "interrupted") =>
+          ChipMateCompactionStatus.transition({ part: status, state, store: session }).pipe(Effect.ignore)
+        return processCompaction(input).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : transition("failed").pipe(Effect.andThen(Effect.failCause(cause))),
+          ),
+          Effect.onInterrupt(() => transition("interrupted")),
+          Effect.provideService(Database.Service, database),
+          Effect.orDie,
+        )
+        // chipmate_change end
+      },
       create,
     })
   }),

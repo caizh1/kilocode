@@ -2174,7 +2174,90 @@ describe("CHIPMATE_PERMISSION env var", () => {
   )
 })
 
+// chipmate_change start
+describe("internal provider defaults", () => {
+  const provider = (baseURL: string) => ({
+    npm: "@ai-sdk/openai-compatible",
+    name: "ChipMate",
+    options: { baseURL },
+    models: { deepseek: { name: "deepseek" } },
+  })
+
+  it.instance(
+    "uses the packaged URL when the user has no override",
+    () =>
+      withProcessEnv(
+        "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
+        JSON.stringify({ provider: { chipmate: provider("https://default.example/v1") } }),
+        Effect.gen(function* () {
+          const config = yield* Config.use.get()
+          expect(config.provider?.chipmate?.options?.baseURL).toBe("https://default.example/v1")
+        }),
+      ),
+    { config: {} },
+  )
+
+  it.instance(
+    "lets the saved global provider URL override the packaged URL",
+    () =>
+      withProcessEnv(
+        "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
+        JSON.stringify({ provider: { chipmate: provider("https://default.example/v1") } }),
+        Effect.gen(function* () {
+          const config = yield* Config.use.get()
+          expect(config.provider?.chipmate?.options?.baseURL).toBe("https://user.example/v1")
+        }),
+      ),
+    { config: { provider: { chipmate: provider("https://user.example/v1") } } },
+  )
+
+  it.instance(
+    "keeps explicit config content above packaged defaults and saved global config",
+    () =>
+      withProcessEnv(
+        "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
+        JSON.stringify({ provider: { chipmate: provider("https://default.example/v1") } }),
+        withProcessEnv(
+          "CHIPMATE_CONFIG_CONTENT",
+          JSON.stringify({ provider: { chipmate: { options: { baseURL: "https://explicit.example/v1" } } } }),
+          Effect.gen(function* () {
+            const config = yield* Config.use.get()
+            expect(config.provider?.chipmate?.options?.baseURL).toBe("https://explicit.example/v1")
+          }),
+        ),
+      ),
+    { config: { provider: { chipmate: provider("https://user.example/v1") } } },
+  )
+})
+// chipmate_change end
+
 describe("CHIPMATE_CONFIG_CONTENT token substitution", () => {
+  // chipmate_change start - provider-only internal runtime config must preserve the saved default model
+  it.instance(
+    "keeps the saved global model when runtime config only registers a provider",
+    () =>
+      withProcessEnv(
+        "CHIPMATE_CONFIG_CONTENT",
+        JSON.stringify({
+          provider: {
+            chipmate: {
+              npm: "@ai-sdk/openai-compatible",
+              name: "ChipMate",
+              options: { baseURL: "https://example.com/v1" },
+              models: { deepseek: { name: "deepseek" } },
+            },
+          },
+        }),
+        Effect.gen(function* () {
+          const config = yield* Config.use.get()
+          expect(config.model).toBe("chipmate/qwen")
+          expect(config.provider?.chipmate?.models?.deepseek).toBeDefined()
+        }),
+      ),
+    { config: { model: "chipmate/qwen" } },
+  )
+  // chipmate_change end
+
   it.instance("substitutes {env:} tokens in CHIPMATE_CONFIG_CONTENT", () =>
     withProcessEnv(
       "TEST_CONFIG_VAR",

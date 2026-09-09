@@ -1,0 +1,100 @@
+[data-component="turn-changes"] {
+  min-width: 0;
+  margin-block: 8px;
+  padding: 10px;
+  border: 1px solid var(--vscode-widget-border, var(--border-base));
+  border-radius: 8px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  font-size: 12px;
+}
+[data-slot="turn-changes-header"],
+[data-slot="turn-changes-file-header"],
+[data-slot="turn-changes-actions"],
+[data-slot="turn-changes-title"],
+[data-slot="turn-changes-file-name"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+[data-slot="turn-changes-header"],
+[data-slot="turn-changes-file-header"],
+[data-slot="turn-changes-actions"] {
+  flex-wrap: wrap;
+}
+[data-slot="turn-changes-header"] {
+  justify-content: space-between;
+}
+[data-slot="turn-changes-title"] {
+  flex: 1 1 170px;
+}
+[data-slot="turn-changes-actions"] {
+  justify-content: flex-end;
+}
+[data-slot="turn-changes-file-header"] {
+  padding-block: 6px;
+}
+[data-slot="turn-changes-file-name"] {
+  flex: 1 1 130px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+}
+[data-slot="turn-changes-file-name"] > span {
+  overflow-wrap: anywhere;
+}
+[data-slot="turn-changes-file-name"] [data-component="icon"],
+[data-slot="turn-changes-title"] [data-component="icon"] {
+  flex-shrink: 0;
+}
+[data-slot="turn-changes-file-name"]:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+[data-slot="turn-changes-kind"],
+[data-slot="turn-changes-counts"] {
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+}
+[data-slot="turn-changes-detail"] {
+  overflow: auto;
+  min-width: 0;
+}
+[data-slot="turn-changes-hunk"] {
+  margin-block: 6px;
+}
+[data-slot="turn-changes-notice"],
+[data-slot="turn-changes-error"] {
+  margin-block: 6px;
+  overflow-wrap: anywhere;
+}
+[data-slot="turn-changes-error"] {
+  color: var(--vscode-errorForeground);
+}
+
+[data-slot="turn-changes-title"],
+[data-slot="turn-changes-file-name"] {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+[data-slot="turn-changes-actions"],
+[data-slot="turn-changes-file-header"] > * {
+  max-width: 100%;
+}
+[data-slot="turn-changes-actions"] [data-component="button"],
+[data-slot="turn-changes-file-header"] > [data-component="button"] {
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-slot="turn-changes-file-header"] > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

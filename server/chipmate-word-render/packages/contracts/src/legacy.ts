@@ -71,11 +71,7 @@ const wordRendered = Type.Object(
     pageCount: Type.Number({ minimum: 1 }),
     returnedPageCount: Type.Number({ minimum: 1 }),
     pageCountKind: Type.Union([Type.Literal("exact"), Type.Literal("lower-bound"), Type.Literal("unknown")]),
-    fieldRefreshStatus: Type.Union([
-      Type.Literal("completed"),
-      Type.Literal("failed"),
-      Type.Literal("not-required"),
-    ]),
+    fieldRefreshStatus: Type.Union([Type.Literal("completed"), Type.Literal("failed"), Type.Literal("not-required")]),
     fieldRefreshDiagnostics: Type.Array(Type.String()),
     tocHeadingCount: Type.Number({ minimum: 0 }),
     tocEntryCount: Type.Number({ minimum: 0 }),
@@ -101,9 +97,51 @@ export interface LegacyRoute {
 }
 
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
+  {
+    method: "POST",
+    url: "/convert/word-to-images",
+    schema: {
+      body: Type.Object({
+        filename: Type.String(),
+        docxBase64: Type.String(),
+        startPage: Type.Optional(Type.Integer({ minimum: 1 })),
+        maxPages: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+      }),
+      response: {
+        200: Type.Object({
+          ok: Type.Literal(true),
+          pageCount: Type.Integer({ minimum: 1 }),
+          returnedPageCount: Type.Integer({ minimum: 1 }),
+          startPage: Type.Integer({ minimum: 1 }),
+          nextPage: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
+          pages: Type.Array(
+            Type.Object({
+              page: Type.Integer({ minimum: 1 }),
+              contentType: Type.Literal("image/png"),
+              base64: Type.String({ minLength: 1 }),
+              width: Type.Integer({ minimum: 1 }),
+              height: Type.Integer({ minimum: 1 }),
+            }),
+          ),
+          issues: Type.Array(issue),
+          renderer: Type.Object({}, { additionalProperties: true }),
+        }),
+        400: error,
+        413: error,
+        422: error,
+        500: error,
+        504: error,
+      },
+    },
+  },
   { method: "GET", url: "/", schema: { response: { 200: Type.Object({}, { additionalProperties: true }) } } },
   { method: "GET", url: "/health", schema: { response: { 200: Type.Object({}, { additionalProperties: true }) } } },
-  { method: "POST", url: "/render/word", schema: { body: word, response: { 200: wordRendered, 413: error, 422: error, 500: error } } },
+  {
+    method: "POST",
+    url: "/render/word",
+    schema: { body: word, response: { 200: wordRendered, 413: error, 422: error, 500: error } },
+  },
   {
     method: "POST",
     url: "/render/mermaid",

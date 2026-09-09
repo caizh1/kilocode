@@ -7,6 +7,7 @@
 
 @import "./session-title-editor.css";
 @import "./task-header.css";
+@import "./manual-compaction.css";
 @import "./search-menu.css";
 @import "./session-tabs.css";
 @import "./chat-layout.css";
@@ -30,6 +31,7 @@
 @import "./qa-liquid-glass.css";
 @import "./titanium-studio.css";
 @import "./qa-tool-call.css";
+@import "./ufs-review.css";
 @import "./high-contrast.css";
 
 /* Embedded Review Boundary */
@@ -345,4 +347,68 @@ body.vscode-high-contrast-light .embedded-review-boundary__warning {
   border-color: var(--vscode-contrastBorder);
   background: var(--vscode-editorWidget-background);
   box-shadow: none;
+}
+.session-surface-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-weak-base);
+  background: color-mix(in srgb, var(--surface-raised-base) 82%, transparent);
+  color: var(--text-weak);
+  font-size: var(--chipmate-font-size-12);
+}
+
+.session-surface-status,
+.session-surface-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-surface-status {
+  flex: 1 1 180px;
+}
+
+.session-surface-actions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.session-surface-bar[data-phase="opening-main"],
+.session-surface-bar[data-phase="returning-sidebar"],
+.session-surface-bar[data-phase="restoring"] {
+  color: var(--text-base);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editorWarning-foreground, var(--text-base)) 12%,
+    var(--surface-raised-base)
+  );
+}
+
+.session-surface-bar[data-phase="deleted"] {
+  color: var(--vscode-errorForeground, var(--text-base));
+  background: color-mix(in srgb, var(--vscode-errorForeground, var(--text-base)) 10%, var(--surface-raised-base));
+}
+
+.session-surface-deleted {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+  padding: 24px;
+  color: var(--text-weak);
+  text-align: center;
+}
+
+.chat-view--surface-deleted .chat-messages-wrapper,
+.chat-view--surface-deleted .chat-input {
+  display: none;
 }

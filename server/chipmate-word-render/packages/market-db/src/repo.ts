@@ -1,3 +1,4 @@
+import { diagnostics, type DiagnosticOperation } from "./diagnostics-repo.ts"
 import { createHash } from "node:crypto"
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
@@ -5,6 +6,8 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { gunzipSync } from "node:zlib"
 import { applySkillPatches, validateSkillArchive, type SkillSnapshot } from "@chipmate/skill-spec"
 import { ExtensionRepo } from "./extension-repo.ts"
+import { administrators, changeAdministrator, hasIdentitySession, isAdministrator, revokeSubject } from "./admin-repo.ts"
+import type { AdminChange } from "./model.ts"
 import { MIGRATIONS } from "./migrations.ts"
 import type {
   ArtworkItem,
@@ -48,6 +51,22 @@ import type {
   ExtensionPublicationInput,
   ExtensionReviewInput,
   ExtensionSearchInput,
+  AccessTokenItem,
+  AccessTokenLookup,
+  AuthAuditInput,
+  AuthSettingsInput,
+  AuthSettingsItem,
+  DeviceAuthorizationApproval,
+  DeviceAuthorizationInput,
+  DeviceAuthorizationItem,
+  DeviceAuthorizationPoll,
+  DeviceAuthorizationPollResult,
+  ExternalIdentityInput,
+  ExternalIdentityItem,
+  IdentityMappingItem,
+  RefreshTokenResult,
+  RefreshTokenRotation,
+  TokenPairInput,
 } from "./model.ts"
 
 interface LegacyItem {
@@ -117,6 +136,52 @@ interface PublicationRow {
   previous_revision: number | null
 }
 
+interface ExternalIdentityRow {
+  source_id: string
+  subject: string
+  user_id: string
+  username: string
+  email: string | null
+  display_name: string
+  is_admin: number
+  last_verified_at: string
+  user_display_name: string
+  first_seen_at: string
+  last_seen_at: string
+}
+
+interface DeviceAuthorizationRow {
+  device_hash: string
+  user_code: string
+  interval_seconds: number
+  expires_at: string
+  user_id: string | null
+  approved_at: string | null
+  denied_at: string | null
+  consumed_at: string | null
+  last_polled_at: string | null
+  created_at: string
+}
+
+interface AccessTokenRow {
+  family_id: string
+  expires_at: string
+  user_id: string
+  auth_revision: number
+  subject: string
+  is_admin: number
+  display_name: string
+  first_seen_at: string
+  last_seen_at: string
+  current_revision: number | null
+}
+
+interface RefreshTokenRow extends AccessTokenRow {
+  consumed_at: string | null
+  family_expires_at: string
+  revoked_at: string | null
+}
+
 interface TarEntry {
   path: string
   data: Buffer
@@ -140,6 +205,8 @@ export class MarketRepo {
     this.extensions.repair()
   }
 
+  diagnostics(input: DiagnosticOperation) { return diagnostics(this.db, input) }
+
   health(): MarketDbHealth {
     const version = this.db
       .prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations")
@@ -155,6 +222,12 @@ export class MarketRepo {
       busyTimeout: Number(timeout.timeout),
     }
   }
+
+  administrators() { return administrators(this.db) }
+
+  isAdministrator(subject: string) { return isAdministrator(this.db, subject) }
+
+  changeAdministrator(input: AdminChange) { return changeAdministrator(this.db, input) }
 
   importLegacy(root: string): ImportResult {
     const source = resolve(root)
@@ -454,15 +527,32 @@ export class MarketRepo {
     this.user(input.id, input.displayName, now)
     this.db
       .prepare(
-        `INSERT INTO sessions(hash,user_id,idle_expires_at,absolute_expires_at,created_at,last_seen_at,csrf_hash)
-         VALUES(?,?,?,?,?,?,?)`,
+        `INSERT INTO sessions(hash,user_id,idle_expires_at,absolute_expires_at,created_at,last_seen_at,csrf_hash,
+                              auth_revision,subject,is_admin,verified_at)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
       )
-      .run(input.hash, input.id, input.idleExpiresAt, input.absoluteExpiresAt, now, now, input.csrfHash)
+      .run(
+        input.hash,
+        input.id,
+        input.idleExpiresAt,
+        input.absoluteExpiresAt,
+        now,
+        now,
+        input.csrfHash,
+        input.authRevision ?? 0,
+        input.subject ?? null,
+        input.isAdmin ? 1 : 0,
+        input.verifiedAt ?? null,
+      )
     return {
       user: this.getUser(input.id)!,
       csrfHash: input.csrfHash,
       idleExpiresAt: input.idleExpiresAt,
       absoluteExpiresAt: input.absoluteExpiresAt,
+      authRevision: input.authRevision ?? 0,
+      ...(input.subject ? { subject: input.subject } : {}),
+      isAdmin: input.isAdmin === true,
+      ...(input.verifiedAt ? { verifiedAt: input.verifiedAt } : {}),
     }
   }
 
@@ -470,8 +560,11 @@ export class MarketRepo {
     this.db.prepare("DELETE FROM sessions WHERE idle_expires_at<=? OR absolute_expires_at<=?").run(input.now, input.now)
     const row = this.db
       .prepare(
-        `SELECT s.user_id,s.csrf_hash,s.idle_expires_at,s.absolute_expires_at,u.display_name,u.first_seen_at
-         FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=?`,
+        `SELECT s.user_id,s.csrf_hash,s.idle_expires_at,s.absolute_expires_at,s.auth_revision,s.subject,
+                s.is_admin,s.verified_at,u.display_name,u.first_seen_at
+         FROM sessions s JOIN users u ON u.id=s.user_id
+         JOIN external_identities x ON x.source_id='ldap' AND x.subject=s.subject AND x.user_id=s.user_id
+         WHERE s.hash=?`,
       )
       .get(input.hash) as unknown as
       | {
@@ -481,6 +574,10 @@ export class MarketRepo {
           absolute_expires_at: string
           display_name: string
           first_seen_at: string
+          auth_revision: number
+          subject: string | null
+          is_admin: number
+          verified_at: string | null
         }
       | undefined
     if (!row) return undefined
@@ -499,11 +596,356 @@ export class MarketRepo {
       csrfHash: row.csrf_hash,
       idleExpiresAt: idle,
       absoluteExpiresAt: row.absolute_expires_at,
+      authRevision: Number(row.auth_revision),
+      ...(row.subject ? { subject: row.subject } : {}),
+      isAdmin: row.subject ? this.isAdministrator(row.subject) : false,
+      ...(row.verified_at ? { verifiedAt: row.verified_at } : {}),
     }
   }
 
   deleteSession(hash: string) {
     return this.db.prepare("DELETE FROM sessions WHERE hash=?").run(hash).changes > 0
+  }
+
+  touchSessionVerification(hash: string, verifiedAt: string, isAdmin: boolean) {
+    return this.db.prepare("UPDATE sessions SET verified_at=?,is_admin=? WHERE hash=?").run(verifiedAt, isAdmin ? 1 : 0, hash)
+      .changes > 0
+  }
+
+  authSettings(): AuthSettingsItem | undefined {
+    const row = this.db.prepare("SELECT * FROM auth_settings WHERE id=1").get() as unknown as
+      | {
+          revision: number
+          config_json: string
+          bind_password_ciphertext: string
+          updated_at: string
+          updated_by: string
+        }
+      | undefined
+    return row
+      ? {
+          revision: Number(row.revision),
+          configJson: row.config_json,
+          bindPasswordCiphertext: row.bind_password_ciphertext,
+          updatedAt: row.updated_at,
+          updatedBy: row.updated_by,
+        }
+      : undefined
+  }
+
+  putAuthSettings(input: AuthSettingsInput): AuthSettingsItem {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO auth_settings(id,revision,config_json,bind_password_ciphertext,updated_at,updated_by)
+           VALUES(1,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,config_json=excluded.config_json,
+             bind_password_ciphertext=excluded.bind_password_ciphertext,updated_at=excluded.updated_at,
+             updated_by=excluded.updated_by`,
+        )
+        .run(
+          input.revision,
+          input.configJson,
+          input.bindPasswordCiphertext,
+          input.updatedAt,
+          input.updatedBy,
+        )
+      this.db.prepare("DELETE FROM sessions").run()
+      this.db.prepare("DELETE FROM token_families").run()
+      this.db.prepare("DELETE FROM device_authorizations").run()
+      this.db.exec("COMMIT")
+      return this.authSettings()!
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  externalIdentity(sourceId: string, subject: string): ExternalIdentityItem | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT x.*,u.display_name AS user_display_name,u.first_seen_at,u.last_seen_at
+         FROM external_identities x JOIN users u ON u.id=x.user_id
+         WHERE x.source_id=? AND x.subject=?`,
+      )
+      .get(sourceId, subject) as unknown as ExternalIdentityRow | undefined
+    return row ? mapExternalIdentity(row) : undefined
+  }
+
+  putExternalIdentity(input: ExternalIdentityInput): ExternalIdentityItem {
+    const now = input.verifiedAt
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      const existing = this.externalIdentity(input.sourceId, input.subject)
+      if (!existing) revokeSubject(this.db, input.subject)
+      this.user(input.userId, input.displayName, now)
+      this.db
+        .prepare(
+          `INSERT INTO external_identities(source_id,subject,user_id,username,email,display_name,is_admin,last_verified_at)
+           VALUES(?,?,?,?,?,?,?,?)
+           ON CONFLICT(source_id,subject) DO UPDATE SET username=excluded.username,email=excluded.email,
+             display_name=excluded.display_name,is_admin=excluded.is_admin,last_verified_at=excluded.last_verified_at`,
+        )
+        .run(
+          input.sourceId,
+          input.subject,
+          input.userId,
+          input.username,
+          input.email ?? null,
+          input.displayName,
+          input.isAdmin ? 1 : 0,
+          input.verifiedAt,
+        )
+      this.db.exec("COMMIT")
+      return this.externalIdentity(input.sourceId, input.subject)!
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  identityMappings(): IdentityMappingItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT u.id,u.display_name,u.first_seen_at,u.last_seen_at,x.source_id,x.subject,x.username,x.email,
+                x.display_name AS external_display_name,
+                EXISTS(SELECT 1 FROM auth_admins a WHERE a.source_id=x.source_id AND a.subject=x.subject) AS is_admin,
+                x.last_verified_at
+         FROM users u LEFT JOIN external_identities x ON x.user_id=u.id
+         ORDER BY u.display_name COLLATE NOCASE,u.id`,
+      )
+      .all() as unknown as Array<{
+      id: string
+      display_name: string
+      first_seen_at: string
+      last_seen_at: string
+      source_id: string | null
+      subject: string | null
+      username: string | null
+      email: string | null
+      external_display_name: string | null
+      is_admin: number | null
+      last_verified_at: string | null
+    }>
+    return rows.map((row) => ({
+      user: {
+        id: row.id,
+        displayName: row.display_name,
+        firstSeenAt: row.first_seen_at,
+        lastSeenAt: row.last_seen_at,
+      },
+      ...(row.subject && row.source_id && row.username && row.external_display_name && row.last_verified_at
+        ? {
+            external: {
+              sourceId: row.source_id,
+              subject: row.subject,
+              username: row.username,
+              ...(row.email ? { email: row.email } : {}),
+              displayName: row.external_display_name,
+              isAdmin: Boolean(row.is_admin),
+              verifiedAt: row.last_verified_at,
+            },
+          }
+        : {}),
+    }))
+  }
+
+  deleteExternalIdentity(sourceId: string, subject: string) {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      revokeSubject(this.db, subject)
+      const removed = this.db.prepare("DELETE FROM external_identities WHERE source_id=? AND subject=?").run(sourceId, subject).changes > 0
+      this.db.exec("COMMIT")
+      return removed
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  createDeviceAuthorization(input: DeviceAuthorizationInput): DeviceAuthorizationItem {
+    this.db
+      .prepare(
+        `INSERT INTO device_authorizations(device_hash,user_code,interval_seconds,expires_at,created_at)
+         VALUES(?,?,?,?,?)`,
+      )
+      .run(input.deviceHash, input.userCode, input.intervalSeconds, input.expiresAt, input.createdAt)
+    return input
+  }
+
+  approveDeviceAuthorization(input: DeviceAuthorizationApproval) {
+    if (input.actor.actor !== input.userId || !hasIdentitySession(this.db, input.actor, input.approvedAt)) return false
+    return (
+      this.db
+        .prepare(
+          `UPDATE device_authorizations SET user_id=?,approved_at=?
+           WHERE user_code=? AND expires_at>? AND approved_at IS NULL AND denied_at IS NULL AND consumed_at IS NULL`,
+        )
+        .run(input.userId, input.approvedAt, input.userCode, input.approvedAt).changes > 0
+    )
+  }
+
+  denyDeviceAuthorization(userCode: string, deniedAt: string) {
+    return this.db
+      .prepare(
+        `UPDATE device_authorizations SET denied_at=?
+         WHERE user_code=? AND expires_at>? AND approved_at IS NULL AND denied_at IS NULL AND consumed_at IS NULL`,
+      )
+      .run(deniedAt, userCode, deniedAt).changes > 0
+  }
+
+  pollDeviceAuthorization(input: DeviceAuthorizationPoll): DeviceAuthorizationPollResult {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.db
+        .prepare("SELECT * FROM device_authorizations WHERE device_hash=?")
+        .get(input.deviceHash) as unknown as DeviceAuthorizationRow | undefined
+      if (!row) return this.devicePollDone("missing")
+      if (row.consumed_at) return this.devicePollDone("consumed")
+      if (row.denied_at) return this.devicePollDone("denied")
+      if (row.expires_at <= input.now) return this.devicePollDone("expired")
+      if (row.last_polled_at) {
+        const earliest = Date.parse(row.last_polled_at) + row.interval_seconds * 1_000
+        if (Date.parse(input.now) < earliest) return this.devicePollDone("slow_down")
+      }
+      this.db.prepare("UPDATE device_authorizations SET last_polled_at=? WHERE device_hash=?").run(input.now, input.deviceHash)
+      if (!row.approved_at || !row.user_id) return this.devicePollDone("pending")
+      this.db.prepare("UPDATE device_authorizations SET consumed_at=? WHERE device_hash=?").run(input.now, input.deviceHash)
+      this.db.exec("COMMIT")
+      return { state: "approved", item: mapDeviceAuthorization({ ...row, consumed_at: input.now }) as DeviceAuthorizationItem & { userId: string } }
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  createTokenPair(input: TokenPairInput): AccessTokenItem | undefined {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      // 撤权或映射变更会删除设备授权；与令牌写入处于同一事务，避免轮询后的异步间隙重新发证。
+      const valid = this.db.prepare(`SELECT 1 FROM device_authorizations d
+        JOIN external_identities x ON x.user_id=d.user_id AND x.source_id='ldap'
+        JOIN auth_settings a ON a.id=1 AND a.revision=?
+        WHERE d.device_hash=? AND d.user_id=? AND x.subject=?
+          AND d.consumed_at IS NOT NULL AND d.denied_at IS NULL AND d.expires_at>?`)
+        .get(input.authRevision, input.deviceHash, input.userId, input.subject, input.createdAt)
+      if (!valid) { this.db.exec("COMMIT"); return undefined }
+      this.db.prepare("DELETE FROM device_authorizations WHERE device_hash=?").run(input.deviceHash)
+      this.db
+        .prepare(
+          `INSERT INTO token_families(id,user_id,auth_revision,subject,is_admin,expires_at,created_at)
+           VALUES(?,?,?,?,?,?,?)`,
+        )
+        .run(
+          input.familyId,
+          input.userId,
+          input.authRevision,
+          input.subject,
+          input.isAdmin ? 1 : 0,
+          input.familyExpiresAt,
+          input.createdAt,
+        )
+      this.db
+        .prepare("INSERT INTO access_tokens(hash,family_id,expires_at,created_at) VALUES(?,?,?,?)")
+        .run(input.accessHash, input.familyId, input.accessExpiresAt, input.createdAt)
+      this.db
+        .prepare("INSERT INTO refresh_tokens(hash,family_id,expires_at,created_at) VALUES(?,?,?,?)")
+        .run(input.refreshHash, input.familyId, input.refreshExpiresAt, input.createdAt)
+      this.db.exec("COMMIT")
+      return this.accessToken({ hash: input.accessHash, now: input.createdAt })!
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  accessToken(input: AccessTokenLookup): AccessTokenItem | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT a.family_id,a.expires_at,f.user_id,f.auth_revision,f.subject,f.is_admin,
+                u.display_name,u.first_seen_at,u.last_seen_at,s.revision AS current_revision
+         FROM access_tokens a JOIN token_families f ON f.id=a.family_id
+         JOIN users u ON u.id=f.user_id LEFT JOIN auth_settings s ON s.id=1
+         JOIN external_identities x ON x.source_id='ldap' AND x.subject=f.subject AND x.user_id=f.user_id
+         WHERE a.hash=? AND a.expires_at>? AND f.expires_at>? AND f.revoked_at IS NULL`,
+      )
+      .get(input.hash, input.now, input.now) as unknown as AccessTokenRow | undefined
+    if (!row || row.current_revision !== row.auth_revision) return undefined
+    return mapAccessToken({ ...row, is_admin: this.isAdministrator(row.subject) ? 1 : 0 })
+  }
+
+  revokeAccessToken(hash: string, now: string) {
+    return this.db
+      .prepare(
+        `UPDATE token_families SET revoked_at=?
+         WHERE id=(SELECT family_id FROM access_tokens WHERE hash=?) AND revoked_at IS NULL`,
+      )
+      .run(now, hash).changes > 0
+  }
+
+  rotateRefreshToken(input: RefreshTokenRotation): RefreshTokenResult {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT r.family_id,r.expires_at,r.consumed_at,f.user_id,f.auth_revision,f.subject,f.is_admin,
+                  f.expires_at AS family_expires_at,f.revoked_at,u.display_name,u.first_seen_at,u.last_seen_at,
+                  s.revision AS current_revision
+           FROM refresh_tokens r JOIN token_families f ON f.id=r.family_id
+           JOIN users u ON u.id=f.user_id LEFT JOIN auth_settings s ON s.id=1 WHERE r.hash=?`,
+        )
+        .get(input.hash) as unknown as RefreshTokenRow | undefined
+      if (!row) return this.refreshDone("missing")
+      if (row.consumed_at) {
+        this.db.prepare("UPDATE token_families SET revoked_at=? WHERE id=?").run(input.now, row.family_id)
+        return this.refreshDone("replayed")
+      }
+      if (row.revoked_at || row.current_revision !== row.auth_revision) return this.refreshDone("revoked")
+      if (row.expires_at <= input.now || row.family_expires_at <= input.now) return this.refreshDone("expired")
+      this.db.prepare("UPDATE refresh_tokens SET consumed_at=? WHERE hash=?").run(input.now, input.hash)
+      this.db
+        .prepare("INSERT INTO access_tokens(hash,family_id,expires_at,created_at) VALUES(?,?,?,?)")
+        .run(input.nextAccessHash, row.family_id, input.nextAccessExpiresAt, input.now)
+      this.db
+        .prepare("INSERT INTO refresh_tokens(hash,family_id,expires_at,created_at) VALUES(?,?,?,?)")
+        .run(input.nextRefreshHash, row.family_id, input.nextRefreshExpiresAt, input.now)
+      this.db.exec("COMMIT")
+      return {
+        state: "ok",
+        token: mapAccessToken({ ...row, expires_at: input.nextAccessExpiresAt }),
+      }
+    } catch (err) {
+      this.db.exec("ROLLBACK")
+      throw err
+    }
+  }
+
+  revokeTokenFamily(familyId: string, now: string) {
+    return this.db.prepare("UPDATE token_families SET revoked_at=? WHERE id=? AND revoked_at IS NULL").run(now, familyId)
+      .changes > 0
+  }
+
+  updateTokenFamilyAuthorization(familyId: string, isAdmin: boolean) {
+    return this.db.prepare("UPDATE token_families SET is_admin=? WHERE id=? AND revoked_at IS NULL").run(isAdmin ? 1 : 0, familyId)
+      .changes > 0
+  }
+
+  authAudit(input: AuthAuditInput) {
+    this.db
+      .prepare("INSERT INTO auth_audit_events(actor,action,details_json,occurred_at) VALUES(?,?,?,?)")
+      .run(input.actor, input.action, JSON.stringify(input.details ?? {}), input.occurredAt)
+    return true
+  }
+
+  private devicePollDone(state: Exclude<DeviceAuthorizationPollResult["state"], "approved">): DeviceAuthorizationPollResult {
+    this.db.exec("COMMIT")
+    return { state }
+  }
+
+  private refreshDone(state: Exclude<RefreshTokenResult["state"], "ok">): RefreshTokenResult {
+    this.db.exec("COMMIT")
+    return { state }
   }
 
   favorite(input: FavoriteInput) {
@@ -1478,6 +1920,56 @@ function artworkItem(value: unknown): ArtworkItem | undefined {
   if (!Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) return undefined
   if (!hash || !/^[a-f0-9]{64}$/.test(hash)) return undefined
   return { type, url, mime, width, height, sha256: hash }
+}
+
+function mapExternalIdentity(row: ExternalIdentityRow): ExternalIdentityItem {
+  return {
+    sourceId: row.source_id,
+    subject: row.subject,
+    userId: row.user_id,
+    username: row.username,
+    ...(row.email ? { email: row.email } : {}),
+    displayName: row.display_name,
+    isAdmin: Boolean(row.is_admin),
+    verifiedAt: row.last_verified_at,
+    user: {
+      id: row.user_id,
+      displayName: row.user_display_name,
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+    },
+  }
+}
+
+function mapDeviceAuthorization(row: DeviceAuthorizationRow): DeviceAuthorizationItem {
+  return {
+    deviceHash: row.device_hash,
+    userCode: row.user_code,
+    intervalSeconds: Number(row.interval_seconds),
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    ...(row.user_id ? { userId: row.user_id } : {}),
+    ...(row.approved_at ? { approvedAt: row.approved_at } : {}),
+    ...(row.denied_at ? { deniedAt: row.denied_at } : {}),
+    ...(row.consumed_at ? { consumedAt: row.consumed_at } : {}),
+    ...(row.last_polled_at ? { lastPolledAt: row.last_polled_at } : {}),
+  }
+}
+
+function mapAccessToken(row: AccessTokenRow): AccessTokenItem {
+  return {
+    familyId: row.family_id,
+    user: {
+      id: row.user_id,
+      displayName: row.display_name,
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+    },
+    authRevision: Number(row.auth_revision),
+    subject: row.subject,
+    isAdmin: Boolean(row.is_admin),
+    expiresAt: row.expires_at,
+  }
 }
 
 function entries(file: string | Buffer): TarEntry[] {

@@ -45,13 +45,13 @@ export interface SlashCommand {
     e: KeyboardEvent,
     textarea: HTMLTextAreaElement | undefined,
     setText: (text: string) => void,
-    onSelect?: () => void,
+    onSelect?: (cmd: SlashCommandEntry) => void,
   ) => boolean
   select: (
     cmd: SlashCommandEntry,
     textarea: HTMLTextAreaElement,
     setText: (text: string) => void,
-    onSelect?: () => void,
+    onSelect?: (cmd: SlashCommandEntry) => void,
   ) => void
   setIndex: (index: number) => void
   close: () => void
@@ -61,6 +61,7 @@ export function useSlashCommand(
   vscode: VSCodeContext,
   sandbox?: { action: () => void; enabled: Accessor<boolean> },
   exclude?: Set<string> | Accessor<Set<string>>,
+  compact?: { action: () => void; enabled: Accessor<boolean> },
 ): SlashCommand {
   const [server, setServer] = createSignal<SlashCommandInfo[]>([])
   const [query, setQuery] = createSignal<string | null>(null)
@@ -113,9 +114,8 @@ export function useSlashCommand(
       name: "compact",
       description: "Summarize and compact the session",
       hints: ["smol", "condense"],
-      action: () => {
-        window.dispatchEvent(new CustomEvent("compactSession"))
-      },
+      action: compact?.action ?? (() => undefined),
+      enabled: compact?.enabled ?? (() => false),
     },
     {
       name: "memory",
@@ -274,7 +274,7 @@ export function useSlashCommand(
     cmd: SlashCommandEntry,
     textarea: HTMLTextAreaElement,
     setText: (text: string) => void,
-    onSelect?: () => void,
+    onSelect?: (cmd: SlashCommandEntry) => void,
   ) => {
     const pos = slashEnd() ?? textarea.selectionStart ?? 0
     const suffix = textarea.value.substring(pos)
@@ -284,7 +284,7 @@ export function useSlashCommand(
       textarea.value = suffix
       setText(suffix)
       close()
-      onSelect?.()
+      onSelect?.(cmd)
       cmd.action()
       return
     }
@@ -299,14 +299,14 @@ export function useSlashCommand(
       setIndex(0)
     }
     if (!cmd.nested) close()
-    onSelect?.()
+    onSelect?.(cmd)
   }
 
   const onKeyDown = (
     e: KeyboardEvent,
     textarea: HTMLTextAreaElement | undefined,
     setText: (text: string) => void,
-    onSelect?: () => void,
+    onSelect?: (cmd: SlashCommandEntry) => void,
   ): boolean => {
     if (!show()) return false
     if (e.isComposing) return false

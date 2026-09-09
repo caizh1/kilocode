@@ -100,6 +100,26 @@ export function resolveConfig(server: Config, draft: Partial<Config>, dirty: boo
   return server
 }
 
+export class ConfigSaveWatchdog {
+  private timer: ReturnType<typeof setTimeout> | undefined
+
+  constructor(private readonly delay: number) {}
+
+  start(request: string, timeout: (request: string) => void) {
+    this.clear()
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      timeout(request)
+    }, this.delay)
+  }
+
+  clear() {
+    if (this.timer === undefined) return
+    clearTimeout(this.timer)
+    this.timer = undefined
+  }
+}
+
 /**
  * Plain-object config state machine — mirrors the SolidJS ConfigProvider
  * logic without signals so the message-handling behavior is unit-testable.
@@ -168,6 +188,13 @@ export class ConfigState {
     this.config = resolveConfig(server, this.draft, this.dirty)
   }
 
+  /** Release a timed-out save without discarding the retryable draft. */
+  handleConfigSaveTimeout(request: string) {
+    if (!this.saving || request !== this.request) return
+    this.saving = false
+    this.request = undefined
+  }
+
   /** Send the draft to the backend. */
   saveConfig(request = "request") {
     if (this.saving || Object.keys(this.draft).length === 0) return
@@ -177,6 +204,7 @@ export class ConfigState {
 
   /** Discard pending changes. */
   discardConfig() {
+    this.saving = false
     this.config = this.saved
     this.draft = {}
     this.dirty = false

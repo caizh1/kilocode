@@ -18,6 +18,7 @@ const CONTROLLER_OWNED = new Set([
   "diff_word_documents",
   "normalize_word_table_spec",
   "render_word_document",
+  "word_to_images",
 ])
 const WORKER_OWNED = new Set([
   "apply_patch",

@@ -64,8 +64,7 @@ cd packages\chipmate-vscode\qa\windows-real
   -Output C:\qa\runs\chipmate-1.0.9-arm64-smoke `
   -ExpectedVersion 1.0.9 `
   -Gate arm64-vm `
-  -Gpu default `
-  -Lane agent-console
+  -Gpu default
 ```
 
 Repeat the same frozen kit with `-Gpu disabled`, then repeat both GPU lanes with `-Gate native-x64` on the native x64 release machine. Do not merge the four result directories.
@@ -94,9 +93,9 @@ bun run qa:windows:freeze -- \
 
 After extracting the ZIP on Windows, run `RUN-WINDOWS.ps1`. Add `--chipmate <path>` while freezing when the ChipMate coexistence artifact is available.
 
-Use `-Lane agent-console` for the installed Agent Console, real PowerShell/IME, CLI lifecycle, CDP, scroll, stress, and visual evidence gate without inheriting unrelated unfinished matrix work. Use `-Lane package` for archive inspection only, or `-Lane core` for package, installed-host, typing, visual, update, and failure-path preparation. `-NoGui` intentionally blocks GUI cases rather than pretending they passed.
+Use `-Lane package` for archive inspection only, or `-Lane core` for package, installed-host, typing, visual, update, and failure-path preparation. `-NoGui` intentionally blocks GUI cases rather than pretending they passed.
 
-Use `-Lane settings` for a focused installed-VSIX settings regression. It validates package identity, isolated installation and activation, every visible Settings page, navigation search, the 420px page picker, invalid Server URL handling, Server save/reopen persistence, and indexing model/dimension save/reopen persistence without running QA or Agent Console cases. Omit `-ExpectedVersion` to read the frozen artifact version from its manifest.
+Use `-Lane settings` for a focused installed-VSIX settings regression. It validates package identity, isolated installation and activation, every visible Settings page, navigation search, the 420px page picker, invalid Server URL handling, Server save/reopen persistence, and indexing model/dimension save/reopen persistence without running unrelated QA cases. Omit `-ExpectedVersion` to read the frozen artifact version from its manifest.
 
 ### 离线自动更新聚焦通道
 

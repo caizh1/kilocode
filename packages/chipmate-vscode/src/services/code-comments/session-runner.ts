@@ -56,7 +56,6 @@ export const CODE_COMMENT_TOOL_TOGGLES: Record<string, boolean> = {
   codebase_analysis: true,
   semantic_search: true,
   document_search: true,
-  agent_console_shell: false,
   agent_manager: false,
   apply_patch: false,
   background_process: false,
@@ -81,6 +80,7 @@ export const CODE_COMMENT_TOOL_TOGGLES: Record<string, boolean> = {
   render_mermaid_diagram: false,
   render_plantuml_diagram: false,
   render_word_document: false,
+  word_to_images: false,
   repo_clone: false,
   save_mermaid_artifact: false,
   skill_create: false,
@@ -110,17 +110,20 @@ export class CodeCommentSessionRunner {
     model?: Model
     timeoutMs: number
     token: vscode.CancellationToken
+    systemPrompt?: string
+    feature?: string
+    sessionTitle?: string
   }): Promise<CodeCommentSessionOutput> {
     if (input.token.isCancellationRequested) throw new CodeCommentCancelledError()
     const client = await this.connection.getClientAsync(input.directory)
     const { data: session } = await client.session.create(
       {
         directory: input.directory,
-        title: `代码注释 · ${input.stage}`,
+        title: input.sessionTitle ?? `代码注释 · ${input.stage}`,
         agent: "code",
         metadata: {
           ephemeral: true,
-          feature: "high-confidence-code-comments",
+          feature: input.feature ?? "high-confidence-code-comments",
           stage: input.stage,
           functionHash: input.functionHash,
         },
@@ -149,7 +152,7 @@ export class CodeCommentSessionRunner {
           agent: "code",
           ...(input.model ? { model: input.model } : {}),
           tools: CODE_COMMENT_TOOL_TOGGLES,
-          system: COMMENT_SYSTEM_PROMPT,
+          system: input.systemPrompt ?? COMMENT_SYSTEM_PROMPT,
           editorContext: {
             activeFile: input.activeFile,
           },

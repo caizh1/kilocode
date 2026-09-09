@@ -17,16 +17,27 @@ import type { Provider, ProviderConfig } from "../../types/messages"
 import CustomProviderDialog from "./CustomProviderDialog"
 import ProviderConnectDialog from "./ProviderConnectDialog"
 import ProviderSelectDialog from "./ProviderSelectDialog"
-import { CUSTOM_PROVIDER_ID, isPopularProvider, providerIcon, providerNoteKey, sortProviders } from "./provider-catalog"
+import { isPopularProvider, providerIcon, providerNoteKey, sortProviders } from "./provider-catalog"
 import { disabledProviderOptions, providersWithChipMateFallback, visibleConnectedIds } from "./provider-visibility"
 import { isCustomProviderPackage, CHIPMATE_PROVIDER_ID } from "../../../../src/shared/provider-model"
-import { internalOfflineProviderDefaults, isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
+import {
+  internalOfflineProviderDefaults,
+  isInternalOfflineBuild,
+  type InternalOfflineProviderDefaults,
+} from "../../../../src/shared/internal-offline"
 import { createProviderAction } from "../../utils/provider-action"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderOption = { value: string; label: string }
 
-const ProvidersTab: Component = () => {
+export interface ProvidersTabProps {
+  /** Story/test override; production uses the compile-time build mode. */
+  internal?: boolean
+  /** Story/test override; production uses the injected internal defaults. */
+  internalDefaults?: InternalOfflineProviderDefaults
+}
+
+const ProvidersTab: Component<ProvidersTabProps> = (props) => {
   const dialog = useDialog()
   const { config, updateConfig } = useConfig()
   const provider = useProvider()
@@ -34,12 +45,13 @@ const ProvidersTab: Component = () => {
   const server = useServer()
   const vscode = useVSCode()
   const action = createProviderAction(vscode)
-  const internal = isInternalOfflineBuild()
-  const internalDefaults = internalOfflineProviderDefaults()
+  const internal = props.internal ?? isInternalOfflineBuild()
+  const internalDefaults = props.internalDefaults ?? internalOfflineProviderDefaults(internal)
   const [disabled, setDisabled] = createSignal<ProviderOption | undefined>()
 
   onCleanup(action.dispose)
 
+  const providers = createMemo(() => providersWithChipMateFallback(provider.providers(), internal))
   const chipmateLoggedIn = createMemo(() => !!provider.authStates()[CHIPMATE_PROVIDER_ID])
   const internalChipMate = createMemo<Provider | undefined>(() => {
     if (!internal) return
@@ -60,14 +72,24 @@ const ProvidersTab: Component = () => {
     }
   })
 
+  const connectedIds = createMemo(() => visibleConnectedIds(provider.connected(), provider.authStates(), internal))
+  const chipmateConnected = createMemo(
+    () =>
+      connectedIds().includes(CHIPMATE_PROVIDER_ID) &&
+      (internal || !(config().disabled_providers ?? []).includes(CHIPMATE_PROVIDER_ID)),
+  )
+  const connectedChipMate = createMemo<Provider | undefined>(() => {
+    if (!chipmateConnected()) return undefined
+    return internal ? internalChipMate() : providers()[CHIPMATE_PROVIDER_ID]
+  })
   const connectedProviders = createMemo(() => {
-    const ids = visibleConnectedIds(provider.connected(), provider.authStates(), internal)
-    const all = provider.providers()
-    return ids
+    const all = providers()
+    return connectedIds()
       .filter((id) => id !== CHIPMATE_PROVIDER_ID)
       .map((id) => all[id])
       .filter((item): item is Provider => !!item)
   })
+  const hasConnectedProviders = createMemo(() => !!connectedChipMate() || connectedProviders().length > 0)
 
   const popularProviders = createMemo(() => {
     if (internal) return []
@@ -87,7 +109,6 @@ const ProvidersTab: Component = () => {
 
   const disabledProviders = createMemo(() => config().disabled_providers ?? [])
   const disabledIds = createMemo(() => new Set(disabledProviders()))
-  const providers = createMemo(() => providersWithChipMateFallback(provider.providers(), internal))
   const disabledOptions = createMemo(() => disabledProviderOptions(providers(), disabledProviders(), internal))
 
   function source(item: Provider): ProviderSource | undefined {
@@ -209,21 +230,27 @@ const ProvidersTab: Component = () => {
     return (provider.authMethods()[item.id] ?? []).some((method) => method.type === "oauth")
   }
 
-  return (
-    <div>
-      <Show when={!internal && !disabledIds().has(CHIPMATE_PROVIDER_ID)}>
-        {/* ChipMate Gateway — always at the top, not editable */}
-        <Card>
-          <div
-            style={{
-              display: "flex",
-              "align-items": "center",
-              gap: "12px",
-              "min-height": "56px",
-              padding: "12px 0",
-            }}
-          >
-            <ProviderIcon id={providerIcon(CHIPMATE_PROVIDER_ID)} width={20} height={20} />
+  function addCustomProvider() {
+    dialog.show(() => <CustomProviderDialog setupMode={internal ? "additional" : "primary"} />)
+  }
+
+  function customProviderEntry() {
+    return (
+      <div
+        style={{
+          display: "flex",
+          "flex-wrap": "wrap",
+          "align-items": "center",
+          "justify-content": "space-between",
+          gap: "16px",
+          "min-height": "56px",
+          padding: "12px 0",
+          "border-bottom": internal ? "none" : "1px solid var(--border-weak-base)",
+        }}
+      >
+        <div style={{ display: "flex", "flex-direction": "column", "min-width": 0 }}>
+          <div style={{ display: "flex", "flex-wrap": "wrap", "align-items": "center", gap: "12px" }}>
+            <ProviderIcon id="synthetic" width={20} height={20} />
             <span
               style={{
                 "font-size": "var(--chipmate-font-size-14)",
@@ -231,71 +258,123 @@ const ProvidersTab: Component = () => {
                 color: "var(--vscode-foreground)",
               }}
             >
-              ChipMate Gateway
+              {language.t("provider.custom.title")}
             </span>
-            <Show
-              when={chipmateLoggedIn()}
-              fallback={
-                <Button size="small" variant="secondary" onClick={() => server.goToLogin()}>
-                  {language.t("common.signIn")}
-                </Button>
-              }
-            >
-              <Tag>{language.t("settings.providers.tag.gateway")}</Tag>
-            </Show>
+            <Tag>{language.t("settings.providers.tag.custom")}</Tag>
           </div>
-        </Card>
+          <span
+            style={{
+              "font-size": "var(--chipmate-font-size-12)",
+              color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
+              "padding-left": "32px",
+            }}
+          >
+            {language.t("settings.providers.custom.description")}
+          </span>
+        </div>
+        <Button size="large" variant="secondary" icon="plus-small" onClick={addCustomProvider}>
+          {language.t("common.connect")}
+        </Button>
+      </div>
+    )
+  }
+
+  function publicChipMateEntry(border = false) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          "flex-wrap": "wrap",
+          "align-items": "center",
+          gap: "12px",
+          "min-height": "56px",
+          padding: "12px 0",
+          "border-bottom": border ? "1px solid var(--border-weak-base)" : "none",
+        }}
+      >
+        <ProviderIcon id={providerIcon(CHIPMATE_PROVIDER_ID)} width={20} height={20} />
+        <span
+          style={{
+            "font-size": "var(--chipmate-font-size-14)",
+            "font-weight": "500",
+            color: "var(--vscode-foreground)",
+          }}
+        >
+          ChipMate Gateway
+        </span>
+        <Show
+          when={chipmateLoggedIn()}
+          fallback={
+            <Button size="small" variant="secondary" onClick={() => server.goToLogin()}>
+              {language.t("common.signIn")}
+            </Button>
+          }
+        >
+          <Tag>{language.t("settings.providers.tag.gateway")}</Tag>
+        </Show>
+      </div>
+    )
+  }
+
+  function internalChipMateEntry(item: Provider, border = false) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          "flex-wrap": "wrap",
+          "align-items": "center",
+          "justify-content": "space-between",
+          gap: "16px",
+          "min-height": "56px",
+          padding: "12px 0",
+          "border-bottom": border ? "1px solid var(--border-weak-base)" : "none",
+        }}
+      >
+        <div style={{ display: "flex", "align-items": "center", gap: "12px", "min-width": 0 }}>
+          <ProviderIcon id={providerIcon(item)} width={20} height={20} />
+          <span
+            style={{
+              "font-size": "var(--chipmate-font-size-14)",
+              "font-weight": "500",
+              color: "var(--vscode-foreground)",
+              overflow: "hidden",
+              "text-overflow": "ellipsis",
+              "white-space": "nowrap",
+            }}
+          >
+            {item.name}
+          </span>
+          <Tag>
+            {chipmateLoggedIn()
+              ? language.t("provider.connect.method.apiKey")
+              : language.t("settings.providers.tag.config")}
+          </Tag>
+        </div>
+        <Button size="large" variant="secondary" onClick={editInternalProvider}>
+          {language.t(chipmateLoggedIn() ? "common.edit" : "settings.providers.tag.config")}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <Show when={!internal && !disabledIds().has(CHIPMATE_PROVIDER_ID) && !connectedChipMate()}>
+        {/* Signed-out Gateway remains available without being counted as connected. */}
+        <Card>{publicChipMateEntry()}</Card>
       </Show>
 
-      <Show when={internalChipMate()}>
-        {(item) => (
-          <Card>
-            <div
-              style={{
-                display: "flex",
-                "flex-wrap": "wrap",
-                "align-items": "center",
-                "justify-content": "space-between",
-                gap: "16px",
-                "min-height": "56px",
-                padding: "12px 0",
-              }}
-            >
-              <div style={{ display: "flex", "align-items": "center", gap: "12px", "min-width": 0 }}>
-                <ProviderIcon id={providerIcon(item())} width={20} height={20} />
-                <span
-                  style={{
-                    "font-size": "var(--chipmate-font-size-14)",
-                    "font-weight": "500",
-                    color: "var(--vscode-foreground)",
-                    overflow: "hidden",
-                    "text-overflow": "ellipsis",
-                    "white-space": "nowrap",
-                  }}
-                >
-                  {item().name}
-                </span>
-                <Tag>
-                  {chipmateLoggedIn()
-                    ? language.t("provider.connect.method.apiKey")
-                    : language.t("settings.providers.tag.config")}
-                </Tag>
-              </div>
-              <Button size="large" variant="secondary" onClick={editInternalProvider}>
-                {language.t(chipmateLoggedIn() ? "common.edit" : "settings.providers.tag.config")}
-              </Button>
-            </div>
-          </Card>
-        )}
+      <Show when={!connectedChipMate() && internalChipMate()}>
+        {(item) => <Card>{internalChipMateEntry(item())}</Card>}
       </Show>
 
-      {/* Connected providers (excluding ChipMate) */}
+      {/* Connected providers, with ChipMate first when it is actually connected. */}
       <h4 style={{ "margin-top": "16px", "margin-bottom": "8px" }}>
         {language.t("settings.providers.section.connected")}
       </h4>
       <Card>
         <Show
-          when={connectedProviders().length > 0}
+          when={hasConnectedProviders()}
           fallback={
             <div
               style={{
@@ -308,8 +387,15 @@ const ProvidersTab: Component = () => {
             </div>
           }
         >
+          <Show when={connectedChipMate()}>
+            {(item) =>
+              internal
+                ? internalChipMateEntry(item(), connectedProviders().length > 0)
+                : publicChipMateEntry(connectedProviders().length > 0)
+            }
+          </Show>
           <For each={connectedProviders()}>
-            {(item) => (
+            {(item, index) => (
               <div
                 style={{
                   display: "flex",
@@ -319,7 +405,8 @@ const ProvidersTab: Component = () => {
                   gap: "16px",
                   "min-height": "56px",
                   padding: "12px 0",
-                  "border-bottom": "1px solid var(--border-weak-base)",
+                  "border-bottom":
+                    index() < connectedProviders().length - 1 ? "1px solid var(--border-weak-base)" : "none",
                 }}
               >
                 <div style={{ display: "flex", "align-items": "center", gap: "12px", "min-width": 0 }}>
@@ -376,6 +463,11 @@ const ProvidersTab: Component = () => {
           </For>
         </Show>
       </Card>
+
+      <Show when={internal}>
+        <h4 style={{ "margin-top": "24px", "margin-bottom": "8px" }}>{language.t("provider.custom.title")}</h4>
+        <Card>{customProviderEntry()}</Card>
+      </Show>
 
       <Show when={!internal}>
         {/* Popular providers */}
@@ -434,52 +526,7 @@ const ProvidersTab: Component = () => {
             }}
           </For>
 
-          {/* Custom provider entry */}
-          <div
-            style={{
-              display: "flex",
-              "flex-wrap": "wrap",
-              "align-items": "center",
-              "justify-content": "space-between",
-              gap: "16px",
-              "min-height": "56px",
-              padding: "12px 0",
-              "border-bottom": "1px solid var(--border-weak-base)",
-            }}
-          >
-            <div style={{ display: "flex", "flex-direction": "column", "min-width": 0 }}>
-              <div style={{ display: "flex", "flex-wrap": "wrap", "align-items": "center", gap: "12px" }}>
-                <ProviderIcon id="synthetic" width={20} height={20} />
-                <span
-                  style={{
-                    "font-size": "var(--chipmate-font-size-14)",
-                    "font-weight": "500",
-                    color: "var(--vscode-foreground)",
-                  }}
-                >
-                  {language.t("provider.custom.title")}
-                </span>
-                <Tag>{language.t("settings.providers.tag.custom")}</Tag>
-              </div>
-              <span
-                style={{
-                  "font-size": "var(--chipmate-font-size-12)",
-                  color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
-                  "padding-left": "32px",
-                }}
-              >
-                {language.t("settings.providers.custom.description")}
-              </span>
-            </div>
-            <Button
-              size="large"
-              variant="secondary"
-              icon="plus-small"
-              onClick={() => dialog.show(() => <CustomProviderDialog />)}
-            >
-              {language.t("common.connect")}
-            </Button>
-          </div>
+          {customProviderEntry()}
 
           {/* Show more providers — prominent entry point to the full catalog */}
           <button

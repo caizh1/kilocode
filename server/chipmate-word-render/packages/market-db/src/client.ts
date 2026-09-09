@@ -1,4 +1,6 @@
+import type { DiagnosticOperation } from "./diagnostics-repo.ts"
 import { Worker } from "node:worker_threads"
+import type { AdminChange, AdminChangeResult, AdminItem } from "./model.ts"
 import type {
   AuthorItem,
   CategoryItem,
@@ -45,6 +47,22 @@ import type {
   ExtensionReviewItem,
   ExtensionSearchInput,
   ExtensionSummaryItem,
+  AccessTokenItem,
+  AccessTokenLookup,
+  AuthAuditInput,
+  AuthSettingsInput,
+  AuthSettingsItem,
+  DeviceAuthorizationApproval,
+  DeviceAuthorizationInput,
+  DeviceAuthorizationItem,
+  DeviceAuthorizationPoll,
+  DeviceAuthorizationPollResult,
+  ExternalIdentityInput,
+  ExternalIdentityItem,
+  IdentityMappingItem,
+  RefreshTokenResult,
+  RefreshTokenRotation,
+  TokenPairInput,
 } from "./model.ts"
 import type { DbRequest, DbResponse } from "./protocol.ts"
 
@@ -54,6 +72,7 @@ interface Pending {
 }
 
 export class MarketDb {
+  readonly directory: string
   private readonly worker: Worker
   private readonly pending = new Map<number, Pending>()
   private seq = 0
@@ -61,6 +80,7 @@ export class MarketDb {
   private catalog: Promise<string> | undefined
 
   constructor(opts: MarketDbOptions) {
+    this.directory = opts.dir
     this.worker = new Worker(new URL("./worker.ts", import.meta.url), {
       execArgv: ["--import", "tsx"],
       workerData: { dir: opts.dir },
@@ -71,6 +91,8 @@ export class MarketDb {
       if (code !== 0 && this.pending.size > 0) this.fail(new Error(`market-db worker exited with code ${code}`))
     })
   }
+
+  diagnostics<T = unknown>(input: DiagnosticOperation) { return this.call<T>("diagnostics", input) }
 
   health() {
     return this.call<MarketDbHealth>("health")
@@ -131,6 +153,12 @@ export class MarketDb {
     return this.call<MarketUserItem>("identity", input)
   }
 
+  administrators() { return this.call<AdminItem[]>("administrators") }
+
+  isAdministrator(subject: string) { return this.call<boolean>("isAdministrator", subject) }
+
+  changeAdministrator(input: AdminChange) { return this.call<AdminChangeResult>("changeAdministrator", input) }
+
   createSession(input: SessionInput) {
     return this.call<SessionItem>("createSession", input)
   }
@@ -141,6 +169,78 @@ export class MarketDb {
 
   deleteSession(hash: string) {
     return this.call<boolean>("deleteSession", hash)
+  }
+
+  touchSessionVerification(hash: string, verifiedAt: string, isAdmin: boolean) {
+    return this.call<boolean>("touchSessionVerification", { hash, verifiedAt, isAdmin })
+  }
+
+  authSettings() {
+    return this.call<AuthSettingsItem | undefined>("authSettings")
+  }
+
+  putAuthSettings(input: AuthSettingsInput) {
+    return this.call<AuthSettingsItem>("putAuthSettings", input)
+  }
+
+  externalIdentity(sourceId: string, subject: string) {
+    return this.call<ExternalIdentityItem | undefined>("externalIdentity", { sourceId, subject })
+  }
+
+  putExternalIdentity(input: ExternalIdentityInput) {
+    return this.call<ExternalIdentityItem>("putExternalIdentity", input)
+  }
+
+  identityMappings() {
+    return this.call<IdentityMappingItem[]>("identityMappings")
+  }
+
+  deleteExternalIdentity(sourceId: string, subject: string) {
+    return this.call<boolean>("deleteExternalIdentity", { sourceId, subject })
+  }
+
+  createDeviceAuthorization(input: DeviceAuthorizationInput) {
+    return this.call<DeviceAuthorizationItem>("createDeviceAuthorization", input)
+  }
+
+  approveDeviceAuthorization(input: DeviceAuthorizationApproval) {
+    return this.call<boolean>("approveDeviceAuthorization", input)
+  }
+
+  denyDeviceAuthorization(userCode: string, deniedAt: string) {
+    return this.call<boolean>("denyDeviceAuthorization", { userCode, deniedAt })
+  }
+
+  pollDeviceAuthorization(input: DeviceAuthorizationPoll) {
+    return this.call<DeviceAuthorizationPollResult>("pollDeviceAuthorization", input)
+  }
+
+  createTokenPair(input: TokenPairInput) {
+    return this.call<AccessTokenItem | undefined>("createTokenPair", input)
+  }
+
+  accessToken(input: AccessTokenLookup) {
+    return this.call<AccessTokenItem | undefined>("accessToken", input)
+  }
+
+  revokeAccessToken(hash: string, now: string) {
+    return this.call<boolean>("revokeAccessToken", { hash, now })
+  }
+
+  rotateRefreshToken(input: RefreshTokenRotation) {
+    return this.call<RefreshTokenResult>("rotateRefreshToken", input)
+  }
+
+  revokeTokenFamily(familyId: string, now: string) {
+    return this.call<boolean>("revokeTokenFamily", { familyId, now })
+  }
+
+  updateTokenFamilyAuthorization(familyId: string, isAdmin: boolean) {
+    return this.call<boolean>("updateTokenFamilyAuthorization", { familyId, isAdmin })
+  }
+
+  authAudit(input: AuthAuditInput) {
+    return this.call<boolean>("authAudit", input)
   }
 
   favorite(input: FavoriteInput) {

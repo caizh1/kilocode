@@ -304,6 +304,76 @@ function createConfig(): CodeIndexConfigManager {
 }
 
 describe("CodeIndexOrchestrator telemetry", () => {
+  test("关闭工作区等待单独运行的 Code RAG，重复启动复用同一任务", async () => {
+    const ctx = await env()
+    const entered = Promise.withResolvers<void>()
+    const gate = Promise.withResolvers<void>()
+    const store = new Store(false)
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      store as unknown as IVectorStore,
+      new Scanner(1, 1, 1) as unknown as DirectoryScanner,
+      new Watcher() as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+      undefined,
+      undefined,
+      async () => {
+        entered.resolve()
+        await gate.promise
+      },
+    )
+    const task = orchestrator.startRagIndexing("manual")
+    await entered.promise
+    expect(orchestrator.startRagIndexing("manual")).toBe(task)
+    const shutdown = orchestrator.shutdown()
+    await Bun.sleep(0)
+    expect(store.closeCount).toBe(0)
+    gate.resolve()
+    await Promise.all([task, shutdown])
+    expect(store.closeCount).toBe(1)
+  })
+
+  test("文档阶段只监听代码变化，不扫描或启动溢出补扫", async () => {
+    const ctx = await env()
+    const scanner = new Scanner(1, 1, 1)
+    const watcher = new Watcher()
+    const orchestrator = new CodeIndexOrchestrator(
+      createConfig(),
+      new CodeIndexStateManager(),
+      ctx.root,
+      { async clearCacheFile() {} } as unknown as CacheManager,
+      new Store(false) as unknown as IVectorStore,
+      scanner as unknown as DirectoryScanner,
+      watcher as unknown as IFileWatcher,
+      ctx.cacheDirectory,
+      ctx.meta,
+    )
+    const resume = orchestrator.deferForDocuments("background")
+    await Bun.sleep(0)
+    const data = orchestrator as unknown as {
+      _followUpScanRequested: boolean
+      _followUpScanScheduled: boolean
+      scheduleFollowUpScan(trigger: "background"): void
+    }
+    data._followUpScanRequested = true
+    data.scheduleFollowUpScan("background")
+    expect(data._followUpScanScheduled).toBe(false)
+    expect(watcher.initialized).toBe(1)
+    expect(watcher.collecting.at(-1)).toBe(false)
+    expect(scanner.targets).toEqual([])
+    data._followUpScanRequested = false
+    await orchestrator.startIndexing("background")
+    resume()
+    expect(scanner.targets).toEqual(["codeGraph", "rag"])
+    expect(watcher.initialized).toBe(1)
+    expect(watcher.collecting.at(-1)).toBe(true)
+    await orchestrator.shutdown()
+  })
+
   test("validates embeddings only after Code Graph and before RAG", async () => {
     const ctx = await env()
     const order: string[] = []

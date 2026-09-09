@@ -504,6 +504,98 @@ test("Document confirmation keeps both scope states readable in a 200px sidebar"
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
 })
 
+test("ChipMate DeepSeek Harness selection explains the native boundary before starting DSH", async ({ page }) => {
+  await load(page, "prompt-input--deep-seek-harness-selection-420")
+
+  const trigger = page.locator(".prompt-selector-trigger--mode")
+  const activations = page.locator('[data-ui="qa-dsh-activation-count"]')
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="deepseek-harness"]').click()
+
+  const dialog = page.getByRole("alertdialog", { name: "Start ChipMate DeepSeek Harness" })
+  const confirm = page.getByRole("button", { name: "Confirm and start ChipMate DeepSeek Harness" })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText("QA is only the interface")
+  await expect(dialog).toContainText("Official DSH 0.1.0-rc.6")
+  await expect(dialog).toContainText("Neither uses ChipMate prompts")
+  await expect(dialog).toContainText("private persistent DSH_HOME")
+  await expect(trigger).toHaveAttribute("data-agent", "code")
+  await expect(activations).toHaveText("0")
+  await expect(confirm).toBeFocused()
+
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeVisible()
+  await confirm.click()
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toHaveAttribute("data-agent", "deepseek-harness")
+  await expect(activations).toHaveText("1")
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="deepseek-harness"]').click()
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(activations).toHaveText("1")
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="code"]').click()
+  await expect(trigger).toHaveAttribute("data-agent", "code")
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="deepseek-harness"]').click()
+  await expect(dialog).toBeVisible()
+  await expect(activations).toHaveText("1")
+})
+
+test("ChipMate DeepSeek Harness guarded selection covers cycle requests and session changes", async ({ page }) => {
+  await load(page, "prompt-input--deep-seek-harness-session-switch-420")
+  await page.evaluate(() =>
+    window.dispatchEvent(new CustomEvent("chipmate:request-agent-selection", { detail: { name: "deepseek-harness" } })),
+  )
+  await expect(page.getByRole("alertdialog", { name: "Start ChipMate DeepSeek Harness" })).toBeVisible()
+  await expect(page.locator('[data-ui="qa-dsh-activation-count"]')).toHaveText("0")
+
+  await page.locator('[data-ui="qa-switch-session"]').evaluate((element: HTMLButtonElement) => element.click())
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(page.locator('[data-ui="qa-dsh-activation-count"]')).toHaveText("0")
+})
+
+test("ChipMate DeepSeek Harness confirmation survives pending QA session materialization", async ({ page }) => {
+  await load(page, "prompt-input--deep-seek-harness-pending-session-420")
+  const trigger = page.locator(".prompt-selector-trigger--mode")
+  const activations = page.locator('[data-ui="qa-dsh-activation-count"]')
+
+  await trigger.click()
+  await page.locator('.mode-switcher-item[data-agent="deepseek-harness"]').click()
+  await expect(page.getByRole("alertdialog", { name: "Start ChipMate DeepSeek Harness" })).toBeVisible()
+  await page.locator('[data-ui="qa-materialize-session"]').evaluate((element: HTMLButtonElement) => element.click())
+  await page.getByRole("button", { name: "Confirm and start ChipMate DeepSeek Harness" }).click()
+
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(trigger).toHaveAttribute("data-agent", "deepseek-harness")
+  await expect(activations).toHaveText("1")
+})
+
+test("ChipMate DeepSeek Harness architecture remains readable in a 200px sidebar", async ({ page }) => {
+  await page.setViewportSize({ width: 200, height: 720 })
+  await load(page, "prompt-input--deep-seek-harness-confirmation-200")
+
+  const dialog = page.getByRole("alertdialog", { name: "启动 ChipMate DeepSeek Harness" })
+  const flow = page.getByRole("img", { name: /QA 输入与展示.*官方协议转发.*官方 DSH.*会话、工具、审批和子 Agent/ })
+  await expect(flow).toBeVisible()
+  await expect(flow).toContainText("QA 输入与展示")
+  await expect(flow).toContainText("官方协议转发")
+  await expect(flow).toContainText("官方 DSH 0.1.0-rc.6")
+  await expect(flow).toContainText("会话 · 工具 · 审批 · 子 Agent")
+  await expect(dialog).toContainText("不进入 ChipMate 的 Prompt")
+  await expect(dialog).toContainText("确认后才启动")
+  await expect(page.getByRole("button", { name: "确认并启动 ChipMate DeepSeek Harness" })).toBeVisible()
+
+  const box = await dialog.boundingBox()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(200)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(720)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
+})
+
 test("Document code scope stays explicit without truncating its boundary", async ({ page }) => {
   await load(page, "prompt-input--document-code-scope-zh")
 
@@ -610,8 +702,39 @@ test("Ultra uses its sparkle icon and theme-aware semantic color without affecti
 test("variant picker focuses the selected effort as it opens", async ({ page }) => {
   await load(page, "prompt-input--with-thinking-420")
 
-  await page.getByRole("button", { name: "Medium", exact: true }).click()
+  await page.getByRole("button", { name: "Reasoning effort: Medium" }).click()
   await expect(page.locator(".thinking-selector-item.selected")).toBeFocused()
+})
+
+test("Qwen3.8 thinking selector defaults to XHigh and keeps the disabled choice per session", async ({ page }) => {
+  await page.setViewportSize({ width: 200, height: 600 })
+  await load(page, "prompt-input--qwen-38-thinking-zh")
+
+  const xhigh = page.getByRole("button", { name: "推理强度：XHigh" })
+  await expect(xhigh).toBeVisible()
+  await xhigh.click()
+
+  const list = page.getByRole("listbox")
+  await expect(page.getByRole("option")).toHaveText(["XHigh", "Medium", "Low", "关闭"])
+  const box = await list.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(200)
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(200)
+
+  await page.keyboard.press("End")
+  await expect(page.getByRole("option", { name: "关闭" })).toBeFocused()
+  await page.keyboard.press("Enter")
+  await expect(page.getByRole("button", { name: "推理强度：关闭" })).toBeVisible()
+
+  await page.locator('[data-ui="qa-switch-session"]').evaluate((button: HTMLButtonElement) => button.click())
+  await expect(page.getByRole("button", { name: "推理强度：XHigh" })).toBeVisible()
+  await page.locator('[data-ui="qa-switch-session"]').evaluate((button: HTMLButtonElement) => button.click())
+  await expect(page.getByRole("button", { name: "推理强度：关闭" })).toBeVisible()
+
+  await load(page, "prompt-input--qwen-38-thinking-zh", "light-modern")
+  await page.getByRole("button", { name: "推理强度：XHigh" }).click()
+  await expect(page.getByRole("option", { name: "XHigh" })).toBeFocused()
 })
 
 test("slash mode picker Escape returns focus to the prompt", async ({ page }) => {

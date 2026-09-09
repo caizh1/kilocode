@@ -34,6 +34,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { ChipMateCompactionStatus } from "@/chipmate/session/compaction-status" // chipmate_change
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -194,9 +195,11 @@ function createCompactionMarker(sessionID: SessionID) {
   )
 }
 
+// chipmate_change start - valid compaction fixtures must persist a complete summary
 function fake(
   input: Parameters<SessionProcessorModule.SessionProcessor.Interface["create"]>[0],
   result: "continue" | "compact",
+  updatePart?: SessionNs.Interface["updatePart"],
 ) {
   const msg = input.assistantMessage
   return {
@@ -206,18 +209,45 @@ function fake(
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     metadata: Effect.fn("TestSessionProcessor.metadata")(() => Effect.void), // chipmate_change
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
-    process: Effect.fn("TestSessionProcessor.process")(() => Effect.succeed(result)),
+    process: Effect.fn("TestSessionProcessor.process")(() =>
+      Effect.gen(function* () {
+        if (result === "continue" && updatePart)
+          yield* updatePart({
+            id: PartID.ascending(),
+            messageID: msg.id,
+            sessionID: msg.sessionID,
+            type: "text",
+            text: "test summary",
+          })
+        msg.finish = result === "continue" ? "stop" : msg.finish
+        return result
+      }),
+    ),
   } satisfies SessionProcessorModule.SessionProcessor.Handle
 }
 
 function processorLayer(result: "continue" | "compact") {
-  return Layer.succeed(
+  return Layer.effect(
     SessionProcessorModule.SessionProcessor.Service,
-    SessionProcessorModule.SessionProcessor.Service.of({
-      create: Effect.fn("TestSessionProcessor.create")((input) => Effect.succeed(fake(input, result))),
+    Effect.gen(function* () {
+      const sessions = yield* SessionNs.Service
+      return SessionProcessorModule.SessionProcessor.Service.of({
+        create: Effect.fn("TestSessionProcessor.create")((input) =>
+          Effect.succeed(fake(input, result, sessions.updatePart)),
+        ),
+      })
     }),
   )
 }
+
+function processorNode(result: "continue" | "compact") {
+  return LayerNode.make({
+    service: SessionProcessorModule.SessionProcessor.Service,
+    layer: processorLayer(result),
+    deps: [SessionNs.node],
+  })
+}
+// chipmate_change end
 
 function cfg(compaction?: ConfigV1.Info["compaction"]) {
   const base = Schema.decodeUnknownSync(ConfigV1.Info)({}) as ConfigV1.Info
@@ -235,7 +265,7 @@ const compactionTestNode = LayerNode.group([
 ])
 const env = AppNodeBuilder.build(compactionTestNode, [
   [Provider.node, defaultProvider.layer],
-  [SessionProcessorModule.SessionProcessor.node, processorLayer("continue")],
+  [SessionProcessorModule.SessionProcessor.node, processorNode("continue")], // chipmate_change
   [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
 ])
 
@@ -270,7 +300,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
   if (!options?.llm) {
     return AppNodeBuilder.build(compactionTestNode, [
       ...replacements,
-      [SessionProcessorModule.SessionProcessor.node, processorLayer(options?.result ?? "continue")],
+      [SessionProcessorModule.SessionProcessor.node, processorNode(options?.result ?? "continue")], // chipmate_change
       ...(options?.plugin ? ([[Plugin.node, options.plugin]] as const) : []),
       ...(options?.config ? ([[Config.node, options.config]] as const) : []),
     ])
@@ -592,12 +622,18 @@ describe("session.compaction.create", () => {
         const msgs = yield* ssn.messages({ sessionID: info.id })
         expect(msgs).toHaveLength(1)
         expect(msgs[0].info.role).toBe("user")
-        expect(msgs[0].parts).toHaveLength(1)
-        expect(msgs[0].parts[0]).toMatchObject({
+        // chipmate_change start - lifecycle status is stored beside the official marker
+        expect(msgs[0].parts).toHaveLength(2)
+        expect(msgs[0].parts.find((part) => part.type === "compaction")).toMatchObject({
           type: "compaction",
           auto: true,
           overflow: true,
         })
+        expect(ChipMateCompactionStatus.value(ChipMateCompactionStatus.find(msgs[0].parts))).toMatchObject({
+          state: "running",
+          source: "auto",
+        })
+        // chipmate_change end
       }),
     ),
   )
@@ -820,6 +856,35 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  // chipmate_change start - compaction lifecycle persistence
+  it.instance(
+    "persists a model-ignored running marker with the manual or automatic source",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const compact = yield* SessionCompaction.Service
+      const session = yield* ssn.create({})
+
+      yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: false })
+      yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: true })
+
+      const markers = (yield* ssn.messages({ sessionID: session.id })).filter((message) =>
+        message.parts.some((part) => part.type === "compaction"),
+      )
+      expect(markers).toHaveLength(2)
+      expect(
+        markers.map((message) => ChipMateCompactionStatus.value(ChipMateCompactionStatus.find(message.parts))),
+      ).toEqual([
+        expect.objectContaining({ state: "running", source: "manual" }),
+        expect.objectContaining({ state: "running", source: "auto" }),
+      ])
+      for (const marker of markers) {
+        const status = ChipMateCompactionStatus.find(marker.parts)
+        expect(status).toMatchObject({ type: "text", text: "", synthetic: true, ignored: true })
+      }
+    }),
+  )
+  // chipmate_change end
+
   it.instance(
     "throws when parent is not a user message",
     Effect.gen(function* () {
@@ -880,9 +945,104 @@ describe("session.compaction.process", () => {
       yield* Deferred.await(done).pipe(Effect.timeout("500 millis"))
       expect(result).toBe("continue")
       expect(seen).toContain(SessionCompaction.Event.Compacted.type)
-      expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
+      expect(seen.filter((type) => type.startsWith("session.next."))).toEqual(["session.next.compaction.ended"]) // chipmate_change
     }),
   )
+
+  // chipmate_change start - compaction lifecycle success follows committed event
+  itCompaction.instance(
+    "marks lifecycle succeeded only after the compacted event commits",
+    () => {
+      const stub = llm()
+      stub.push(reply("summary"))
+      return Effect.gen(function* () {
+        const events = yield* EventV2Bridge.Service
+        const ssn = yield* SessionNs.Service
+        const compact = yield* SessionCompaction.Service
+        const session = yield* ssn.create({})
+        yield* createUserMessage(session.id, "hello")
+        yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: false })
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        const marker = msgs.findLast((message) => message.parts.some((part) => part.type === "compaction"))!
+        const order: string[] = []
+        const statusPart = ChipMateCompactionStatus.find(marker.parts)!
+        const off = yield* events.listen((event) => {
+          if (event.type === SessionCompaction.Event.Compacted.type) order.push("compacted")
+          if (event.type !== MessageV2.Event.PartUpdated.type) return Effect.void
+          const part = (event.data as typeof MessageV2.Event.PartUpdated.data.Type).part
+          if (
+            part.id === statusPart.id &&
+            ChipMateCompactionStatus.value(part as SessionV1.Part)?.state === "succeeded"
+          ) {
+            order.push("succeeded")
+          }
+          return Effect.void
+        })
+        yield* Effect.addFinalizer(() => off)
+
+        const result = yield* compact.process({
+          parentID: marker.info.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+        const stored = yield* ssn.getPart({
+          sessionID: session.id,
+          messageID: marker.info.id,
+          partID: statusPart.id,
+        })
+
+        expect(result).toBe("continue")
+        expect(order).toEqual(["compacted", "succeeded"])
+        expect(ChipMateCompactionStatus.value(stored)?.state).toBe("succeeded")
+      }).pipe(withCompaction({ llm: stub.llmLayer, snapshot: snap }))
+    },
+    {},
+  )
+
+  itCompaction.instance(
+    "keeps committed success when interrupted immediately after the compacted event",
+    () => {
+      const stub = llm()
+      stub.push(reply("summary"))
+      return Effect.gen(function* () {
+        const events = yield* EventV2Bridge.Service
+        const ssn = yield* SessionNs.Service
+        const compact = yield* SessionCompaction.Service
+        const session = yield* ssn.create({})
+        yield* createUserMessage(session.id, "hello")
+        yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: false })
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        const marker = msgs.findLast((message) => message.parts.some((part) => part.type === "compaction"))!
+        const statusPart = ChipMateCompactionStatus.find(marker.parts)!
+        let processFiber: Fiber.Fiber<unknown, unknown> | undefined
+        const off = yield* events.listen((event) => {
+          if (event.type !== SessionCompaction.Event.Compacted.type || !processFiber) return Effect.void
+          return Fiber.interrupt(processFiber).pipe(Effect.forkDetach, Effect.asVoid)
+        })
+        yield* Effect.addFinalizer(() => off)
+
+        processFiber = yield* compact
+          .process({
+            parentID: marker.info.id,
+            messages: msgs,
+            sessionID: session.id,
+            auto: false,
+          })
+          .pipe(Effect.forkChild)
+        yield* Fiber.await(processFiber)
+
+        const stored = yield* ssn.getPart({
+          sessionID: session.id,
+          messageID: marker.info.id,
+          partID: statusPart.id,
+        })
+        expect(ChipMateCompactionStatus.value(stored)?.state).toBe("succeeded")
+      }).pipe(withCompaction({ llm: stub.llmLayer, snapshot: snap }))
+    },
+    {},
+  )
+  // chipmate_change end
 
   itCompaction.instance(
     "marks summary message as errored on compact result",
@@ -907,10 +1067,44 @@ describe("session.compaction.process", () => {
       expect(summary?.info.role).toBe("assistant")
       if (summary?.info.role === "assistant") {
         expect(summary.info.finish).toBe("error")
-        expect(JSON.stringify(summary.info.error)).toContain("Session too large to compact")
+        // chipmate_change start - deterministic split errors replace the upstream generic message
+        expect(JSON.stringify(summary.info.error)).toContain(
+          "Compaction chunk input still exceeds the model context limit after deterministic splitting",
+        )
+        // chipmate_change end
       }
     }).pipe(withCompaction({ result: "compact" })),
   )
+
+  // chipmate_change start - compaction lifecycle failure is durable
+  itCompaction.instance(
+    "persists failed when compaction cannot create a boundary",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const compact = yield* SessionCompaction.Service
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "hello")
+      yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: false })
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const marker = msgs.findLast((message) => message.parts.some((part) => part.type === "compaction"))!
+
+      const result = yield* compact.process({
+        parentID: marker.info.id,
+        messages: msgs,
+        sessionID: session.id,
+        auto: false,
+      })
+      const stored = yield* ssn.getPart({
+        sessionID: session.id,
+        messageID: marker.info.id,
+        partID: ChipMateCompactionStatus.find(marker.parts)!.id,
+      })
+
+      expect(result).toBe("stop")
+      expect(ChipMateCompactionStatus.value(stored)?.state).toBe("failed")
+    }).pipe(withCompaction({ result: "compact" })),
+  )
+  // chipmate_change end
 
   it.instance(
     "adds synthetic continue prompt when auto is enabled",
@@ -1268,10 +1462,15 @@ describe("session.compaction.process", () => {
       return Effect.gen(function* () {
         const ssn = yield* SessionNs.Service
         const events = yield* EventV2Bridge.Service
+        // chipmate_change start - execute the interruption against a real tracked compaction marker
+        const compact = yield* SessionCompaction.Service
         const ready = yield* Deferred.make<void>()
         const session = yield* ssn.create({})
-        const msg = yield* createUserMessage(session.id, "hello")
+        yield* createUserMessage(session.id, "hello")
+        yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: false })
         const msgs = yield* ssn.messages({ sessionID: session.id })
+        const marker = msgs.findLast((message) => message.parts.some((part) => part.type === "compaction"))!
+        // chipmate_change end
         const off = yield* events.listen((evt) => {
           if (evt.type !== SessionStatus.Event.Status.type) return Effect.void
           const data = evt.data as typeof SessionStatus.Event.Status.data.Type
@@ -1283,7 +1482,7 @@ describe("session.compaction.process", () => {
 
         const fiber = yield* SessionCompaction.use
           .process({
-            parentID: msg.id,
+            parentID: marker.info.id, // chipmate_change
             messages: msgs,
             sessionID: session.id,
             auto: false,
@@ -1298,6 +1497,14 @@ describe("session.compaction.process", () => {
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
         }
+        // chipmate_change start - interruption remains visible after the worker stops
+        const stored = yield* ssn.getPart({
+          sessionID: session.id,
+          messageID: marker.info.id,
+          partID: ChipMateCompactionStatus.find(marker.parts)!.id,
+        })
+        expect(ChipMateCompactionStatus.value(stored)?.state).toBe("interrupted")
+        // chipmate_change end
       }).pipe(withCompaction({ llm: stub.llmLayer, snapshot: snap })) // chipmate_change
     },
     { timeout: 10_000 }, // chipmate_change - snapshot is isolated above
@@ -1310,12 +1517,17 @@ describe("session.compaction.process", () => {
         const ready = yield* Deferred.make<void>()
         return yield* Effect.gen(function* () {
           const ssn = yield* SessionNs.Service
+          // chipmate_change start - execute the setup interruption against a tracked marker
+          const compact = yield* SessionCompaction.Service
           const session = yield* ssn.create({})
-          const msg = yield* createUserMessage(session.id, "hello")
+          yield* createUserMessage(session.id, "hello")
+          yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: false })
           const msgs = yield* ssn.messages({ sessionID: session.id })
+          const marker = msgs.findLast((message) => message.parts.some((part) => part.type === "compaction"))!
+          // chipmate_change end
           const fiber = yield* SessionCompaction.use
             .process({
-              parentID: msg.id,
+              parentID: marker.info.id, // chipmate_change
               messages: msgs,
               sessionID: session.id,
               auto: false,
@@ -1338,6 +1550,14 @@ describe("session.compaction.process", () => {
           expect(Exit.isFailure(exit)).toBe(true)
           if (Exit.isFailure(exit)) expect(Cause.hasInterrupts(exit.cause)).toBe(true)
           expect(all.some((msg) => msg.info.role === "assistant" && msg.info.summary)).toBe(false)
+          // chipmate_change start - no summary is left, but the interruption status is durable
+          const stored = yield* ssn.getPart({
+            sessionID: session.id,
+            messageID: marker.info.id,
+            partID: ChipMateCompactionStatus.find(marker.parts)!.id,
+          })
+          expect(ChipMateCompactionStatus.value(stored)?.state).toBe("interrupted")
+          // chipmate_change end
         }).pipe(withCompaction({ plugin: plugin(ready), snapshot: snap })) // chipmate_change - avoid git snapshot startup
       }),
     {}, // chipmate_change - isolate cancellation from git setup

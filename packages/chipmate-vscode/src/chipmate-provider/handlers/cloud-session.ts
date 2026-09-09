@@ -7,7 +7,11 @@
 
 import type { ChipMateClient, Session, TextPartInput, FilePartInput } from "@chipmate/sdk/v2/client"
 import type { CloudSessionData, EditorContext } from "../../services/cli-backend/types"
-import { getErrorMessage, sessionToWebview, mapCloudSessionMessageToWebviewMessage } from "../../chipmate-provider-utils"
+import {
+  getErrorMessage,
+  sessionToWebview,
+  mapCloudSessionMessageToWebviewMessage,
+} from "../../chipmate-provider-utils"
 import type { MessageFile } from "../message-files"
 import { reviewMetadata, type ReviewMessageData } from "../../shared/review-comments"
 import { modelSelection } from "../../shared/provider-model"
@@ -78,7 +82,10 @@ export async function handleRequestCloudSessionData(ctx: CloudSessionContext, se
   }
 
   try {
-    const result = await ctx.client.chipmate.cloud.session.get({ id: sessionId }, { signal: AbortSignal.timeout(TIMEOUT) })
+    const result = await ctx.client.chipmate.cloud.session.get(
+      { id: sessionId },
+      { signal: AbortSignal.timeout(TIMEOUT) },
+    )
     const data = result.data as CloudSessionData | undefined
     if (!data) {
       ctx.postMessage({
@@ -125,7 +132,20 @@ export async function handleImportAndSend(
   review?: ReviewMessageData,
   command?: string,
   commandArgs?: string,
+  sessionSurfaceDraftRevision?: number,
 ): Promise<void> {
+  const failedText = command ? `/${command} ${commandArgs ?? ""}`.trim() : text
+  const fail = (error: string, sessionID = `cloud:${cloudSessionId}`) => {
+    ctx.postMessage({
+      type: "sendMessageFailed",
+      error,
+      text: failedText,
+      sessionID,
+      messageID,
+      files,
+      review: command ? undefined : review,
+    })
+  }
   const model = modelSelection(providerID, modelID)
   if (!model) {
     ctx.postMessage({
@@ -133,6 +153,7 @@ export async function handleImportAndSend(
       cloudSessionId,
       error: "Select a model before sending",
     })
+    fail("Select a model before sending")
     return
   }
   if (!ctx.client) {
@@ -141,6 +162,7 @@ export async function handleImportAndSend(
       cloudSessionId,
       error: "Not connected to CLI backend",
     })
+    fail("Not connected to CLI backend")
     return
   }
 
@@ -165,6 +187,7 @@ export async function handleImportAndSend(
       cloudSessionId,
       error: getErrorMessage(error) || "Failed to import session from cloud",
     })
+    fail(getErrorMessage(error) || "Failed to import session from cloud")
     return
   }
   if (!session) {
@@ -173,6 +196,7 @@ export async function handleImportAndSend(
       cloudSessionId,
       error: "Failed to import session from cloud",
     })
+    fail("Failed to import session from cloud")
     return
   }
 
@@ -246,17 +270,17 @@ export async function handleImportAndSend(
     if (messageID && command && completesWithoutStatus(command)) {
       ctx.postMessage({ type: "sessionCommandCompleted", messageID })
     }
+    if (messageID) {
+      ctx.postMessage({
+        type: "sendMessageAccepted",
+        messageID,
+        sessionID: session.id,
+        draftID: `cloud:${cloudSessionId}`,
+        revision: sessionSurfaceDraftRevision,
+      })
+    }
   } catch (err) {
     console.error("[ChipMate New] Failed to send message after cloud import:", err)
-    ctx.postMessage({
-      type: "sendMessageFailed",
-      error: err instanceof Error ? err.message : "Failed to send message after import",
-      text,
-      sessionID: session.id,
-      draftID: session.id,
-      messageID,
-      files,
-      review: command ? undefined : review,
-    })
+    fail(err instanceof Error ? err.message : "Failed to send message after import", session.id)
   }
 }

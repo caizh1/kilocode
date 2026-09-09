@@ -29,6 +29,7 @@ const env = {
   CHIPMATE_CONFIG: process.env.CHIPMATE_CONFIG,
   CHIPMATE_CONFIG_CONTENT: process.env.CHIPMATE_CONFIG_CONTENT,
   CHIPMATE_CONFIG_DIR: process.env.CHIPMATE_CONFIG_DIR,
+  CHIPMATE_INTERNAL_PROVIDER_DEFAULTS: process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS,
   CHIPMATE_DISABLE_PROJECT_CONFIG: process.env.CHIPMATE_DISABLE_PROJECT_CONFIG,
   CHIPMATE_TEST_MANAGED_CONFIG_DIR: process.env.CHIPMATE_TEST_MANAGED_CONFIG_DIR,
   flagConfig: Flag.CHIPMATE_CONFIG,
@@ -44,6 +45,7 @@ function restore() {
   set("CHIPMATE_CONFIG", env.CHIPMATE_CONFIG)
   set("CHIPMATE_CONFIG_CONTENT", env.CHIPMATE_CONFIG_CONTENT)
   set("CHIPMATE_CONFIG_DIR", env.CHIPMATE_CONFIG_DIR)
+  set("CHIPMATE_INTERNAL_PROVIDER_DEFAULTS", env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS)
   set("CHIPMATE_DISABLE_PROJECT_CONFIG", env.CHIPMATE_DISABLE_PROJECT_CONFIG)
   set("CHIPMATE_TEST_MANAGED_CONFIG_DIR", env.CHIPMATE_TEST_MANAGED_CONFIG_DIR)
   Flag.CHIPMATE_CONFIG = env.flagConfig
@@ -104,12 +106,16 @@ describe("config source routes", () => {
     process.env.CHIPMATE_CONFIG = envFile
     Flag.CHIPMATE_CONFIG = envFile
     process.env.CHIPMATE_CONFIG_CONTENT = '{"username":"secret-inline-value"}'
+    process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS = '{"provider":{"chipmate":{}}}'
     process.env.CHIPMATE_CONFIG_DIR = path.join(tmp.path, "extra")
     process.env.CHIPMATE_TEST_MANAGED_CONFIG_DIR = path.join(tmp.path, "managed")
 
     const body = await sources(tmp.path)
     const inline = body.sources.find((source) => source.source === "CHIPMATE_CONFIG_CONTENT")
+    const defaults = body.sources.find((source) => source.source === "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS")
 
+    expect(defaults?.order).toBe(0)
+    expect(defaults).toMatchObject({ kind: "env-content", scope: "env", editable: false })
     expect(order(body, envFile)).toBeLessThan(order(body, projectFile))
     expect(order(body, projectFile)).toBeLessThan(order(body, chipmateFile))
     expect(body.sources.some((source) => source.path === opencodeFile)).toBe(false)

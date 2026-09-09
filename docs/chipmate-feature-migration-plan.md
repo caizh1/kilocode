@@ -19,7 +19,6 @@
 - [x] 迁移文档型 artifact 管理。
 - [x] 迁移 Mermaid PNG 生成。
 - [x] 迁移源码驱动详细设计 skill。
-- [x] 迁移 Agent Terminal，但放在最后。
 - [x] 所有迁移能力必须作为旁路 tools、skills、artifacts 接入。
 - [x] 不替换 ChipMate 原生 agent、QA、terminal、autocomplete、Document RAG 流水线。
 - [x] 所有生成文件进入统一 artifact 目录，并返回 manifest。
@@ -36,7 +35,6 @@
 - [x] M6: 迁移 Mermaid PNG 生成。
 - [x] M7: 迁移源码驱动详细设计 skill。
 - [x] M8: 实现 VS Code artifact UI。
-- [x] M9: 迁移 Agent Terminal。
 - [ ] M10: 做真实项目验收、QA 回归 review、VSIX 打包。
 - [ ] M11: 做最终迁移 review，确认没有明显破坏 ChipMate 原有能力的问题。
 
@@ -52,7 +50,6 @@
 - [x] Word contract 边界已收紧：仅保留通用工具 schema、参数校验和安全规则；不把 ChipMate 文档 contract 或 repair/gating 流程迁入 ChipMate QA。
 - [x] Mermaid PNG 迁移，draw.io 本轮不迁移。
 - [x] 源码驱动详细设计只迁 skill 指南和产物工具使用方式，不迁 ChipMate runtime flow、Word contract 或 skill contract gate。
-- [x] Agent Terminal 最后迁移，初期默认关闭。
 - [x] Renderer 继续外置，不把 LibreOffice、Chromium、Poppler 打进 VSIX。
 - [x] Artifact 默认目录使用 `.chipmate/artifacts`。
 - [x] 删除类 Word edit 默认 dry-run。
@@ -63,7 +60,6 @@
 - [x] 在 `/Users/archer/Work/chipmate/packages/opencode/src/chipmate/documents/` 新增文档能力内核。
 - [x] 在 `/Users/archer/Work/chipmate/packages/opencode/src/chipmate/tool/` 新增 artifact、Word、Mermaid 工具。
 - [x] 在 ChipMate tool registry 中以旁路工具方式注册新增工具。
-- [x] 在 `/Users/archer/Work/chipmate/packages/chipmate-vscode/src/services/` 新增 VS Code artifact UI 和 Agent Terminal 适配。
 - [x] 在 ChipMate 原生 skill 目录迁入 `documents` skill；该 skill 只提供通用 Word/Mermaid/artifact 指南。
 - [x] 在 ChipMate 原生 skill 目录迁入 `source-backed-detail-design` skill；该 skill 是可选指南，不是 ChipMate contract/gating runtime。
 - [x] 保持 ChipMate 原生 agent/QA 主链路不变。
@@ -151,14 +147,12 @@ Word edit 默认行为:
 - [x] 新增 `chipmate.documents.openArtifact` command。
 - [x] 新增 `chipmate.documents.openArtifactFolder` command。
 - [x] 新增 `chipmate.documents.exportDiagnostics` command。
-- [x] 新增 `chipmate.agentTerminal.open` command。
 - [x] 新增 `chipmate.documents.artifacts.root` setting，默认 `.chipmate/artifacts`。
 - [x] 新增 `chipmate.documents.wordRender.remoteEndpoint` setting，默认空。
 - [x] 新增 `chipmate.documents.wordRender.autoVerify` setting，默认 `false`。
 - [x] 明确 Word render runtime 仍通过显式 tool 参数、`CHIPMATE_WORD_RENDER_ENDPOINT`，或本机已存在的 `soffice`/`pdftoppm` 环境驱动，不改 ChipMate 原生 session 配置链，也不把 renderer 二进制打包进 VSIX。
 - [x] 新增 `chipmate.documents.tools.enabled` setting，默认 `true`。
 - [x] `chipmate.documents.tools.enabled` 至少保护 VS Code artifact 命令入口；普通 QA、Document RAG、autocomplete、原生 terminal 不受该开关影响。
-- [x] 新增 `chipmate.agentTerminal.enabled` setting，默认 `false`。
 
 ## M0: 迁移文档和边界
 
@@ -166,7 +160,6 @@ Word edit 默认行为:
 - [x] 新增 `/Users/archer/Work/chipmate/docs/document-tools-contract.md`，定义 artifact、Word、Mermaid 通用 tool API 边界；该文件不代表迁移 ChipMate runtime contract。
 - [x] 新增 `/Users/archer/Work/chipmate/docs/source-backed-detail-design-skill-contract.md`，定义详细设计 skill 使用 ChipMate 原生证据工具的边界；该文件已收紧为 skill boundary，不迁移 ChipMate skill contract。
 - [x] 明确普通代码问答、调用链分析、宏/寄存器/MMIO 分析继续优先走 ChipMate 原生代码理解工具。
-- [x] 明确只有用户要求 Word、`.docx`、图、详细设计文档、artifact、Agent Terminal 时才触发新能力。
 - [x] Review M0: 检查文档中没有写成“替换 ChipMate QA”或“迁移 ChipMate planner”。
 - [x] Review M0: 检查计划没有要求修改 ChipMate 原有 QA prompt 的核心行为。
 - [x] Review M0: 检查所有非目标能力都明确列为 non-goals。
@@ -386,12 +379,8 @@ Word edit 默认行为:
 - [x] Review M8: 检查 artifact 卡片不会出现在普通 QA 中。
 - [x] Review M8: 检查按钮和命令不会覆盖 ChipMate 原有 command id。
 
-## M9: Agent Terminal
 
-- [x] 新增 `chipmate.agentTerminal.enabled` 设置，初期默认关闭。
-- [x] 新增 `chipmate.agentTerminal.open` command。
 - [x] 新增 VS Code terminal profile。
-- [x] 迁移 Agent Terminal runtime 中可复用部分。
 - [x] 迁移 VS Code terminal profile 适配。
 - [x] 迁移项目上下文摘要能力。
 - [x] 复用 ChipMate 原生命令/agent 能力。
@@ -403,11 +392,9 @@ Word edit 默认行为:
 - [x] 支持长输出摘要。
 - [x] 可选将长日志登记为 artifact。
 - [x] 不改 ChipMate 原生 terminal/session manager 行为，除非为新增 profile 做最小适配。
-- [x] 测试打开 Agent Terminal。
 - [x] 测试自然语言安全命令。
 - [x] 测试危险命令确认。
 - [x] 测试命令失败修复建议。
-- [x] Review M9: 检查 Agent Terminal 默认关闭。
 - [x] Review M9: 检查没有替换 ChipMate 原有 terminal/session manager。
 - [x] Review M9: 检查危险命令确认可靠。
 - [x] Review M9: 检查原生 bash/tool loop 不退化。
@@ -436,7 +423,6 @@ Word edit 默认行为:
 - [x] 新增 S16 autocomplete source guard helper：`docs/chipmate-feature-migration-s16-source-guard.sh` 只读快照 qwen autocomplete/package protected paths，并扫描旧 S16 证据里的源码修改风险；当前证据 `docs/chipmate-feature-migration-validation-runs/20260709-004500-s16-source-guard/summary.md` 返回 `NEEDS_REVIEW`，所以它是防误收口 guard，不是 S16 通过证据。
 - [x] 建立 validation evidence 台账，包含命令、VSIX、installed smoke、known issues 的填报结构；未运行项保持 TODO。
 - [x] 新增 validation capture helper，用于后续显式运行 M10 命令时采集 logs/status/smoke checklist；默认不执行任何验证。
-- [x] 新增 installed smoke acceptance prompt pack，覆盖 QA、Document RAG、artifact、Word、Mermaid、详细设计、Agent Terminal、autocomplete 的真实验收问题和证据记录要求。
 - [x] 新增 VSIX inspection helper，用于后续检查版本、大小、manifest 和 renderer payload 边界；不打包、不安装。
 - [x] 新增 validation summary helper，用于汇总 capture run 的 status、VSIX inspection 和 smoke checklist；只读，不改变验收状态。
 - [x] 加固 validation helper 输出格式：summary Markdown 表格转义特殊字符，VSIX inspection 状态通过显式 status 文件回填。
@@ -454,16 +440,13 @@ M10 evidence update 2026-07-08:
 
 - [x] `docs/chipmate-feature-migration-validation-runs/20260708-080354/status.tsv` recorded C2/C4/C5/C6 PASS and C1/C3 FAIL.
 - [x] Targeted migrated tool tests passed: `document-artifacts`, `mermaid-documents`, `word-documents` 12/12.
-- [x] Targeted VS Code no-regression tests passed: `font-size-arch`, `extension-arch`, `agent-terminal-package-contribution` 9/9.
 - [x] Internal offline Linux x64 VSIX generated: `packages/chipmate-vscode/out/chipmate-vscode-linux-x64-baseline.vsix`, version `0.0.38`, `143.95 MiB`.
 - [x] Internal offline Windows x64 VSIX generated: `packages/chipmate-vscode/out/chipmate-vscode-win32-x64-baseline.vsix`, version `0.0.38`, `159.93 MiB`.
 - [x] Linux VSIX inspection PASS: `docs/chipmate-feature-migration-validation-runs/20260708-082006/vsix-inspection.md`.
 - [x] Windows VSIX inspection REVIEW: `docs/chipmate-feature-migration-validation-runs/20260708-081959/vsix-inspection.md`; high-risk renderer payload scan is `none`, review-required payload is existing internal-offline Poppler/pdftotext.
-- [x] Isolated VS Code CLI install PASS for both generated VSIX files: `docs/chipmate-feature-migration-validation-runs/20260708-082431-isolated-vscode-install/summary.md`; installed package contribution spot-check found document commands, Agent Terminal command/profile, document settings, and existing `chipmate.autocomplete.qwen.*` settings.
 - [x] Reconciled M1-M6 automated test checklist items against T1/T2 and source test assertions; unchecked items remain where evidence is implementation-only or requires installed/runtime smoke.
 - [x] Added and ran targeted Word test coverage for complex block replacement, ambiguous locator rejection, and render artifact manifest updates: `cd packages/opencode && bun test test/chipmate/word-documents.test.ts --timeout 60000`, 7/7 pass.
 - [x] Refreshed Word focused test after local renderer fallback: `docs/chipmate-feature-migration-validation-runs/20260708-225900-word-render-local-fallback-focused-test/summary.md`; `bun test test/chipmate/word-documents.test.ts --timeout 60000` passes 7/7 and now covers endpoint warning, remote renderer, and fake local `soffice`/`pdftoppm` fallback wiring.
-- [x] Added and ran targeted VS Code artifact/Agent Terminal service coverage: `cd packages/chipmate-vscode && bun test tests/unit/document-artifact-card-service.test.ts tests/unit/document-artifact-card-view.test.ts tests/unit/agent-terminal-runtime.test.ts tests/unit/agent-terminal-service.test.ts tests/unit/agent-terminal-package-contribution.test.ts --timeout 60000`, 12/12 pass.
 - [x] Added and reran source-backed detail-design skill boundary coverage after removing ChipMate Word/document contract scope and old contract-helper resources: `cd packages/opencode && bun test test/chipmate/source-backed-detail-design-skill.test.ts --timeout 60000`, 5/5 pass.
 - [x] Added and ran VS Code extension-host smoke for activation, command registry, and settings visibility: `cd packages/chipmate-vscode && bun run compile-tests && bunx vscode-test --fail-zero --timeout 30000`, 2/2 pass; summary in `docs/chipmate-feature-migration-validation-runs/20260708-084152-extension-host-smoke/summary.md`.
 - [x] Re-ran VS Code extension lint after extension-host smoke changes: `cd packages/chipmate-vscode && bun run lint`, PASS.
@@ -474,19 +457,16 @@ M10 evidence update 2026-07-08:
 - [x] Current rebuilt VSIX isolated CLI install PASS for both Linux and Windows targets: `docs/chipmate-feature-migration-validation-runs/20260708-085149-isolated-vscode-install-current/summary.md`.
 - [x] Real embedded C project tool-layer smoke PASS on QEMU UFS: `docs/chipmate-feature-migration-validation-runs/20260708-085842-qemu-ufs-real-project-tool-smoke/summary.md`; generated a real `.docx`, Mermaid `.mmd`, artifact manifests, and expected Word render endpoint warning under `/Users/archer/Work/qemu/.chipmate/artifacts`.
 - [x] Real `.docx` style inheritance smoke PASS_WITH_LIMITS: `docs/chipmate-feature-migration-validation-runs/20260708-090328-qemu-real-docx-style-smoke/summary.md`; used existing `/Users/archer/Work/qemu/.chipmate/docs/qemu-ufs-detail-design-20260705-003408.docx` as a style source and applied `word/styles.xml` plus `word/numbering.xml`.
-- [x] Expanded VS Code extension-host no-regression smoke PASS: `docs/chipmate-feature-migration-validation-runs/20260708-090621-expanded-extension-host-smoke/summary.md`; 3/3 pass, covering activation, native ChipMate entry commands/sidebar contribution, document sidecar commands, Agent Terminal profile/command, and qwen autocomplete diagnostics/settings contributions.
 - [x] Installed Linux-target VSIX extension-host offline smoke PASS: `docs/chipmate-feature-migration-validation-runs/20260708-091040-installed-vsix-extension-host-offline-smoke-shortpath/summary.md`; installed current Linux VSIX into an isolated short-path VS Code profile, activated `chipmate.chipmate`, and verified native plus sidecar commands/settings/profile/sidebar contributions.
 - [x] Installed Windows-target VSIX extension-host offline smoke PASS: `docs/chipmate-feature-migration-validation-runs/20260708-091112-installed-win32-vsix-extension-host-offline-smoke-shortpath/summary.md`; installed current Windows VSIX into an isolated short-path VS Code profile, activated `chipmate.chipmate`, and verified the same contribution set.
 - [x] Added reusable installed VSIX extension-host smoke helper: `docs/chipmate-feature-migration-installed-vsix-host-smoke.sh`; scripted Linux/Windows pair PASS in `docs/chipmate-feature-migration-validation-runs/20260708-091354-scripted-installed-vsix-host-smoke/summary.md`.
 - [x] Fixed installed artifact diagnostics repeat-run bug: artifact root diagnostics JSON files are no longer treated as artifact directories.
 - [x] Added focused regression coverage for the artifact diagnostics repeat-run bug: `docs/chipmate-feature-migration-validation-runs/20260708-092532-artifact-diagnostics-repeat-regression/summary.md`; `document-artifact-card-service.test.ts` now covers root-level diagnostics JSON files, 3/3 pass.
 - [x] Rebuilt Linux/Windows VSIX after artifact diagnostics fix: `docs/chipmate-feature-migration-validation-runs/20260708-091733-post-artifact-diagnostics-fix-package/summary.md`; Linux size `150944484` bytes / `143.95 MiB`, Windows size `167696546` bytes / `159.93 MiB`.
-- [x] Scripted installed VSIX command smoke PASS after fix for both targets: `docs/chipmate-feature-migration-validation-runs/20260708-091835-scripted-installed-vsix-command-smoke-after-fix/summary.md`; verifies installed activation, artifact open/export diagnostics, Agent Terminal helper generation, and qwen log command in a temporary workspace.
 - [x] Post-fix VSIX inspection complete: `docs/chipmate-feature-migration-validation-runs/20260708-092125-post-fix-vsix-inspection/summary.md`; Linux PASS, Windows REVIEW only for existing Poppler/pdftotext offline dependency, high-risk renderer payload scan remains `none`.
 - [x] Attempted CLI native C QA smoke on QEMU UFS: `docs/chipmate-feature-migration-validation-runs/20260708-092652-cli-native-c-qa-smoke/summary.md`; ChipMate started indexing and reused codegraph/postings, but the run is not accepted as S1 pass because the configured DeepSeek credential returned `401 invalid api key`.
 - [x] Attempted CLI macro/register QA and document QA/RAG smoke: `docs/chipmate-feature-migration-validation-runs/20260708-092837-cli-qa-rag-auth-smoke/summary.md`; both runs are not accepted as S2/S3 pass because the configured DeepSeek credential returned `401 invalid api key`.
 - [x] Attempted one-shot provider recovery without changing global/project config: `docs/chipmate-feature-migration-validation-runs/20260708-093245-temp-provider-connectivity-smoke/summary.md` timed out while using redacted `CHIPMATE_CONFIG_CONTENT`; direct API probe `docs/chipmate-feature-migration-validation-runs/20260708-093522-temp-provider-direct-api-probe/summary.md` returned `HTTP 503`, so the saved indexing openai-compatible endpoint cannot currently be treated as a working chat provider for S1-S3.
-- [x] Added focused Agent Terminal danger regression evidence: `docs/chipmate-feature-migration-validation-runs/20260708-092915-agent-terminal-danger-regression/summary.md`; runtime command classifier test covers dangerous delete-style commands requiring confirmation.
 - [x] Added conservative runtime smoke rerun helper: `docs/chipmate-feature-migration-runtime-smoke.sh`; it supports `--preflight`, `--run-qa`, `--run-all`, and `--ids`, uses one-shot redacted provider config when supplied, and records `NEEDS_REVIEW`/`BLOCKED_AUTH` instead of auto-marking acceptance items PASS.
 - [x] Added runtime unblock runbook for finishing M10/M11 after provider/template/internal workspace are available: `docs/chipmate-feature-migration-runtime-unblock-runbook.md`; enhanced `docs/chipmate-feature-migration-runtime-smoke.sh` to inject `CHIPMATE_SMOKE_TEMPLATE_DOCX` into S9; verification `docs/chipmate-feature-migration-validation-runs/20260708-095817-runtime-unblock-runbook-verify/summary.md` confirms script syntax and help output.
 - [x] Ran runtime smoke preflight against the current ChipMate auth state: `docs/chipmate-feature-migration-validation-runs/20260708-093856-runtime-smoke-preflight-current-auth/summary.md`; current status remains `BLOCKED_AUTH`, so installed/chat acceptance prompts still cannot be accepted.
@@ -549,10 +529,7 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] Refreshed offline target verify kit and delivery-set packages after adding optional Word renderer environment capture to target runners/runbook/template: kit SHA256 `d3abd2ff1da281dfda635d71fe7b4171099854942123a0abbaf77eea751aa133`, size `27962` bytes; delivery tar SHA256 `273259890eafe0a1f4bbdfa1393094659843622ecae3873c51315d0cfa7b09b8`, size `317912153` bytes; delivery zip SHA256 `64506c52873ba2b12814e4b6555c4ac8860b4d23d543fa9e6c267bbe1c1549ed`, size `317916325` bytes. Evidence `docs/chipmate-feature-migration-validation-runs/20260708-232000-target-kit-word-render-env-refresh/summary.md` verifies in-place delivery-set verifier PASS, extracted tar verifier PASS, extracted zip verifier PASS, target runner/runbook/template Word-render hooks present, and the packaged verifier now requires `targetPackageRunnersCaptureOptionalWordRenderer=true` plus `runbookDocumentsOptionalWordRenderer=true`. This refresh does not rebuild VSIX, does not migrate QA, and does not replace installed runtime S1-S16 or M11 no-regression review.
 - [x] Mermaid remote-render PNG tool-layer smoke PASS_WITH_LIMITS: `docs/chipmate-feature-migration-validation-runs/20260708-050701-mermaid-remote-render-png-smoke/summary.md`; a state-machine Mermaid source was rendered through an explicit local endpoint into `.mmd` and `.png` artifacts. This is explicit tool-layer rendering only, not installed chat S11/S12 and not old missing-diagram repair/contract behavior.
 - [x] Word image-bearing merge/diff tool-layer smoke PASS_WITH_LIMITS: `docs/chipmate-feature-migration-validation-runs/20260708-051100-word-image-merge-diff-smoke/summary.md`; three generated QEMU `.docx` artifacts with embedded PNG images were merged, merged inspection saw 3 images, copied image rels count was 2, and bounded Markdown/JSON diff artifacts captured added/removed lines.
-- [x] Agent Terminal default-off and danger boundary smoke PASS_WITH_LIMITS: `docs/chipmate-feature-migration-validation-runs/20260708-051623-agent-terminal-default-danger-boundary/summary.md`; focused tests 8/8 pass, covering additive/default-off contribution, enable/cancel behavior, helper/context generation, danger classification, and confirmation requirement. Installed visible UX S14-S15 remains pending.
-- [x] Refreshed current-worktree Agent Terminal focused smoke: `docs/chipmate-feature-migration-validation-runs/20260708-224000-agent-terminal-current-focused-smoke/summary.md`; focused tests 8/8 pass for package contribution, default-off open/cancel service behavior, helper/context generation, command classification, and log artifact creation. This keeps Agent Terminal sidecar/open behavior current after later migration work, while visible installed VS Code UX remains pending under S14.
 - [x] Qwen inline autocomplete focused smoke PASS_WITH_LIMITS: `docs/chipmate-feature-migration-validation-runs/20260708-052259-qwen-inline-autocomplete-focused-smoke/summary.md`; 98/98 focused qwen tests pass, exercising provider registration, `provideInlineCompletionItems`, mock qwen request paths, cache, diagnostics, prompt rendering, and legacy runtime isolation. Installed ghost-text S16 remains pending.
-- [x] Full-suite health refresh executed and triaged: `docs/chipmate-feature-migration-validation-runs/20260708-131846-full-suite-refresh/summary.md`; C1 timed out at 600s after reaching `460/461` with existing non-sidecar failures still visible, C3 returned `2780 pass / 62 fail / 1 error`, and a focused Agent Terminal isolation rerun passed `6/6`. This refresh keeps C1/C3 broad-suite health open and does not convert K6/K7 or S1-S16 to PASS.
 - [x] Runtime source forbidden contract-marker scan PASS: `docs/chipmate-feature-migration-validation-runs/20260708-155013-runtime-contract-marker-source-scan/summary.md`; scanned runtime source/manifests for `validate_artifacts`, `nextToolContract`, `missingDeliverable`, `先渲染缺失图表`, `缺失文档合同规划`, and related contract/repair/gating phrases. No hits were found outside docs/tests, preserving the boundary that old ChipMate document-contract repair flow was not migrated.
 - [x] Current source/skill contract-marker audit PASS: `docs/chipmate-feature-migration-contract-marker-audit.sh`, evidence `docs/chipmate-feature-migration-validation-runs/20260708-225000-contract-marker-current-source-audit/summary.md`; product source, VS Code source/webview, package contribution manifest, and local skill paths contain none of `nextToolContract`, `missingDeliverable`, `validate_artifacts`, `missing-required-artifact`, `missing-mermaid-pngs`, `建议先渲染缺失图表`, or `缺失文档合同规划`.
 - [x] Runtime S1-S16 intake verifier added and self-checked: `docs/chipmate-feature-migration-runtime-smoke-intake-verify.py`; evidence `docs/chipmate-feature-migration-validation-runs/20260708-155420-runtime-smoke-intake-verifier/summary.md`. The verifier accepts only explicit reviewed `PASS` for every requested S-id, rejects `NEEDS_REVIEW`/`BLOCKED_AUTH`/missing IDs, and is documented in the runtime unblock runbook so target/provider-unblocked smoke results cannot be accidentally treated as final acceptance.
@@ -601,7 +578,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] Refreshed blocked handoff audit to current state: `docs/chipmate-feature-migration-blocked-handoff-20260708.md` now records latest package hashes, latest completion audit, S3 openai-compatible embedder HTTP `503` diagnostics, S16 decision boundary, target Windows/Linux execution blockers, and current resume commands.
 - [x] Completion audit refreshed after blocked handoff refresh: `docs/chipmate-feature-migration-validation-runs/20260709-033000-completion-audit-after-blocked-handoff-refresh-doc-update/completion-audit.md`; reports `47` blockers, `79` review items, and `Completion allowed: no`, confirming the refreshed handoff is continuity evidence and does not close S3 provider/readiness, target Windows/Linux execution, S16 user decision, internal embedded C full run, or M11 no-regression.
 - [x] Restored the standalone target-kit boundary for the S3 Document RAG readiness helper and refreshed sidecar delivery artifacts: `docs/chipmate-feature-migration-validation-runs/20260709-021500-target-kit-manifest-return-verifier-refresh/summary.md`. The rebuilt target kit SHA256 is `59e221cddcb6c4287d281d1ddcf76f542358a5daa57d5e178631113108aa2a35` size `30020` bytes, delivery tar SHA256 `5b1502559d24805def63c4c70baeef03c6046721230ea89279297263eac6faee` size `317913548` bytes, and delivery zip SHA256 `721e7b1b3d34229cb1e41cf51cf5857a66c908f41e6c75a00990cfeb662ef5a1` size `317823530` bytes. Verification confirms the source-checkout helper `chipmate-feature-migration-document-rag-readiness-smoke.sh`, `chipmate-feature-migration-runtime-smoke.sh`, and the temporary Windows wrapper are not packaged in the standalone target kit; the helper remains a source-workstation validation tool only.
-- [x] Completion audit refreshed after current-worktree Agent Terminal focused smoke: `docs/chipmate-feature-migration-validation-runs/20260708-224100-completion-audit-after-agent-terminal-focused-smoke/completion-audit.md`; reports `48` blockers, `75` review items, and `Completion allowed: no`, confirming S14 service/open evidence moved to review-limited status while visible installed UX, target Windows/Linux execution, internal embedded C full run, S16, and M11 no-regression gates remain open.
 - [x] Added package-level forbidden contract-marker audit: `docs/chipmate-feature-migration-package-marker-audit.sh`; clean run `docs/chipmate-feature-migration-validation-runs/20260709-002500-package-marker-audit/summary.md` reports `PASS` across VSIX runtime surfaces, offline delivery manifests, and target-kit source-helper exclusion boundary. It found no `nextToolContract`, `missingDeliverable`, `validate_artifacts`, `missing-required-artifact`, `missing-mermaid-pngs`, `建议先渲染缺失图表`, or `缺失文档合同规划` in packaged runtime surfaces, while intentionally excluding historical docs/tests and target guardrail documentation from fail scope.
 - [x] Completion audit refreshed after current source/skill contract-marker audit: `docs/chipmate-feature-migration-validation-runs/20260708-225100-completion-audit-after-current-source-marker-audit/completion-audit.md`; reports `48` blockers, `75` review items, and `Completion allowed: no`, confirming old ChipMate contract/repair/gating marker absence in current source/skill paths does not replace target Windows/Linux execution, installed runtime S1-S16, S16 resolution, internal embedded C full run, or M11 no-regression gates.
 - [x] Completion audit refreshed after local Word render implementation and smoke: `docs/chipmate-feature-migration-validation-runs/20260708-230100-completion-audit-after-local-word-render/completion-audit.md`; reports `46` blockers, `76` review items, and `Completion allowed: no`, confirming S10 tool-layer PDF/page PNG evidence is accepted while target Windows/Linux execution, installed runtime S1-S16, S16 resolution, internal embedded C full run, and M11 no-regression gates remain open.
@@ -644,7 +620,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] Review Word render，确认 renderer 外置。
 - [x] Review Mermaid，确认不承担业务语义判断。
 - [x] Review source-backed detail-design skill，确认使用 ChipMate 原生证据工具。
-- [x] Review Agent Terminal，确认不替换原生 shell/tool loop。
 - [x] Review VS Code commands，确认没有 command id 冲突。
 - [x] Review packaging，确认 VSIX 可安装；当前证据是隔离 VS Code CLI 安装通过，目标 Windows/Linux 运行态 smoke 仍保留到 installed smoke。
 - [ ] Review 真实项目结果，确认至少一个内网嵌入式 C 项目完整跑通。
@@ -659,7 +634,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] 检查开放式代码搜索是否仍可使用 ChipMate 原生 `semantic_search`。
 - [x] 检查已有文档问答是否仍可使用 ChipMate 原生 `document_search`。
 - [x] 检查 ChipMate autocomplete/Qwen direct 设置和 provider 注册未受影响。
-- [x] 检查 ChipMate 原有 terminal/session manager 未受 Agent Terminal 影响。
 - [x] 静态检查 ChipMate VS Code extension 激活路径没有被替换；新增模块以追加注册方式接入。
 - [x] 检查新增 document tools 不会默认抢占普通 QA。
 - [x] 检查新增 settings 不改变 ChipMate 既有默认 provider/model 行为。
@@ -686,9 +660,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] Mermaid: “生成状态机 Mermaid PNG”，预期输出 `.mmd` 和 `.png`。
 - [x] Mermaid + Word: “把状态机图插入刚才的 Word”，预期 PNG 插入 Word 并登记 artifact。
 - [ ] 详细设计: “为该嵌入式 C 模块生成源码驱动详细设计文档”，预期 ChipMate 搜证据，生成 Markdown、图、Word。
-- [x] Agent Terminal: “打开 Agent Terminal，帮我分析怎么构建项目”，预期打开 terminal，给出安全命令规划。Evidence: `docs/chipmate-feature-migration-validation-runs/20260709-080000-agent-terminal-acceptance-rollup/summary.md` reports `PASS_WITH_LIMITS` for focused default-off open/cancel, natural-language planning/classification, helper/context/log artifacts, extension-host contribution, and installed safe sidecar commands; visible installed terminal-pane UX remains covered by final M11 limitations.
-- [x] Agent Terminal: “删除这些临时产物”，预期必须确认后执行。
-- [ ] 打包验收: 安装 VSIX 后普通 ChipMate QA、Word、Mermaid、artifact、Agent Terminal smoke 均通过。
 
 ## Explicit Non-goals
 
@@ -701,7 +672,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] 不实现完整 mail-merge 占位符引擎。
 - [x] 不迁移 AI 注释生成 runtime。
 - [x] 不迁移 C 编码规范专项报告。
-- [x] 不让 Agent Terminal 替换 ChipMate 原生命令工具。
 - [x] 不把 renderer 大依赖打进 VSIX。
 
 ## Assumptions
@@ -711,7 +681,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] Word renderer 使用外部 remote renderer 或本机已存在的 `soffice`/`pdftoppm`，不把 renderer 二进制打进 VSIX。
 - [x] Mermaid renderer 可以复用外部 renderer 或本地轻量渲染路径，但不能显著增大 VSIX。
 - [x] 删除类 Word edit 默认 dry-run。
-- [x] Agent Terminal 初期默认关闭。
 - [x] Skill discovery 使用 ChipMate 原生。
 - [x] 详细设计证据工具使用 ChipMate 原生 `codebase_analysis`、`semantic_search`、`document_search`。
 - [ ] 每个里程碑完成后必须执行对应 review checklist。
@@ -728,7 +697,6 @@ M10 latest repackage update 2026-07-08 11:49:
 - [x] Added the source/package contract-marker audit scripts themselves to current-state consistency requirements, so removing the English old-flow marker coverage from the audit definitions fails the source-side handoff check even if older PASS summaries still exist.
 - [x] Reran S3 Document RAG readiness after marker-guard hardening: `docs/chipmate-feature-migration-validation-runs/20260709-160500-document-rag-readiness-rerun-after-marker-guards/document-rag-readiness-summary.md` remains `ERROR_NEEDS_REVIEW` because `document_search` was not exposed/used and provider diagnostics still classify the embedder failure as `server_or_upstream_unavailable` with HTTP `503`.
 - [x] Refreshed M11 readiness intake against the latest S3 `160500` rerun by updating the default S3 readiness input and current readiness anchors to `docs/chipmate-feature-migration-validation-runs/20260709-161000-m11-readiness-after-latest-s3-rerun/summary.md`; readiness remains expected to be `NOT_READY_FOR_M11_REVIEW` until S3 and the other external gates return acceptable evidence.
-- [x] Added the latest M11 readiness summary itself to current-state consistency requirements, requiring `NOT_READY_FOR_M11_REVIEW`, `0/8` gates, the latest S3 `160500` evidence path, and visible Agent Terminal UX gate text so stale or accidentally permissive readiness summaries fail handoff consistency.
 - [x] Fixed M11 current status dashboard parsing for bullet-form readiness/S3 status fields and strengthened dashboard self-check/current-state checks to require the latest `161000` readiness anchor, latest S3 `160500` anchor, `NOT_READY_FOR_M11_REVIEW`, `ERROR_NEEDS_REVIEW`, HTTP `503`, and self-check `PASS` with zero missing tokens.
 - [x] Added the current M11 final signoff summary itself to current-state consistency requirements, requiring `NOT_READY_FOR_FINAL_SIGNOFF`, `1/4` gates, the latest `161000` readiness evidence, current completion audit, current-state consistency summary, and final-review-not-ready decision so stale or accidentally permissive final signoff summaries fail handoff consistency.
 - [x] Added a target execution boundary check for the current source workstation: `docs/chipmate-feature-migration-target-execution-boundary-check.py`; evidence `docs/chipmate-feature-migration-validation-runs/20260709-163000-target-execution-boundary-check/summary.md` records that this macOS/arm64 host cannot directly satisfy offline Windows x86-64 or offline Linux x86-64 target execution gates, and package-only checks cannot replace installed VSIX S1-S16 runtime smoke.
@@ -799,11 +767,8 @@ Current M11 evidence anchors after dashboard consistency integration:
 
 - [x] Current-state consistency guard refreshed after the Artifact acceptance rollup: `docs/chipmate-feature-migration-validation-runs/20260709-075000-current-state-consistency-after-artifact-acceptance-rollup/summary.md` verifies current package hashes, current-facing docs, target-kit helper inclusion/exclusion, delivery-manifest flags, latest completion audit reference, M11 guard evidence, and Artifact acceptance rollup evidence. This remains documentation/package-state evidence only and does not close provider/runtime/target/internal/project blockers.
 
-- [x] Added a local Agent Terminal acceptance rollup checker: `docs/chipmate-feature-migration-agent-terminal-acceptance-rollup.py`. Current run `docs/chipmate-feature-migration-validation-runs/20260709-080000-agent-terminal-acceptance-rollup/summary.md` reports `PASS_WITH_LIMITS`, verifying focused default-off open/cancel behavior, natural-language command planning/classification, helper/context/log artifacts, development extension-host contribution, and installed Linux/Windows-target safe sidecar command smoke. This closes the local Agent Terminal Acceptance Matrix item only; visible installed VS Code terminal-pane UX, target Windows/Linux runtime execution, and M11 remain open.
 
-- [x] Completion audit refreshed after closing the local Agent Terminal acceptance item with limits: `docs/chipmate-feature-migration-validation-runs/20260709-080500-completion-audit-after-agent-terminal-acceptance-rollup/completion-audit.md`; reports `44` blockers, `85` review items, and `Completion allowed: no`, confirming the Agent Terminal rollup does not close S3 provider/readiness, S16 user decision, installed runtime S1-S16, target Windows/Linux execution, internal embedded-C full run, real company template validation, visible installed terminal-pane UX, or final M11 no-regression.
 
-- [x] Current-state consistency guard refreshed after the Agent Terminal acceptance rollup: `docs/chipmate-feature-migration-validation-runs/20260709-081000-current-state-consistency-after-agent-terminal-acceptance-rollup/summary.md` verifies current package hashes, current-facing docs, target-kit helper inclusion/exclusion, delivery-manifest flags, latest completion audit reference, M11 guard evidence, Artifact rollup evidence, and Agent Terminal acceptance rollup evidence. This remains documentation/package-state evidence only and does not close provider/runtime/target/internal/project blockers.
 
 - [x] Reran S3 Document RAG readiness after the latest local acceptance rollups: `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-readiness-summary.md` still reports `ERROR_NEEDS_REVIEW`, `document_search used: no`, and provider/readiness failure; diagnostics `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-provider-diagnostics.md` still classify the openai-compatible embedder failure as `server_or_upstream_unavailable`, HTTP `503`, service `embedder-openai-compatible`, first error `503 status code (no body)`. This keeps S3 as an external embedder/readiness blocker and does not migrate or replace native ChipMate QA.
 
@@ -813,55 +778,37 @@ Current M11 evidence anchors after dashboard consistency integration:
 
 - [x] Completion audit refreshed after the latest S3 Document RAG readiness rerun: `docs/chipmate-feature-migration-validation-runs/20260709-083000-completion-audit-after-s3-rerun/completion-audit.md`; reports `45` blockers, `85` review items, and `Completion allowed: no`, confirming the S3 rerun still does not close S3 provider/readiness, S16 user decision, installed runtime S1-S16, target Windows/Linux execution, internal embedded-C full run, real company template validation, visible installed terminal-pane UX, or final M11 no-regression.
 
-- [x] Current-state consistency guard refreshed after the latest S3 readiness rerun: `docs/chipmate-feature-migration-validation-runs/20260709-083500-current-state-consistency-after-s3-rerun/summary.md` verifies current package hashes, current-facing docs, target-kit helper inclusion/exclusion, delivery-manifest flags, latest completion audit reference, latest S3 readiness/diagnostics, refreshed M11 readiness, M11 guard evidence, Artifact rollup evidence, and Agent Terminal acceptance rollup evidence. This remains documentation/package-state evidence only and does not close provider/runtime/target/internal/project blockers.
 
-- [x] Refreshed current-facing review/evidence narrative to remove stale active references for S3, Artifact, and Agent Terminal evidence. Latest audit `docs/chipmate-feature-migration-validation-runs/20260709-084000-completion-audit-after-current-narrative-refresh/completion-audit.md` reports `45` blockers, `85` review items, and `Completion allowed: no`; this cleanup improves handoff accuracy but does not close S3 provider/readiness, S16 user decision, installed runtime S1-S16, target Windows/Linux execution, internal embedded-C full run, real company template validation, visible installed terminal-pane UX, or final M11 no-regression.
 
-- [x] Current-state consistency guard refreshed after current-facing narrative cleanup: `docs/chipmate-feature-migration-validation-runs/20260709-084500-current-state-consistency-after-current-narrative-refresh/summary.md` verifies current package hashes, current-facing docs, target-kit helper inclusion/exclusion, delivery-manifest flags, latest completion audit reference, latest S3 readiness/diagnostics, refreshed M11 readiness, M11 guard evidence, Artifact rollup evidence, and Agent Terminal acceptance rollup evidence. This remains documentation/package-state evidence only and does not close provider/runtime/target/internal/project blockers.
 
 - [x] Added a conservative S16 autocomplete decision intake helper: `docs/chipmate-feature-migration-s16-decision-intake.py`. Self-check `docs/chipmate-feature-migration-validation-runs/20260709-085000-s16-decision-intake/summary.md` reports `PASS`: current real evidence remains `NEEDS_USER_DECISION`, a valid decision plus `PASS_WITH_LIMITS` source guard reaches `READY_FOR_READONLY_S16_SMOKE`, a valid decision plus `NEEDS_REVIEW` guard remains `DECISION_RECORDED_NEEDS_READONLY_RERUN`, and invalid decisions are rejected. Current intake `docs/chipmate-feature-migration-validation-runs/20260709-085000-s16-decision-intake/current-summary.md` does not modify protected autocomplete/package files and does not run autocomplete smoke.
 
 - [x] Completion audit refreshed after adding the S16 decision intake helper: `docs/chipmate-feature-migration-validation-runs/20260709-085500-completion-audit-after-s16-decision-intake/completion-audit.md`; reports `45` blockers, `86` review items, and `Completion allowed: no`, confirming the S16 decision intake does not close S16 user decision, S3 provider/readiness, installed runtime S1-S16, target Windows/Linux execution, internal embedded-C full run, real company template validation, visible installed terminal-pane UX, or final M11 no-regression.
 
-- [x] Current-state consistency guard refreshed after adding the S16 decision intake helper: `docs/chipmate-feature-migration-validation-runs/20260709-090000-current-state-consistency-after-s16-decision-intake/summary.md` verifies current package hashes, current-facing docs, target-kit helper inclusion/exclusion, delivery-manifest flags, latest completion audit reference, latest S3 readiness/diagnostics, refreshed M11 readiness, M11 guard evidence, Artifact rollup evidence, Agent Terminal acceptance rollup evidence, and S16 decision intake evidence. This remains documentation/package-state evidence only and does not close provider/runtime/target/internal/project blockers.
 
-- [x] Added a remaining blocker owner/intake matrix generator: `docs/chipmate-feature-migration-remaining-blocker-owner-matrix.py`. Current matrix `docs/chipmate-feature-migration-validation-runs/20260709-091000-remaining-blocker-owner-matrix/remaining-blocker-owner-matrix.md` reports `ACTIVE_BLOCKERS_REMAIN` across 9 blocker classes: S3 provider readiness, S16 user/product decision, installed VSIX S1-S16, offline Windows target execution, offline Linux target execution, internal embedded-C source-backed detail design, real company `.docx` template, visible Agent Terminal UX, and M11 final no-regression review. This is handoff/intake evidence only and does not mark any blocker complete.
 
 - [x] Completion audit refreshed after adding the remaining blocker owner matrix: `docs/chipmate-feature-migration-validation-runs/20260709-091500-completion-audit-after-blocker-owner-matrix/completion-audit.md`; reports `45` blockers, `86` review items, and `Completion allowed: no`, confirming the owner matrix improves handoff clarity but does not close S3 provider/readiness, S16 user decision, installed runtime S1-S16, target Windows/Linux execution, internal embedded-C full run, real company template validation, visible installed terminal-pane UX, or final M11 no-regression.
 
-- [x] Current-state consistency guard refreshed after adding the remaining blocker owner matrix: `docs/chipmate-feature-migration-validation-runs/20260709-092000-current-state-consistency-after-blocker-owner-matrix/summary.md` verifies current package hashes, current-facing docs, target-kit helper inclusion/exclusion, delivery-manifest flags, latest completion audit reference, latest S3 readiness/diagnostics, refreshed M11 readiness, M11 guard evidence, Artifact rollup evidence, Agent Terminal acceptance rollup evidence, S16 decision intake evidence, and remaining blocker owner matrix evidence. This remains documentation/package-state evidence only and does not close provider/runtime/target/internal/project blockers.
 
 ## Remaining blocker unblock packet
 
-- [x] 生成剩余阻塞解锁包：`docs/chipmate-feature-migration-validation-runs/20260709-093000-remaining-blocker-unblock-packet/remaining-blocker-unblock-packet.md`，把 S3、S16、installed runtime S1-S16、离线 Windows/Linux、内部嵌入式 C、公司模板、可见 Agent Terminal UX 和 M11 的 owner、输入、返回证据、验收门禁集中到一个 handoff artifact。
 - Note: 解锁包内列出的外部/provider/runtime/target/internal/template/UX/M11 证据全部返回并通过 intake 后，才能关闭 M10/M11。
 - [x] Review unblock packet: 确认该包只是 handoff 辅助物，没有引入 ChipMate QA、planner、question routing、Word/document runtime contract、required-artifact validator、recipe repair loop、skill contract gate、缺失图表自动补渲染、缺失文档合同规划、`nextToolContract`、`missingDeliverable` 或 `validate_artifacts`。
 
 Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-093500-completion-audit-after-blocker-unblock-packet/completion-audit.md`。
 Current consistency target: `docs/chipmate-feature-migration-validation-runs/20260709-094000-current-state-consistency-after-blocker-unblock-packet/summary.md`。
 
-## Agent Terminal visible UX evidence request
 
-- [x] 生成 Agent Terminal 可见 UX 验收请求：`docs/chipmate-feature-migration-validation-runs/20260709-095000-agent-terminal-visible-ux-request/agent-terminal-visible-ux-request.md`，覆盖命令面板入口、默认关闭提示、workspace enable、terminal pane、native terminal 不替换、危险命令确认和审计记录。
-- [x] 增加 Agent Terminal 可见 UX intake 自检：`docs/chipmate-feature-migration-validation-runs/20260709-095500-agent-terminal-visible-ux-intake-self-check/summary.md`，确认完整证据可通过、空模板/占位证据会被拒绝。
 - Note: 这只准备证据回收路径；真实 installed VS Code 可见 UX 证据仍需返回并通过 intake 后，才能关闭 S14/S15 可见 UX 和 M11。
 
-Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-100500-completion-audit-after-agent-terminal-visible-ux-request/completion-audit.md`。
-Current consistency target: `docs/chipmate-feature-migration-validation-runs/20260709-101000-current-state-consistency-after-agent-terminal-visible-ux-request/summary.md`。
 
-## M11 visible Agent Terminal UX readiness gate
 
-- [x] 将 Visible Agent Terminal UX 纳入 M11 readiness gate：`docs/chipmate-feature-migration-validation-runs/20260709-120500-m11-readiness-after-current-s3-rerun/summary.md`，当前 `0/8` gates ready，整体仍为 `NOT_READY_FOR_M11_REVIEW`。
 - [x] 刷新 M11 final signoff intake 默认链路到最新 readiness/audit/consistency：`docs/chipmate-feature-migration-validation-runs/20260709-102500-m11-final-signoff-after-visible-ux-gate/current-signoff-summary.md` 和 `docs/chipmate-feature-migration-validation-runs/20260709-102500-m11-final-signoff-after-visible-ux-gate/summary.md`，当前仍为 `NOT_READY_FOR_FINAL_SIGNOFF`。
-- Note: 这不会关闭可见 Agent Terminal UX；它确保真实可见 UX evidence 未返回前，M11 readiness 不能误进入最终 review。
 
 Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-103500-completion-audit-after-m11-visible-ux-gate/completion-audit.md`。
 Current consistency target: `docs/chipmate-feature-migration-validation-runs/20260709-104000-current-state-consistency-after-m11-visible-ux-gate/summary.md`。
 
-## M11 visible Agent Terminal UX gate self-check
 
-- [x] 新增 M11 visible Agent Terminal UX gate 自检：`docs/chipmate-feature-migration-validation-runs/20260709-121000-m11-visible-ux-evidence-shape-self-check/summary.md`，验证 8/8 合成 PASS 证据可进入 `READY_FOR_M11_REVIEW`。
-- [x] Review M11 visible UX gate self-check: 验证缺少 Visible Agent Terminal UX 证据时 readiness 仍为 `NOT_READY_FOR_M11_REVIEW`，避免仅靠本地 Agent Terminal rollup 进入 M11。
 - Note: 该自检只验证 readiness gate wiring，不替代 installed VS Code 可见 UX 真实证据。
 
 Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-110000-completion-audit-after-m11-visible-ux-self-check/completion-audit.md`。
@@ -898,8 +845,6 @@ Current consistency target: `docs/chipmate-feature-migration-validation-runs/202
 
 - [x] Reran S3 Document RAG readiness with current provider state: `docs/chipmate-feature-migration-validation-runs/20260709-120000-document-rag-readiness-rerun/document-rag-readiness-summary.md`; result remains `ERROR_NEEDS_REVIEW`, `document_search used: no`, provider/readiness failure `yes`, HTTP `503`, classification `server_or_upstream_unavailable`.
 - [x] Refreshed M11 readiness against the current S3 rerun: `docs/chipmate-feature-migration-validation-runs/20260709-120500-m11-readiness-after-current-s3-rerun/summary.md`; result remains `NOT_READY_FOR_M11_REVIEW`, `0/8` gates ready.
-- [x] Hardened M11 visible Agent Terminal UX readiness gate to reject generic `PASS` files and self-check summaries as real installed UX evidence; self-check `docs/chipmate-feature-migration-validation-runs/20260709-121000-m11-visible-ux-evidence-shape-self-check/summary.md` passes the stricter evidence-shape guard.
-- [x] Review current S3 rerun and visible UX evidence-shape guard: confirms QA is not migrated, S3 remains a Document RAG provider/readiness blocker, visible Agent Terminal UX still requires returned installed evidence, and no ChipMate document contract/repair/gating flow was introduced.
 
 Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-122000-completion-audit-after-current-s3-rerun-and-visible-ux-shape-guard/completion-audit.md`.
 Current consistency target: `docs/chipmate-feature-migration-validation-runs/20260709-122500-current-state-consistency-after-current-s3-rerun-and-visible-ux-shape-guard/summary.md`.
@@ -937,8 +882,6 @@ Current final signoff target: `docs/chipmate-feature-migration-validation-runs/2
 
 ## M11 returned evidence bundle intake
 
-- [x] Added M11 returned-evidence bundle intake helper: `docs/chipmate-feature-migration-m11-returned-evidence-bundle-intake.py` discovers typed returned evidence summaries for S16 decision, installed runtime S1-S16, Windows/Linux target execution, internal embedded-C detail design, company `.docx` template, and visible Agent Terminal UX, then delegates readiness to `chipmate-feature-migration-m11-readiness-intake.py`.
-- [x] Review M11 returned-evidence bundle intake: self-check `docs/chipmate-feature-migration-validation-runs/20260709-132000-m11-returned-evidence-bundle-intake-self-check/summary.md` accepts a complete synthetic returned-evidence bundle and rejects a bundle missing visible Agent Terminal UX evidence.
 - [x] Registered returned-evidence bundle intake as the preferred external-evidence receiving path; current readiness remains `docs/chipmate-feature-migration-validation-runs/20260709-130000-m11-readiness-after-s16-decision-shape-guard/summary.md` (`NOT_READY_FOR_M11_REVIEW`, `0/8` gates ready) until real evidence is returned.
 
 Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-133000-completion-audit-after-returned-evidence-bundle-intake/completion-audit.md`.
@@ -947,7 +890,6 @@ Current final signoff target: `docs/chipmate-feature-migration-validation-runs/2
 
 ## M11 returned evidence bundle template
 
-- [x] Added M11 returned-evidence bundle template generator: `docs/chipmate-feature-migration-m11-returned-evidence-bundle-template.py` creates the standard external-evidence directory layout for S16 decision, installed runtime S1-S16, Windows/Linux target execution, internal embedded-C detail design, company `.docx` template, and visible Agent Terminal UX.
 - [x] Review M11 returned-evidence bundle template: self-check `docs/chipmate-feature-migration-validation-runs/20260709-134500-m11-returned-evidence-bundle-template-self-check/summary.md` confirms all required placeholder summaries are present as `PENDING` and the generated skeleton is rejected by returned-evidence bundle intake until placeholders are replaced by typed verifier outputs.
 - [x] Registered the returned-evidence bundle template alongside bundle intake `docs/chipmate-feature-migration-validation-runs/20260709-132000-m11-returned-evidence-bundle-intake-self-check/summary.md` as the external evidence receiving workflow; current readiness remains `docs/chipmate-feature-migration-validation-runs/20260709-130000-m11-readiness-after-s16-decision-shape-guard/summary.md` (`NOT_READY_FOR_M11_REVIEW`, `0/8` gates ready) until real evidence is returned.
 
@@ -958,7 +900,6 @@ Current final signoff target: `docs/chipmate-feature-migration-validation-runs/2
 ## M11 returned evidence bundle archive verify
 
 - [x] Added M11 returned-evidence bundle archive/structure verifier: `docs/chipmate-feature-migration-m11-returned-evidence-bundle-archive-verify.py` accepts a directory, `.zip`, `.tar`, `.tar.gz`, or `.tgz`, checks the required returned-evidence summary files, rejects template placeholders, rejects missing files, and detects macOS metadata before bundle intake.
-- [x] Review M11 returned-evidence bundle archive verifier: self-check `docs/chipmate-feature-migration-validation-runs/20260709-136500-m11-returned-evidence-bundle-archive-verify-self-check/summary.md` accepts a complete fixture and rejects both template placeholder bundles and bundles missing required visible Agent Terminal UX evidence.
 - [x] Registered archive verifier as the pre-intake receiving guard alongside template `docs/chipmate-feature-migration-validation-runs/20260709-134500-m11-returned-evidence-bundle-template-self-check/summary.md` and bundle intake `docs/chipmate-feature-migration-validation-runs/20260709-132000-m11-returned-evidence-bundle-intake-self-check/summary.md`; current readiness remains `docs/chipmate-feature-migration-validation-runs/20260709-130000-m11-readiness-after-s16-decision-shape-guard/summary.md` (`NOT_READY_FOR_M11_REVIEW`, `0/8` gates ready) until real evidence is returned.
 
 Current follow-up audit target: `docs/chipmate-feature-migration-validation-runs/20260709-137000-completion-audit-after-returned-evidence-bundle-archive-verify/completion-audit.md`.
@@ -997,7 +938,6 @@ Current final signoff target: `docs/chipmate-feature-migration-validation-runs/2
 
 ## M11 external evidence action packet
 
-- [x] Added M11 external evidence action packet generator: `docs/chipmate-feature-migration-m11-external-evidence-action-packet.py` produces the current owner-facing checklist for S3 Document RAG, S16 autocomplete decision, installed runtime S1-S16, Windows/Linux offline target execution, internal embedded-C detail design, real company `.docx` template validation, and visible Agent Terminal UX evidence.
 - [x] Review M11 external evidence action packet: generated packet `docs/chipmate-feature-migration-m11-external-evidence-action-packet.md` and self-check `docs/chipmate-feature-migration-validation-runs/20260709-144500-m11-external-evidence-action-packet-self-check/summary.md` confirm all eight external evidence gates, returned-evidence receive workflow, and migration boundaries are documented.
 - [x] Registered action packet alongside receive quickstart `docs/chipmate-feature-migration-m11-returned-evidence-receive-quickstart.md` as the current external evidence execution handoff; current readiness remains `docs/chipmate-feature-migration-validation-runs/20260709-130000-m11-readiness-after-s16-decision-shape-guard/summary.md` (`NOT_READY_FOR_M11_REVIEW`, `0/8` gates ready) until real evidence is returned.
 

@@ -49,6 +49,26 @@ describe("flattenModels", () => {
     expect(model?.name).toBe("ChipMate Auto Free")
     expect(model?.providerName).toBe("ChipMate Gateway")
   })
+
+  it("filters prohibited models only from the internal catalog", () => {
+    const providers = {
+      internal: makeProvider("internal", "Internal", [
+        "qwen3.8-27b",
+        "glm-5.2",
+        "zai-org-glm-5-2",
+        "doubao-seed-2.0-pro",
+      ]),
+    }
+    expect(flattenModels(providers, true).map((model) => model.id)).toEqual(["qwen3.8-27b"])
+    expect(flattenModels(providers, false)).toHaveLength(4)
+  })
+
+  it("filters prohibited models identified by display name or provider name", () => {
+    const named = makeProvider("internal", "Internal", ["endpoint", "allowed"])
+    named.models.endpoint!.name = "GLM 5.2"
+    const doubao = makeProvider("opaque", "Doubao", ["ep-20260828"])
+    expect(flattenModels({ internal: named, opaque: doubao }, true).map((model) => model.id)).toEqual(["allowed"])
+  })
 })
 
 describe("findModel", () => {
@@ -107,5 +127,26 @@ describe("isModelValid", () => {
 
   it("rejects unknown models", () => {
     expect(isModelValid(providers, ["openai"], { providerID: "openai", modelID: "missing" })).toBe(false)
+  })
+
+  it("rejects prohibited internal models without affecting normal builds", () => {
+    const internal = makeProvider("internal", "Internal", ["glm-5.2", "doubao-seed-2.0-pro", "qwen3.8-27b"])
+    const catalog = { internal }
+    expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "glm-5.2" }, true)).toBe(false)
+    expect(
+      isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "doubao-seed-2.0-pro" }, true),
+    ).toBe(false)
+    expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "qwen3.8-27b" }, true)).toBe(
+      true,
+    )
+    expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "glm-5.2" }, false)).toBe(true)
+  })
+
+  it("rejects a prohibited model identified only after provider metadata loads", () => {
+    const internal = makeProvider("internal", "Internal", ["endpoint"])
+    internal.models.endpoint!.name = "Doubao Seed 2.0 Pro"
+    expect(isModelValid({ internal }, ["internal"], { providerID: "internal", modelID: "endpoint" }, true)).toBe(
+      false,
+    )
   })
 })

@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+import { createSignal, onCleanup } from "solid-js"
 import { ACCEPTED_IMAGE_TYPES, isAcceptedImageType, isDragLeavingComponent } from "./image-attachments-utils"
 import { extractDropPaths, CHIPMATE_FILE_PATH_MIME } from "../utils/path-mentions"
 
@@ -12,20 +12,33 @@ export interface ImageAttachment {
 /** Callback for handling text/URI file path drops. */
 export type FilePathDropHandler = (paths: string[]) => void
 
-export function useImageAttachments() {
+export function useImageAttachments(scope?: () => string) {
   const [images, setImages] = createSignal<ImageAttachment[]>([])
   const [dragging, setDragging] = createSignal(false)
   let onFilePaths: FilePathDropHandler | undefined
+  const readers = new Set<FileReader>()
+  let generation = 0
+  onCleanup(() => {
+    generation++
+    for (const reader of readers) reader.abort()
+    readers.clear()
+  })
 
   /** Register a handler for file path drops (text/URI-list). */
   const setFilePathDropHandler = (handler: FilePathDropHandler) => {
     onFilePaths = handler
   }
 
-  const add = (file: File) => {
+  const add = (file: File, valid: () => boolean = () => true) => {
     if (!isAcceptedImageType(file.type)) return
+    const origin = scope?.()
+    const version = generation
     const reader = new FileReader()
+    readers.add(reader)
+    reader.onloadend = () => readers.delete(reader)
+    reader.onerror = () => console.warn("[ChipMate New] 图片读取失败：", reader.error?.message)
     reader.onload = () => {
+      if (origin !== scope?.() || version !== generation || !valid()) return
       const attachment: ImageAttachment = {
         id: crypto.randomUUID(),
         filename: file.name || "image",
@@ -41,9 +54,15 @@ export function useImageAttachments() {
     setImages((prev) => prev.filter((img) => img.id !== id))
   }
 
-  const clear = () => setImages([])
+  const clear = () => {
+    generation++
+    setImages([])
+  }
 
-  const replace = (next: ImageAttachment[]) => setImages(next)
+  const replace = (next: ImageAttachment[]) => {
+    generation++
+    setImages(next)
+  }
 
   const handlePaste = (event: ClipboardEvent) => {
     const items = Array.from(event.clipboardData?.items ?? [])
@@ -62,7 +81,9 @@ export function useImageAttachments() {
     // Accept file drops, VS Code URI-list drops, and internal file-path drags.
     // Do NOT accept bare text/plain here — that would intercept normal text drags.
     const acceptable =
-      types.includes("Files") || types.includes("application/vnd.code.uri-list") || types.includes(CHIPMATE_FILE_PATH_MIME)
+      types.includes("Files") ||
+      types.includes("application/vnd.code.uri-list") ||
+      types.includes(CHIPMATE_FILE_PATH_MIME)
     if (!acceptable) return
     event.preventDefault()
     setDragging(true)

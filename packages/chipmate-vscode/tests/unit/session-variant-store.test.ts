@@ -66,6 +66,51 @@ describe("per-session variant selection", () => {
     expect(getVariant(store, model, variants, "code", "session-a")).toBe("medium")
   })
 
+  for (const invalid of ["high", "max"]) {
+    it(`falls back from the removed Qwen3.8 ${invalid} effort to its xhigh default`, () => {
+      const qwen: ModelSelection = { providerID: "chipmate", modelID: "qwen3.8-27b" }
+      const store: Record<string, string> = { [variantKey(qwen, "ask")]: invalid }
+
+      expect(getVariant(store, qwen, ["xhigh", "medium", "low", "none"], "ask")).toBe("xhigh")
+    })
+  }
+
+  it("preserves a saved Qwen3.8 disabled-thinking selection", () => {
+    const qwen: ModelSelection = { providerID: "chipmate", modelID: "qwen3.8-27b" }
+    const store: Record<string, string> = { [variantKey(qwen, "ask")]: "none" }
+
+    expect(getVariant(store, qwen, ["xhigh", "medium", "low", "none"], "ask")).toBe("none")
+  })
+
+  for (const invalid of ["low", "medium", "none"]) {
+    it(`falls back from invalid GLM 5.2 selection ${invalid} to max`, () => {
+      const glm: ModelSelection = { providerID: "custom", modelID: "glm-5.2" }
+      const store: Record<string, string> = { [variantKey(glm, "ask")]: invalid }
+
+      expect(getVariant(store, glm, ["max", "high"], "ask")).toBe("max")
+    })
+  }
+
+  for (const id of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+    for (const invalid of ["low", "medium"]) {
+      it(`falls back from invalid ${id} selection ${invalid} to max`, () => {
+        const deepseek: ModelSelection = { providerID: "custom", modelID: id }
+        const store: Record<string, string> = { [variantKey(deepseek, "ask")]: invalid }
+
+        expect(getVariant(store, deepseek, ["max", "high", "thinking", "none"], "ask")).toBe("max")
+      })
+    }
+  }
+
+  for (const invalid of ["low", "medium", "high", "max", "auto"]) {
+    it(`falls back from invalid Doubao selection ${invalid} to thinking`, () => {
+      const doubao: ModelSelection = { providerID: "custom", modelID: "doubao-seed-2.0-pro" }
+      const store: Record<string, string> = { [variantKey(doubao, "ask")]: invalid }
+
+      expect(getVariant(store, doubao, ["thinking", "none"], "ask")).toBe("thinking")
+    })
+  }
+
   it("transfers a pending local tab variant to the created session", () => {
     const store: Record<string, string> = {}
 

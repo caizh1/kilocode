@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test"
 import {
   createAutocompleteModel,
   createReasoningModel,
+  hasExtendedModelConfiguration,
+  mergeDiscoveredModels,
   resolveQuickModels,
   validateCustomProvider,
 } from "../../webview-ui/src/components/settings/CustomProviderValidation"
@@ -36,6 +38,52 @@ function args(form: FormState) {
 }
 
 describe("validateCustomProvider – variant name validation", () => {
+  it("creates one editable model row for every selected discovered model", () => {
+    const current = [
+      { id: "", name: "", reasoning: false, supportsImages: false, modalities: {}, variants: [] },
+    ]
+    const discovered = [
+      { id: "glm-5.2", name: "GLM 5.2" },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+      { id: "doubao-seed-2.0-pro", name: "Doubao Seed 2.0 Pro" },
+    ]
+
+    const result = mergeDiscoveredModels(current, discovered)
+
+    expect(result.models.map((model) => model.id)).toEqual(discovered.map((model) => model.id))
+    expect(result.models.every((model) => model.reasoning === false && model.supportsImages === false)).toBe(true)
+    expect(result.models[0]).not.toBe(result.models[1])
+  })
+
+  it("deduplicates discovered model rows without hiding new models", () => {
+    const form = base()
+    const result = mergeDiscoveredModels(form.models, [
+      { id: "MODEL-1", name: "Duplicate" },
+      { id: "model-2", name: "Model Two" },
+      { id: "model-2", name: "Duplicate Two" },
+    ])
+
+    expect(result.added.map((model) => model.id)).toEqual(["model-2"])
+    expect(result.models.map((model) => model.id)).toEqual(["model-1", "model-2"])
+  })
+
+  it("opens the full model editor when an existing quick provider contains additional models", () => {
+    const defaults = { modelID: "deepseek-v4-flash", autocompleteModelID: "qwen-coder-30b0" }
+    expect(
+      hasExtendedModelConfiguration(
+        { config: { models: { "deepseek-v4-flash": {}, "qwen-coder-30b0": {} } } },
+        defaults,
+      ),
+    ).toBe(false)
+    expect(
+      hasExtendedModelConfiguration(
+        { config: { models: { "deepseek-v4-flash": {}, "glm-5.2": {}, "deepseek-v4-pro": {} } } },
+        defaults,
+      ),
+    ).toBe(true)
+  })
+
   it("creates a reasoning model without overriding runtime variants", () => {
     const model = createReasoningModel("deepseek-v4-flash")
     expect(model.reasoning).toBe(true)
@@ -146,6 +194,56 @@ describe("validateCustomProvider – variant name validation", () => {
 
     expect(out.result?.providerID).toBe("chipmate")
     expect(out.errors.providerID).toBeUndefined()
+  })
+
+  it("requires a replacement credential when an existing provider changes URL origin", () => {
+    for (const baseURL of ["http://example.com/v1", "https://example.com:8443/v1", "https://other.example/v1"]) {
+      const form = base()
+      form.baseURL = baseURL
+      const out = validateCustomProvider({
+        ...args(form),
+        editing: true,
+        existingBaseURL: "https://example.com/v1",
+        existingHasCredential: true,
+        apiKeyChanged: false,
+      })
+
+      expect(out.result).toBeUndefined()
+      expect(out.errors.apiKey).toBe("provider.custom.error.apiKey.originChanged")
+    }
+  })
+
+  it("preserves credentials for same-origin URL changes", () => {
+    const form = base()
+    form.baseURL = "https://example.com/v2/"
+    const out = validateCustomProvider({
+      ...args(form),
+      editing: true,
+      existingBaseURL: "https://example.com/v1",
+      existingHasCredential: true,
+      apiKeyChanged: false,
+    })
+
+    expect(out.result).toBeDefined()
+    expect(out.errors.apiKey).toBeUndefined()
+  })
+
+  it("accepts a new API key or environment credential for a different origin", () => {
+    for (const credential of ["sk-new", "{env:NEW_PROVIDER_KEY}"]) {
+      const form = base()
+      form.baseURL = "https://other.example/v1"
+      form.apiKey = credential
+      const out = validateCustomProvider({
+        ...args(form),
+        editing: true,
+        existingBaseURL: "https://example.com/v1",
+        existingHasCredential: true,
+        apiKeyChanged: true,
+      })
+
+      expect(out.result).toBeDefined()
+      expect(out.errors.apiKey).toBeUndefined()
+    }
   })
 
   it("allows submit when reasoning is enabled with no variants", () => {

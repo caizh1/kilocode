@@ -1,26 +1,29 @@
+import { TurnChangesCard } from "./TurnChangesCard"
 import { type Component, Show, createEffect } from "solid-js"
-import { DiffChanges } from "@chipmate/chipmate-ui/diff-changes"
 import { Icon } from "@chipmate/chipmate-ui/icon"
 import { useI18n } from "@chipmate/chipmate-ui/context/i18n"
-import type { AssistantMessage as SDKAssistantMessage, Part as SDKPart, SnapshotFileDiff } from "@chipmate/sdk/v2"
+import type { AssistantMessage as SDKAssistantMessage, Part as SDKPart } from "@chipmate/sdk/v2"
 import type { TranscriptRow } from "../../context/transcript-rows"
 import type { TimelineHighlight } from "../../utils/timeline/highlight"
 import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"
 import { useLanguage } from "../../context/language"
-import { useVSCode } from "../../context/vscode"
 import { useFeedback } from "../../context/feedback"
 import { AssistantMessage } from "./AssistantMessage"
 import { ErrorDisplay, type ErrorDisplayProps } from "./ErrorDisplay"
 import { VscodeUserMessage } from "./VscodeUserMessage"
+import { CompactionStatusCard } from "./CompactionStatusCard"
 
 interface TranscriptRowViewProps {
   row: TranscriptRow
   index?: number
   onForkMessage?: (sessionId: string, messageId: string) => void
+  forkState?: { sessionID: string; afterMessageID?: string; state: "pending" | "slow" }
+  readonly?: boolean
   /** Part behind the currently hovered/focused task-timeline bar, if any. */
   highlight?: () => TimelineHighlight | undefined
   activeSearch?: boolean
+  activeNavigation?: boolean
   /** id of the part (tool call/reasoning block) containing the current chat
    * search match within this row, if any. */
   activeSearchPartID?: string
@@ -32,13 +35,11 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
   const session = useSession()
   const server = useServer()
   const language = useLanguage()
-  const vscode = useVSCode()
   const feedback = useFeedback()
   const i18n = useI18n()
 
   createEffect(() => session.hydrateParts([props.row.message.id]))
 
-  const open = () => vscode.postMessage({ type: "openChanges", turnId: props.row.message.id })
   const formatCompletionDuration = (elapsed: number) => {
     const seconds = Math.floor(elapsed / 1_000)
     const minutes = Math.floor(seconds / 60)
@@ -57,6 +58,8 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
       data-session-id={props.row.message.sessionID}
       data-live={props.row.live ? "" : undefined}
       data-search-active={props.activeSearch ? "" : undefined}
+      data-navigation-active={props.activeNavigation ? "" : undefined}
+      tabIndex={props.activeNavigation ? -1 : undefined}
     >
       <Show when={props.row.type === "user" ? props.row : undefined}>
         {(row) => (
@@ -70,9 +73,6 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
               parts={row().parts}
               interrupted={row().interrupted}
               queued={row().queued}
-              onFork={
-                props.onForkMessage ? () => props.onForkMessage?.(row().message.sessionID, row().message.id) : undefined
-              }
               onDelete={
                 row().queued ? () => session.deleteQueuedMessage(row().message.sessionID, row().message.id) : undefined
               }
@@ -96,6 +96,35 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
               message={row().message as unknown as SDKAssistantMessage}
               parts={row().parts as unknown as SDKPart[]}
               showAssistantCopyPartID={row().copy}
+              performance={row().performance}
+              fork={
+                row().forkAfterMessageID && props.onForkMessage
+                  ? {
+                      onSelect: () => props.onForkMessage?.(row().message.sessionID, row().forkAfterMessageID!),
+                      disabled:
+                        props.readonly ||
+                        !server.isConnected() ||
+                        session.status() !== "idle" ||
+                        props.forkState?.sessionID === row().message.sessionID,
+                      pending:
+                        props.forkState?.sessionID === row().message.sessionID &&
+                        props.forkState.afterMessageID === row().forkAfterMessageID,
+                      slow: props.forkState?.state === "slow",
+                      title:
+                        props.forkState?.sessionID === row().message.sessionID
+                          ? props.forkState.state === "slow"
+                            ? "仍在复制会话，请稍候"
+                            : "正在创建分支"
+                          : props.readonly
+                            ? "只读会话不能创建分支"
+                            : !server.isConnected()
+                              ? "连接恢复后可创建分支"
+                              : session.status() !== "idle"
+                                ? "回答仍在生成，完成后可创建分支"
+                                : i18n.t("ui.message.forkMessageDescription"),
+                    }
+                  : undefined
+              }
               completion={() => {
                 const elapsed = row().completionElapsed
                 if (elapsed === undefined) return undefined
@@ -137,33 +166,16 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
 
       <Show when={props.row.type === "diff" ? props.row : undefined}>
         {(row) => (
-          <Show when={server.gitInstalled()}>
-            <div class="vscode-session-turn-diffs" data-component="session-turn">
-              <button
-                type="button"
-                class="vscode-session-turn-diffs-trigger"
-                onClick={open}
-                aria-label={i18n.t("ui.sessionReview.change.modified")}
-              >
-                <span data-slot="session-turn-diffs-label">{i18n.t("ui.sessionReview.change.modified")}</span>
-                <span data-slot="session-turn-diffs-count">
-                  {row().diffs.length}{" "}
-                  {i18n.t(row().diffs.length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
-                </span>
-                <span data-slot="session-turn-diffs-meta">
-                  <DiffChanges changes={row().diffs as SnapshotFileDiff[]} variant="bars" />
-                </span>
-                <span data-slot="session-turn-diffs-chevron" aria-hidden="true">
-                  <Icon name="chevron-right" size="small" />
-                </span>
-              </button>
-            </div>
-          </Show>
+          <TurnChangesCard sessionID={row().message.sessionID} messageID={row().message.id} live={row().live} readonly={props.readonly} legacy={row().diffs.length} />
         )}
       </Show>
 
       <Show when={props.row.type === "error" ? props.row : undefined}>
         {(row) => <ErrorDisplay error={row().error as ErrorDisplayProps["error"]} onLogin={server.goToLogin} />}
+      </Show>
+
+      <Show when={props.row.type === "compaction" ? props.row : undefined}>
+        {(row) => <CompactionStatusCard status={row().status} />}
       </Show>
     </div>
   )

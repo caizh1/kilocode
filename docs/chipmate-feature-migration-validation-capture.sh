@@ -145,8 +145,6 @@ Fill this file after installing the generated VSIX into the agreed VS Code profi
 | S11 | Mermaid | Generate state-machine PNG | `.mmd`, `.png`, diagnostics artifact | TODO |  |
 | S12 | Mermaid + Word | Insert Mermaid PNG into Word | New Word artifact with figure | TODO |  |
 | S13 | Source-backed detail design | Run on one internal embedded C module | Evidence, diagrams, Word output, quality report | TODO |  |
-| S14 | Agent Terminal open | Open Agent Terminal | Disabled prompt appears; terminal opens after workspace enable | TODO |  |
-| S15 | Agent Terminal danger | Plan/delete temporary artifacts | Dangerous command requires explicit confirmation | TODO |  |
 | S16 | Autocomplete | Enable qwen-direct and trigger inline completion | Provider still registers; diagnostics commands exist | TODO |  |
 
 ## Package evidence

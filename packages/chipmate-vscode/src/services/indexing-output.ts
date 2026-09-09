@@ -1,3 +1,4 @@
+import { diagnostic } from "./diagnostics/record"
 import * as vscode from "vscode"
 import type { IndexingStatus } from "./cli-backend/types"
 
@@ -58,6 +59,7 @@ export function appendIndexingStderr(context: vscode.ExtensionContext, output: s
 }
 
 export function recordIndexingStatus(context: vscode.ExtensionContext, status: IndexingStatus): void {
+  diagnostic("索引状态更新", status, "INFO", "indexing")
   recordIndexingNotices(context, status)
   if (!hasIssue(status)) return
 

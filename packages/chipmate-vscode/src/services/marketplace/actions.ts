@@ -58,7 +58,20 @@ export async function installMarketplaceItem(
     const target = await instanceTarget(ctx, item, scope, project)
     if (target.error) return { success: false, slug: item.id, error: target.error }
     const result = await ctx.marketplace.install(item, opts, project)
-    if (result.success) await invalidate(ctx, item, scope, scope === "project" ? project! : dir)
+    if (result.success && item.type === "skill") {
+      const directory = scope === "project" ? project! : dir
+      const activation = await activateMarketplaceSkills(
+        ctx,
+        scope,
+        directory,
+        [item.id],
+        result.filePath ? { [normalizeSkillKey(item.id)]: result.filePath } : undefined,
+      )
+      const error = marketplaceActivationError(activation)
+      if (error) return { success: false, slug: item.id, error }
+    } else if (result.success) {
+      await invalidate(ctx, item, scope, scope === "project" ? project! : dir)
+    }
     return result
   } catch (err) {
     return { success: false, slug: item.id, error: String(err) }
@@ -218,16 +231,30 @@ export async function activateMarketplaceSkills(
   scope: "project" | "global",
   dir: string,
   ids: readonly string[],
+  locations?: Readonly<Record<string, string>>,
 ): Promise<SkillImportActivation> {
   const expected = [...new Set(ids.map(normalizeSkillKey).filter(Boolean))]
   if (expected.length === 0) return { status: "ready" }
 
   try {
-    const client = await retry(() => ctx.connection.getClientAsync(dir))
-    await retry(() => client.chipmate.refreshSkills({ directory: dir, scope }, { throwOnError: true }))
-    const { data } = await retry(() => client.app.skills({ directory: dir }, { throwOnError: true }))
-    const found = new Set((data ?? []).map((skill) => normalizeSkillKey(skill.name)).filter(Boolean))
-    const missingIds = expected.filter((id) => !found.has(id))
+    const inspect = async () => {
+      const client = await retry(() => ctx.connection.getClientAsync(dir))
+      await retry(() => client.chipmate.refreshSkills({ directory: dir, scope }, { throwOnError: true }))
+      const { data } = await retry(() => client.app.skills({ directory: dir }, { throwOnError: true }))
+      const missingIds = expected.filter((id) => {
+        const location = locations?.[id]
+        return !(data ?? []).some(
+          (skill) => normalizeSkillKey(skill.name) === id && (!location || sameSkillLocation(skill.location, location)),
+        )
+      })
+      return { client, missingIds }
+    }
+
+    const first = await inspect()
+    if (first.missingIds.length === 0) return { status: "ready" }
+    await retry(() => first.client.instance.dispose({ directory: dir }, { throwOnError: true }))
+    const second = await inspect()
+    const missingIds = second.missingIds
     if (missingIds.length === 0) return { status: "ready" }
 
     console.warn("[ChipMate New] Local Skill refresh completed with missing Skills:", {
@@ -244,6 +271,22 @@ export async function activateMarketplaceSkills(
       message: safeMarketplaceErrorText(err instanceof Error ? err.message : err) || "Unknown refresh error",
     }
   }
+}
+
+export function marketplaceActivationError(activation: SkillImportActivation): string | undefined {
+  if (activation.status === "ready") return undefined
+  const detail = activation.missingIds?.length
+    ? `CLI 刷新后未发现 ${activation.missingIds.join(", ")}`
+    : (activation.message ?? "CLI Skill 刷新失败")
+  return `Skill 文件已完成校验，但尚未被 CLI 激活：${detail}`
+}
+
+function sameSkillLocation(first: string, second: string): boolean {
+  const normalize = (value: string) => {
+    const resolved = path.resolve(value)
+    return process.platform === "win32" ? resolved.toLocaleLowerCase() : resolved
+  }
+  return normalize(first) === normalize(second)
 }
 
 export function activatableSkillIds(items: readonly LocalSkillImportItemResult[]): string[] {

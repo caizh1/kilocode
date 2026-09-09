@@ -30,6 +30,15 @@ body.vscode-high-contrast-light {
     border-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
   }
 
+  /* 当前对话标签保留填充、完整边框和底部强调，避免高对比主题丢失选中位置。 */
+  .session-tab-bar .am-tab-active {
+    border-color: var(--vscode-contrastBorder, var(--border-weak-base));
+    border-block-end-color: var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+    background: var(--vscode-list-activeSelectionBackground, var(--surface-interactive-base));
+    box-shadow: inset 0 -2px 0 var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+    color: var(--vscode-list-activeSelectionForeground, var(--text-on-interactive-base));
+  }
+
   /* Dropdowns and popover panels */
   .file-mention-dropdown,
   .slash-command-dropdown {
@@ -54,6 +63,16 @@ body.vscode-high-contrast-light {
   /* Notification card */
   .chipmate-notifications-card {
     border: 1px solid var(--vscode-contrastBorder, transparent);
+  }
+
+  .compaction-status-card {
+    border-color: var(--vscode-contrastBorder, var(--vscode-widget-border));
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .compaction-status-progress [data-slot="progress-track"] {
+    border-color: var(--vscode-contrastBorder, var(--vscode-focusBorder));
   }
 
   /* Revert banner */
@@ -99,6 +118,10 @@ body.vscode-high-contrast-light {
   /* Prompt hint selector buttons */
   .prompt-input-hint-selectors [data-component="button"] {
     border-color: var(--vscode-contrastBorder, transparent) !important;
+  }
+
+  .prompt-status-indicator {
+    box-shadow: 0 0 0 1px var(--vscode-contrastBorder, var(--vscode-editor-background));
   }
 
   /* Prompt review chips */

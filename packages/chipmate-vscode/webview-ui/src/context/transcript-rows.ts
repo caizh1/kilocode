@@ -1,4 +1,6 @@
 import type { Message, Part } from "../types/messages"
+import { compactionStatus, type CompactionStatus } from "./compaction-activity"
+import { messagePerformance, type ResponsePerformance } from "./session-utils"
 import { completedTurnElapsed, visibleParts, type MessageTurn, type RevertBoundary } from "./session-queue"
 
 interface TranscriptMeta {
@@ -23,7 +25,10 @@ export interface TranscriptAssistantRow extends TranscriptMeta {
   message: Message
   parts: Part[]
   copy?: string
+  forkAfterMessageID?: string
   completionElapsed?: number
+  /** Response performance is shown only on the latest successful ordinary turn. */
+  performance?: ResponsePerformance
   /** Agent that produced the final successful reply for this completed turn. */
   completionAgent?: string
 }
@@ -42,9 +47,23 @@ export interface TranscriptErrorRow extends TranscriptMeta {
   error: NonNullable<Message["error"]>
 }
 
-export type TranscriptRow = TranscriptUserRow | TranscriptAssistantRow | TranscriptDiffRow | TranscriptErrorRow
+export interface TranscriptCompactionRow extends TranscriptMeta {
+  type: "compaction"
+  key: string
+  message: Message
+  parts: Part[]
+  status: CompactionStatus
+}
+
+export type TranscriptRow =
+  | TranscriptUserRow
+  | TranscriptAssistantRow
+  | TranscriptDiffRow
+  | TranscriptErrorRow
+  | TranscriptCompactionRow
 
 export interface TranscriptOptions {
+  turnChanges?: boolean
   size?: number
   queued?: ReadonlySet<string>
   live?: ReadonlySet<string>
@@ -93,7 +112,41 @@ function meta(a: TranscriptRow, b: TranscriptRow) {
   return a.turn === b.turn && a.partial === b.partial && a.queued === b.queued && a.live === b.live
 }
 
-function equal(a: TranscriptRow, b: TranscriptRow) {
+function equalAssistant(a: TranscriptAssistantRow, b: TranscriptAssistantRow) {
+  return (
+    a.message === b.message &&
+    same(a.parts, b.parts) &&
+    a.copy === b.copy &&
+    a.forkAfterMessageID === b.forkAfterMessageID &&
+    a.completionElapsed === b.completionElapsed &&
+    a.performance?.generation === b.performance?.generation &&
+    a.performance?.ttftMs === b.performance?.ttftMs &&
+    a.completionAgent === b.completionAgent
+  )
+}
+
+function equalCompaction(a: TranscriptCompactionRow, b: TranscriptCompactionRow) {
+  return (
+    a.message === b.message &&
+    same(a.parts, b.parts) &&
+    a.status.state === b.status.state &&
+    a.status.source === b.status.source &&
+    a.status.startedAt === b.status.startedAt &&
+    a.status.completedAt === b.status.completedAt &&
+    a.status.attempt === b.status.attempt &&
+    a.status.attemptMode === b.status.attemptMode &&
+    a.status.phase === b.status.phase &&
+    a.status.completedUnits === b.status.completedUnits &&
+    a.status.totalUnits === b.status.totalUnits &&
+    a.status.reduceDepth === b.status.reduceDepth &&
+    a.status.activity === b.status.activity
+  )
+}
+
+function equalStandard(
+  a: Exclude<TranscriptRow, TranscriptCompactionRow>,
+  b: Exclude<TranscriptRow, TranscriptCompactionRow>,
+) {
   if (a.type !== b.type || !meta(a, b)) return false
   if (a.type === "user" && b.type === "user") {
     return (
@@ -101,13 +154,7 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
     )
   }
   if (a.type === "assistant" && b.type === "assistant") {
-    return (
-      a.message === b.message &&
-      same(a.parts, b.parts) &&
-      a.copy === b.copy &&
-      a.completionElapsed === b.completionElapsed &&
-      a.completionAgent === b.completionAgent
-    )
+    return equalAssistant(a, b)
   }
   if (a.type === "diff" && b.type === "diff") {
     return a.message === b.message && same(a.diffs, b.diffs)
@@ -116,6 +163,12 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
     return a.message === b.message && a.error === b.error
   }
   return false
+}
+
+function equal(a: TranscriptRow, b: TranscriptRow) {
+  if (a.type === "compaction") return b.type === "compaction" && meta(a, b) && equalCompaction(a, b)
+  if (b.type === "compaction") return false
+  return equalStandard(a, b)
 }
 
 function diffs(msg: Message) {
@@ -144,6 +197,71 @@ function rowCompletionElapsed(
   return completionElapsed
 }
 
+function rowPerformance(
+  performance: ResponsePerformance | undefined,
+  copied: string | undefined,
+  parts: readonly Part[],
+) {
+  if (!performance || !copied || !parts.some((part) => part.id === copied)) return undefined
+  return performance
+}
+
+function turnForkBoundary(turn: MessageTurn, copied: string | undefined, live: boolean) {
+  if (!copied || live) return undefined
+  return turn.assistant.at(-1)?.id
+}
+
+function chunkForkBoundary(parts: Part[], copied: string | undefined, boundary: string | undefined) {
+  if (!boundary || !copied) return undefined
+  return parts.some((part) => part.id === copied) ? boundary : undefined
+}
+
+function compactionRows(turn: MessageTurn, user: Part[], value: TranscriptMeta): TranscriptCompactionRow[] {
+  if (turn.partial) return []
+  if (!user.some((part) => part.type === "compaction")) return []
+  const status = compactionStatus(user)
+  if (!status) return []
+  return [
+    {
+      ...value,
+      type: "compaction",
+      key: `${turn.id}:compaction`,
+      message: turn.user,
+      parts: user,
+      status,
+    },
+  ]
+}
+
+function latestTurnPerformance(
+  turns: MessageTurn[],
+  parts: (id: string) => Part[],
+  messages: readonly Message[] | undefined,
+  getParts: (id: string) => Part[],
+) {
+  let latest: { turn: string; value: ResponsePerformance } | undefined
+  for (const turn of turns) {
+    const assistants = turn.assistant.filter((msg) => msg.summary !== true)
+    if (!copy(assistants, parts)) continue
+    if (completedTurnElapsed(turn, messages, getParts) === undefined) continue
+    const performance = messagePerformance(assistants.flatMap((msg) => parts(msg.id)))
+    if (performance) latest = { turn: turn.id, value: performance }
+  }
+  return latest
+}
+
+function performanceForTurn(
+  latest: { turn: string; value: ResponsePerformance } | undefined,
+  turn: string,
+): ResponsePerformance | undefined {
+  if (latest?.turn !== turn) return undefined
+  return latest.value
+}
+
+function reviewRow(changes: number, enabled: boolean | undefined, hidden: boolean, active: boolean) {
+  return changes > 0 || (!!enabled && !hidden && active)
+}
+
 export function transcriptRows(
   turns: MessageTurn[],
   getParts: (id: string) => Part[],
@@ -154,6 +272,7 @@ export function transcriptRows(
   const rows: TranscriptRow[] = []
   const parts = (id: string) => visibleParts(id, getParts(id), opts.revert)
   const terminal = (msg: Message) => !(opts.revert?.partID && msg.id === opts.revert.messageID)
+  const latestPerformance = latestTurnPerformance(turns, parts, opts.messages, getParts)
 
   for (const turn of turns) {
     const assistants = turn.assistant.filter((msg) => msg.summary !== true)
@@ -168,6 +287,8 @@ export function transcriptRows(
     const copied = copy(assistants, parts)
     const completionElapsed = completedTurnElapsed(turn, opts.messages, getParts)
     const completionAgent = completionElapsed === undefined ? undefined : turn.assistant.at(-1)?.agent
+    const forkAfterMessageID = turnForkBoundary(turn, copied, meta.live)
+    const performance = performanceForTurn(latestPerformance, turn.id)
 
     if (!turn.partial && !compact) {
       rows.push({
@@ -191,7 +312,9 @@ export function transcriptRows(
           message: msg,
           parts: visible,
           copy: copied,
+          forkAfterMessageID: undefined,
           completionElapsed: rowCompletionElapsed(completionElapsed, copied, visible),
+          performance: rowPerformance(performance, copied, visible),
         })
         continue
       }
@@ -205,14 +328,16 @@ export function transcriptRows(
           message: msg,
           parts: chunk,
           copy: copied,
+          forkAfterMessageID: chunkForkBoundary(chunk, copied, forkAfterMessageID),
           completionElapsed: elapsed,
+          performance: rowPerformance(performance, copied, chunk),
           completionAgent: elapsed === undefined ? undefined : completionAgent,
         })
       }
     }
 
     const changes = diffs(turn.user)
-    if (changes.length > 0) {
+    if (reviewRow(changes.length, opts.turnChanges, [compact, meta.partial, meta.queued].some(Boolean), [assistants.length > 0, meta.live].some(Boolean))) {
       rows.push({ ...meta, type: "diff", key: `${turn.id}:diff`, message: turn.user, diffs: changes })
     }
 
@@ -222,6 +347,8 @@ export function transcriptRows(
     if (failed?.error) {
       rows.push({ ...meta, type: "error", key: `${turn.id}:error:${failed.id}`, message: failed, error: failed.error })
     }
+
+    rows.push(...compactionRows(turn, user, meta))
   }
 
   if (prev.length === 0) return rows

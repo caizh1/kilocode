@@ -30,6 +30,7 @@ const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
+const skipReleaseUpload = process.argv.includes("--skip-release-upload") // chipmate_change
 // chipmate_change start - allow internal packaging to build an explicit target subset
 const targetsArg =
   process.argv.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ?? process.env.CHIPMATE_BUILD_TARGETS
@@ -591,7 +592,7 @@ for (const item of targets) {
   binaries[name] = Script.version
 }
 
-if (Script.release) {
+if (Script.release && !skipReleaseUpload) { // chipmate_change
   const archives: string[] = [] // chipmate_change
   for (const key of Object.keys(binaries)) {
     const archive = key.replace(pkg.name, "chipmate") // chipmate_change

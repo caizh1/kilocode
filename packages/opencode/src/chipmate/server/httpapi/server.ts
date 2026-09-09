@@ -1,3 +1,5 @@
+import * as TurnChanges from "@/chipmate/turn-changes/runtime"
+import { turnChangesHandlers } from "./handlers/turn-changes"
 import { Layer } from "effect"
 import { FetchHttpClient, HttpMiddleware, HttpRouter, HttpServer } from "effect/unstable/http"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@opencode-ai/server/cors"
@@ -25,6 +27,7 @@ import { chipmateGatewayHandlers } from "./handlers/chipmate-gateway"
 import { chipmateHandlers } from "./handlers/chipmate"
 import { memoryHandlers } from "./handlers/memory"
 import { networkHandlers } from "./handlers/network"
+import { patentRadarHandlers } from "./handlers/patent-radar"
 import { remoteHandlers } from "./handlers/remote"
 import { sandboxHandlers } from "./handlers/sandbox"
 import { sessionImportHandlers } from "./handlers/session-import"
@@ -36,6 +39,7 @@ export const provide = Layer.provide([
   anacondaDesktopHandlers.pipe(Layer.provide(AnacondaDesktop.liveLayer)),
   backgroundProcessHandlers,
   branchNameHandlers,
+  turnChangesHandlers.pipe(Layer.provide(AppNodeBuilderV1.build(TurnChanges.node))),
   commitMessageHandlers,
   configConsoleHandlers,
   designDocHandlers,
@@ -47,6 +51,7 @@ export const provide = Layer.provide([
   chipmateHandlers,
   memoryHandlers,
   networkHandlers,
+  patentRadarHandlers,
   remoteHandlers,
   sandboxHandlers,
   sessionImportHandlers,

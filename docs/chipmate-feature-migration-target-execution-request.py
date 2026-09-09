@@ -91,7 +91,7 @@ def write_request(target: str, manifest: dict[str, Any], output: Path) -> None:
         "- `evidence-delivery-set.md`",
         "- target package evidence directory, for example `evidence-linux-package` or `evidence-windows-package`",
         "- returned evidence `.tar.gz` or `.zip` plus `*-SHA256SUMS.txt` from `chipmate-feature-migration-target-evidence-return-pack.py`",
-        "- screenshots/logs for VS Code install, activation, Agent Terminal UX, and any S1-S16 runtime smoke attempted",
+        "- screenshots/logs for VS Code install, activation, and any S1-S16 runtime smoke attempted",
         "- if runtime smoke is attempted, include `runtime-intake-summary.md` and completed `runtime-smoke.tsv`",
         "",
         "## Migration-workstation receiving step",

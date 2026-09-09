@@ -33,7 +33,7 @@ describe("ChipMateActionProvider", () => {
       )
 
       expect(result).toHaveLength(1)
-      expect(result[0]?.command?.command).toBe("chipmate.v2.generateCommentsForCurrentFunction")
+      expect(result[0]?.command?.command).toBe("chipmate.v2.generateCommentsForCurrentCodeTarget")
     })
 
     it("offers batch comments for a non-empty C/C++ selection", () => {
@@ -44,7 +44,7 @@ describe("ChipMateActionProvider", () => {
       )
 
       expect(result.map((action) => action.command?.command)).toContain(
-        "chipmate.v2.generateCommentsForSelectedFunctions",
+        "chipmate.v2.generateCommentsForSelectedCodeTargets",
       )
     })
 

@@ -190,6 +190,14 @@ interface SessionForkedMessage {
   worktreeId?: string
 }
 
+interface SessionForkStateMessage {
+  type: "sessionForkState"
+  sessionID: string
+  afterMessageID?: string
+  state: "pending" | "slow" | "complete" | "error"
+  message?: string
+}
+
 interface SessionClosedMessage {
   type: "agentManager.sessionClosed"
   sessionId: string
@@ -312,6 +320,7 @@ export type AgentManagerOutMessage =
   | ErrorOutMessage
   | SessionAddedMessage
   | SessionForkedMessage
+  | SessionForkStateMessage
   | SessionClosedMessage
   | MultiVersionProgressMessage
   | SetSessionModelMessage
@@ -705,6 +714,7 @@ interface ForkSessionIn {
   sessionId: string
   worktreeId?: string
   messageId?: string
+  afterMessageId?: string
 }
 
 interface AbortIn {

@@ -1,4 +1,6 @@
+import type { DiagnosticOperation } from "./diagnostics-repo.ts"
 import { parentPort, workerData } from "node:worker_threads"
+import type { AdminChange } from "./model.ts"
 import type {
   EventInput,
   FavoriteInput,
@@ -22,6 +24,15 @@ import type {
   ExtensionPublicationInput,
   ExtensionReviewInput,
   ExtensionSearchInput,
+  AccessTokenLookup,
+  AuthAuditInput,
+  AuthSettingsInput,
+  DeviceAuthorizationApproval,
+  DeviceAuthorizationInput,
+  DeviceAuthorizationPoll,
+  ExternalIdentityInput,
+  RefreshTokenRotation,
+  TokenPairInput,
 } from "./model.ts"
 import type { DbRequest, DbResponse } from "./protocol.ts"
 import { MarketRepo } from "./repo.ts"
@@ -46,6 +57,10 @@ port.on("message", (msg: DbRequest) => {
 
 function execute(msg: DbRequest): unknown {
   switch (msg.op) {
+    case "administrators": return repo.administrators()
+    case "isAdministrator": return repo.isAdministrator(String(msg.payload))
+    case "changeAdministrator": return repo.changeAdministrator(msg.payload as AdminChange)
+    case "diagnostics": return repo.diagnostics(msg.payload as DiagnosticOperation)
     case "health":
       return repo.health()
     case "importLegacy":
@@ -86,6 +101,56 @@ function execute(msg: DbRequest): unknown {
       return repo.getSession(msg.payload as SessionLookup)
     case "deleteSession":
       return repo.deleteSession(String(msg.payload))
+    case "touchSessionVerification": {
+      const value = msg.payload as { hash: string; verifiedAt: string; isAdmin: boolean }
+      return repo.touchSessionVerification(value.hash, value.verifiedAt, value.isAdmin)
+    }
+    case "authSettings":
+      return repo.authSettings()
+    case "putAuthSettings":
+      return repo.putAuthSettings(msg.payload as AuthSettingsInput)
+    case "externalIdentity": {
+      const value = msg.payload as { sourceId: string; subject: string }
+      return repo.externalIdentity(value.sourceId, value.subject)
+    }
+    case "putExternalIdentity":
+      return repo.putExternalIdentity(msg.payload as ExternalIdentityInput)
+    case "identityMappings":
+      return repo.identityMappings()
+    case "deleteExternalIdentity": {
+      const value = msg.payload as { sourceId: string; subject: string }
+      return repo.deleteExternalIdentity(value.sourceId, value.subject)
+    }
+    case "createDeviceAuthorization":
+      return repo.createDeviceAuthorization(msg.payload as DeviceAuthorizationInput)
+    case "approveDeviceAuthorization":
+      return repo.approveDeviceAuthorization(msg.payload as DeviceAuthorizationApproval)
+    case "denyDeviceAuthorization": {
+      const value = msg.payload as { userCode: string; deniedAt: string }
+      return repo.denyDeviceAuthorization(value.userCode, value.deniedAt)
+    }
+    case "pollDeviceAuthorization":
+      return repo.pollDeviceAuthorization(msg.payload as DeviceAuthorizationPoll)
+    case "createTokenPair":
+      return repo.createTokenPair(msg.payload as TokenPairInput)
+    case "accessToken":
+      return repo.accessToken(msg.payload as AccessTokenLookup)
+    case "revokeAccessToken": {
+      const value = msg.payload as { hash: string; now: string }
+      return repo.revokeAccessToken(value.hash, value.now)
+    }
+    case "rotateRefreshToken":
+      return repo.rotateRefreshToken(msg.payload as RefreshTokenRotation)
+    case "revokeTokenFamily": {
+      const value = msg.payload as { familyId: string; now: string }
+      return repo.revokeTokenFamily(value.familyId, value.now)
+    }
+    case "updateTokenFamilyAuthorization": {
+      const value = msg.payload as { familyId: string; isAdmin: boolean }
+      return repo.updateTokenFamilyAuthorization(value.familyId, value.isAdmin)
+    }
+    case "authAudit":
+      return repo.authAudit(msg.payload as AuthAuditInput)
     case "favorite":
       return repo.favorite(msg.payload as FavoriteInput)
     case "favorites":

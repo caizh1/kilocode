@@ -1,3 +1,7 @@
+import type { DiagnosticRequest } from "../../../../src/shared/diagnostics"
+import type { AppearanceRequest } from "../../../../src/shared/appearance"
+import type { TurnChangesRequest } from "../../../../src/shared/turn-changes"
+import type { CommandIntroductionRequest } from "../../../../src/shared/command-introduction"
 import type {
   InstallMarketplaceItemOptions,
   MarketplaceFilters,
@@ -21,6 +25,9 @@ import type {
   StartMigrationMessage,
 } from "./migration"
 import type { MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
+import type { DeepSeekHarnessWebviewMessage } from "../../../../src/shared/deepseek-harness"
+import type { SessionSurfaceWebviewMessage } from "../../../../src/shared/session-surface"
+import type { PatentCenterAction, PatentCenterModelSelection } from "../../../../src/shared/patent-center"
 
 // ============================================
 // Messages FROM webview TO extension
@@ -38,6 +45,7 @@ export interface SendMessageRequest {
   variant?: string
   files?: FileAttachment[]
   review?: ReviewMessageData
+  sessionSurfaceDraftRevision?: number
   agentManagerContext?: string
   contextDirectory?: string
 }
@@ -129,6 +137,7 @@ export interface ImportAndSendMessage {
   review?: ReviewMessageData
   command?: string
   commandArgs?: string
+  sessionSurfaceDraftRevision?: number
 }
 
 export interface LoginRequest {
@@ -293,6 +302,7 @@ export interface SendCommandRequest {
   agent?: string
   variant?: string
   files?: FileAttachment[]
+  sessionSurfaceDraftRevision?: number
   agentManagerContext?: string
   contextDirectory?: string
 }
@@ -448,6 +458,13 @@ export interface RequestSessionSearchMessage {
 export interface RequestFilePickerMessage {
   type: "requestFilePicker"
   requestId: string
+  kind?: "file" | "folder"
+}
+
+export interface RequestEditorReferenceMessage {
+  type: "requestEditorReference"
+  requestId: string
+  kind: "file" | "selection"
 }
 
 export interface RequestTerminalContextMessage {
@@ -482,6 +499,34 @@ export interface TestChipmateServerMessage {
   type: "testChipmateServer"
   baseUrl: string
   requestId: string
+}
+
+export interface RequestPatentCenterSettingsMessage {
+  type: "requestPatentCenterSettings"
+}
+
+export interface TestPatentServerMessage {
+  type: "testPatentServer"
+  baseUrl: string
+  requestId: string
+}
+
+export interface RunPatentCenterActionMessage {
+  type: "runPatentCenterAction"
+  requestId: string
+  action: PatentCenterAction
+  analysisModel?: PatentCenterModelSelection
+}
+
+export interface RequestPatentRadarActivityMessage {
+  type: "requestPatentRadarActivity"
+  requestId: string
+}
+
+export interface CancelPatentRadarRunMessage {
+  type: "cancelPatentRadarRun"
+  requestId: string
+  runId: string
 }
 
 export interface CheckChipmateUpdateMessage {
@@ -699,12 +744,14 @@ export interface ForkSessionRequest {
   sessionId: string
   worktreeId?: string
   messageId?: string
+  afterMessageId?: string
 }
 
 export interface SidebarForkSessionRequest {
   type: "forkSession"
   sessionId: string
   messageId?: string
+  afterMessageId?: string
 }
 
 // Stop and remove a Local or worktree session from Agent Manager
@@ -806,84 +853,6 @@ export interface AgentManagerTerminalResizeRequest {
   terminalId: string
   cols: number
   rows: number
-}
-
-export interface AgentConsoleTerminalCreateRequest {
-  type: "agentConsole.terminal.create"
-}
-
-export interface AgentConsoleTerminalConnectRequest {
-  type: "agentConsole.terminal.connect"
-  terminalId: string
-}
-
-export interface AgentConsoleTerminalWriteRequest {
-  type: "agentConsole.terminal.write"
-  terminalId: string
-  data: string
-}
-
-export interface AgentConsoleTerminalRecoverRequest {
-  type: "agentConsole.terminal.recover"
-  terminalId: string
-}
-
-export interface AgentConsoleTerminalDisconnectRequest {
-  type: "agentConsole.terminal.disconnect"
-  terminalId: string
-}
-
-export interface AgentConsoleTerminalCloseRequest {
-  type: "agentConsole.terminal.close"
-  terminalId: string
-}
-
-export interface AgentConsoleTerminalResizeRequest {
-  type: "agentConsole.terminal.resize"
-  terminalId: string
-  cols: number
-  rows: number
-}
-
-export interface AgentConsoleTerminalDiagnosticRequest {
-  type: "agentConsole.terminal.diagnostic"
-  terminalId: string
-  event: "connecting" | "open" | "error" | "close" | "send-skipped" | "input-gate" | "route-timeout"
-  detail?: string
-}
-
-export interface AgentConsoleShellRestartRequest {
-  type: "agentConsole.shell.restart"
-}
-
-export interface AgentConsoleSessionNewRequest {
-  type: "agentConsole.session.new"
-}
-
-export interface AgentConsoleModeChangedRequest {
-  type: "agentConsole.mode.changed"
-  mode: "agent" | "shell"
-}
-
-export interface AgentConsoleInputCaptureRequest {
-  type: "agentConsole.input.capture"
-  terminalId: string
-  requestId: string
-}
-
-export interface AgentConsoleCommandExpectRequest {
-  type: "agentConsole.command.expect"
-  terminalId: string
-  runId: string
-  source: "direct" | "agent"
-  command: string
-  callId?: string
-}
-
-export interface AgentConsoleCommandCancelRequest {
-  type: "agentConsole.command.cancel"
-  terminalId: string
-  runId: string
 }
 
 // Open a file in the selected worktree for a specific session
@@ -1376,6 +1345,10 @@ export interface VerifyMarketplaceUserMessage {
   type: "verifyMarketplaceUser"
 }
 
+export interface LogoutMarketplaceUserMessage {
+  type: "logoutMarketplaceUser"
+}
+
 export interface FetchMarketplaceSkillDetailMessage {
   type: "fetchMarketplaceSkillDetail"
   mpSkillId: string
@@ -1439,6 +1412,12 @@ export interface DismissAgentMigrationBannerMessage {
 }
 
 export type WebviewMessage =
+  | DiagnosticRequest
+  | AppearanceRequest
+  | TurnChangesRequest
+  | CommandIntroductionRequest
+  | SessionSurfaceWebviewMessage
+  | DeepSeekHarnessWebviewMessage
   | SendMessageRequest
   | AbortRequest
   | RevertSessionRequest
@@ -1505,12 +1484,18 @@ export type WebviewMessage =
   | RequestFileSearchMessage
   | RequestSessionSearchMessage
   | RequestFilePickerMessage
+  | RequestEditorReferenceMessage
   | RequestTerminalContextMessage
   | RequestGitChangesContextMessage
   | ChatCompletionAcceptedMessage
   | UpdateSettingRequest
   | RequestChipmateServerSettingsMessage
   | TestChipmateServerMessage
+  | RequestPatentCenterSettingsMessage
+  | TestPatentServerMessage
+  | RunPatentCenterActionMessage
+  | RequestPatentRadarActivityMessage
+  | CancelPatentRadarRunMessage
   | CheckChipmateUpdateMessage
   | InstallAndReloadChipmateUpdateMessage
   | ShowChipmateUpdateLogMessage
@@ -1630,6 +1615,7 @@ export type WebviewMessage =
   | ToggleSandboxMessage
   | FetchMarketplaceDataMessage
   | VerifyMarketplaceUserMessage
+  | LogoutMarketplaceUserMessage
   | FetchMarketplaceSkillDetailMessage
   | PickLocalSkillsMessage
   | InstallLocalSkillsMessage
@@ -1674,20 +1660,6 @@ export type WebviewMessage =
   | MoveSectionRequest
   | OpenContentRequest
   | AgentManagerTerminalCreateRequest
-  | AgentConsoleTerminalCreateRequest
-  | AgentConsoleTerminalConnectRequest
-  | AgentConsoleTerminalWriteRequest
-  | AgentConsoleTerminalRecoverRequest
-  | AgentConsoleTerminalDisconnectRequest
-  | AgentConsoleTerminalCloseRequest
-  | AgentConsoleTerminalResizeRequest
-  | AgentConsoleTerminalDiagnosticRequest
-  | AgentConsoleShellRestartRequest
-  | AgentConsoleSessionNewRequest
-  | AgentConsoleModeChangedRequest
-  | AgentConsoleInputCaptureRequest
-  | AgentConsoleCommandExpectRequest
-  | AgentConsoleCommandCancelRequest
   | AgentManagerTerminalCloseRequest
   | AgentManagerTerminalResizeRequest
   | RequestImageModelsMessage

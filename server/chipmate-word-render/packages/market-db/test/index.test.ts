@@ -16,12 +16,54 @@ const archive = resolve(repo, "docs/chipmate-skill-market-alignment-evidence/g0/
 const source = resolve(repo, ".chipmate/skills/source-backed-detail-design")
 
 test("database schema uses ordered migrations", () => {
-  assert.equal(MARKET_DB_SCHEMA_VERSION, 9)
+  assert.equal(MARKET_DB_SCHEMA_VERSION, 11)
   assert.deepEqual(
     MIGRATIONS.map((migration) => migration.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   )
 })
+
+test("v9 升级到 LDAP 认证架构后保留作者、收藏、安装和发布归属", async () => {
+  const root = await mkdtemp(join(tmpdir(), "chipmate-market-v9-auth-"))
+  const path = join(root, "market.sqlite")
+  const sqlite = new DatabaseSync(path)
+  const now = "2026-09-03T00:00:00.000Z"
+  sqlite.exec("PRAGMA foreign_keys=ON; CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at TEXT NOT NULL)")
+  for (const migration of MIGRATIONS.slice(0, 9)) {
+    sqlite.exec(migration.sql)
+    sqlite.prepare("INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)").run(migration.version, migration.name, now)
+  }
+  sqlite.prepare("INSERT INTO users(id,display_name,first_seen_at,last_seen_at) VALUES(?,?,?,?)").run("historic-alice", "Alice", now, now)
+  sqlite.prepare(
+    "INSERT INTO skills(id,name,description,category,author_id,latest_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+  ).run("historic-skill", "历史技能", "迁移验证", "test", "historic-alice", 1, now, now)
+  sqlite.prepare(
+    "INSERT INTO releases(skill_id,revision,sha256,size_bytes,validation_report_json,archive_path,published_at) VALUES(?,?,?,?,?,?,?)",
+  ).run("historic-skill", 1, "a".repeat(64), 1, "{}", "/tmp/historic-skill.tar.gz", now)
+  sqlite.prepare("INSERT INTO favorites(user_id,skill_id,created_at) VALUES(?,?,?)").run("historic-alice", "historic-skill", now)
+  sqlite.prepare(
+    "INSERT INTO installations(user_id,client_id,skill_id,scope,revision,sha256,status,changed_at) VALUES(?,?,?,?,?,?,?,?)",
+  ).run("historic-alice", "client-history", "historic-skill", "global", 1, "a".repeat(64), "installed", now)
+  sqlite.prepare(
+    "INSERT INTO publication_runs(id,owner_id,skill_id,status,stage,snapshot_path,snapshot_sha256,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+  ).run("publication-history", "historic-alice", "historic-skill", "PUBLISHED", "complete", "/tmp/snapshot", "b".repeat(64), now, now)
+  sqlite.close()
+
+  const migrated = new MarketDb({ dir: root })
+  assert.equal((await migrated.health()).schemaVersion, 11)
+  await migrated.close()
+  const check = new DatabaseSync(path, { readOnly: true })
+  assert.deepEqual(plain(check.prepare("SELECT id,author_id FROM skills").all()), [{ id: "historic-skill", author_id: "historic-alice" }])
+  assert.deepEqual(plain(check.prepare("SELECT user_id,skill_id FROM favorites").all()), [{ user_id: "historic-alice", skill_id: "historic-skill" }])
+  assert.deepEqual(plain(check.prepare("SELECT user_id,skill_id,status FROM installations").all()), [{ user_id: "historic-alice", skill_id: "historic-skill", status: "installed" }])
+  assert.deepEqual(plain(check.prepare("SELECT id,owner_id,skill_id FROM publication_runs").all()), [{ id: "publication-history", owner_id: "historic-alice", skill_id: "historic-skill" }])
+  check.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+function plain(value: unknown) {
+  return JSON.parse(JSON.stringify(value)) as unknown
+}
 
 test("publication request aliases backfill existing idempotency keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "chipmate-market-v7-"))
@@ -59,7 +101,7 @@ test("publication request aliases backfill existing idempotency keys", async () 
 
   const db = new MarketDb({ dir: root })
   try {
-    assert.equal((await db.health()).schemaVersion, 9)
+    assert.equal((await db.health()).schemaVersion, 11)
     const run = await db.startPublication({
       id: "publication-migration-retry",
       ownerId: "user-migration-0001",
@@ -98,7 +140,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
         foreignKeys: health.foreignKeys,
         busyTimeout: health.busyTimeout,
       },
-      { available: true, schemaVersion: 9, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
+      { available: true, schemaVersion: 11, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
     )
 
     const first = await db.importLegacy(legacy)

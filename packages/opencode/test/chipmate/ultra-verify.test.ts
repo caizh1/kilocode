@@ -89,21 +89,50 @@ describe("Ultra three-way verification runtime", () => {
   test("exposes only the verification tool until one complete pipeline finishes", () => {
     const state = UltraVerify.load({ sessionID, messageID, messages: messages() })
     expect(UltraVerify.filter(state, { ultra_verify: 1, task: 2, read: 3 })).toEqual({ ultra_verify: 1 })
-    expect(UltraVerify.begin(state, "analysis")).toBeUndefined()
+    expect(UltraVerify.begin(state)).toBeUndefined()
     expect(
-      UltraVerify.complete(state, { baseline: "Code answer", answer: "Verified answer", sessions: ["ses_1"] }),
+      UltraVerify.complete(state, {
+        kind: "analysis",
+        baseline: "Code answer",
+        answer: "Verified answer",
+        sessions: ["ses_1"],
+      }),
     ).toBe(true)
     expect(state.phase).toBe("complete")
+    expect(state.kind).toBe("analysis")
     expect(UltraVerify.delivery(state)?.text).toBe("Verified answer")
   })
 
   test("unlocks the parent only after read-only verification for implementation requests", () => {
     const state = UltraVerify.load({ sessionID, messageID, messages: messages() })
-    expect(UltraVerify.begin(state, "implementation")).toBeUndefined()
-    expect(UltraVerify.complete(state, { baseline: "Code plan", answer: "Verified plan", sessions: [] })).toBe(true)
+    expect(UltraVerify.begin(state)).toBeUndefined()
+    expect(
+      UltraVerify.complete(state, {
+        kind: "implementation",
+        baseline: "Code plan",
+        answer: "Verified plan",
+        sessions: [],
+      }),
+    ).toBe(true)
     expect(state.phase).toBe("ready")
     expect(UltraVerify.delivery(state)).toBeUndefined()
     expect(UltraVerify.filter(state, { ultra_verify: 1, task: 2, edit: 3, read: 4 })).toEqual({ edit: 3, read: 4 })
+  })
+
+  test("keeps review requests read-only and delivers their synthesis exactly", () => {
+    const state = UltraVerify.load({ sessionID, messageID, messages: messages() })
+    expect(UltraVerify.begin(state)).toBeUndefined()
+    expect(
+      UltraVerify.complete(state, {
+        kind: "review",
+        baseline: "Code review",
+        answer: "Verified review",
+        sessions: [],
+      }),
+    ).toBe(true)
+    expect(state.phase).toBe("complete")
+    expect(UltraVerify.filter(state, { task: 1, edit: 2, read: 3 })).toEqual({ edit: 2, read: 3 })
+    expect(UltraVerify.delivery(state)?.text).toBe("Verified review")
   })
 
   test("restores the exact synthesized answer from completed tool evidence", () => {
@@ -121,13 +150,40 @@ describe("Ultra three-way verification runtime", () => {
     expect(UltraVerify.delivery(state)?.text).toBe("Independent synthesized answer")
   })
 
-  test("fails closed when the provider repeatedly avoids the mandatory tool", () => {
+  test("restores the persisted request kind from current result records", () => {
+    const output = [
+      "ULTRA_VERIFY_RESULT",
+      JSON.stringify({
+        kind: "implementation",
+        baseline: "Frozen Code plan",
+        answer: "Independent synthesized plan",
+        sessions: ["ses_code", "ses_1", "ses_2", "ses_3", "ses_synth"],
+      }),
+    ].join("\n")
+    const state = UltraVerify.load({ sessionID, messageID, messages: messages(output) })
+    expect(state.kind).toBe("implementation")
+    expect(state.phase).toBe("ready")
+    expect(UltraVerify.delivery(state)).toBeUndefined()
+  })
+
+  test("creates one deterministic empty local call only while pending", () => {
     const state = UltraVerify.load({ sessionID, messageID, messages: messages() })
-    expect(UltraVerify.gate(state, "break", false, "stop")).toBe("continue")
-    expect(UltraVerify.gate(state, "break", false, "stop")).toBe("continue")
-    expect(UltraVerify.gate(state, "break", false, "stop")).toBe("continue")
+    const first = UltraVerify.dispatch(state)
+    expect(first).toEqual({
+      id: expect.stringMatching(/^call_ultra_verify_[0-9a-f]{24}$/),
+      name: "ultra_verify",
+      input: {},
+    })
+    expect(UltraVerify.dispatch(state)).toEqual(first)
+    UltraVerify.begin(state)
+    expect(UltraVerify.dispatch(state)).toBeUndefined()
+  })
+
+  test("fails closed after one incomplete local dispatch without provider retries", () => {
+    const state = UltraVerify.load({ sessionID, messageID, messages: messages() })
     expect(UltraVerify.gate(state, "break", false, "stop")).toBe("continue")
     expect(state.phase).toBe("failed")
     expect(UltraVerify.delivery(state)?.text).toContain("三路独立证据验证未能形成完整答案")
+    expect(UltraVerify.delivery(state)?.text).toContain("local Ultra verification dispatch")
   })
 })

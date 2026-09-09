@@ -25,7 +25,6 @@ BUNDLE_FILES = {
     "linux-target-intake": ("linux-target", "target-intake-summary.md"),
     "internal-embedded-c-intake": ("internal-embedded-c", "summary.md"),
     "company-template-summary": ("company-template", "summary.md"),
-    "agent-terminal-visible-ux-intake": ("agent-terminal-visible-ux", "summary.md"),
 }
 
 BAD_MARKERS = [
@@ -165,7 +164,6 @@ def create_complete_fixture(root: Path) -> Path:
     write(bundle / "linux-target" / "target-intake-summary.md", "# ChipMate Offline Target Evidence Intake Verify\n\n- Final status: `PASS`\n")
     write(bundle / "internal-embedded-c" / "summary.md", "# Internal Embedded-C Source-Backed Detail Design Intake Summary\n\nStatus: `PASS`\n")
     write(bundle / "company-template" / "summary.md", "# Company DOCX Template Validation\n\n- Status: `PASS`\n")
-    write(bundle / "agent-terminal-visible-ux" / "summary.md", "# Agent Terminal Visible UX Intake Summary\n\nStatus: `PASS`\n")
     return bundle
 
 
@@ -185,7 +183,7 @@ def self_check(output: Path) -> int:
         template = create_template_fixture(root)
         missing = root / "missing"
         shutil.copytree(complete, missing)
-        (missing / "agent-terminal-visible-ux" / "summary.md").unlink()
+        (missing / "company-template" / "summary.md").unlink()
 
         complete_result = verify_root(complete)
         template_result = verify_root(template)

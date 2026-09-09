@@ -1,7 +1,7 @@
 {
   "publisher": "chipmate",
   "name": "chipmate",
-  "version": "0.0.54",
-  "vsix": "chipmate-0.0.54-win32-x64-baseline.vsix",
-  "sha256": "060b3138f70deb0865423ba3e0b2256b5b618563a22bfa6faf505fcd0b42c83a"
+  "version": "1.2.8",
+  "vsix": "chipmate-1.2.8-win32-x64-only-validation-candidate.vsix",
+  "sha256": "c5333f101d3f0d02865b78372ac76af38ea5f4f8978d0990598c1381d2ab99cf"
 }

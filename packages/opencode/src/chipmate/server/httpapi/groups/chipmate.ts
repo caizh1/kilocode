@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { InstanceContextMiddleware } from "@/server/routes/instance/httpapi/middleware/instance-context"
 import {
@@ -35,6 +35,26 @@ import { CommandFiles } from "@/chipmate/command-files"
 const root = "/chipmate"
 
 export const SkillScope = Schema.Literals(["project", "global"])
+
+export const HistoryMigrationActive = Schema.Struct({
+  directoryID: Schema.String,
+  sessions: Schema.Array(Schema.Struct({ sessionID: SessionID, status: Schema.String })),
+})
+export const HistoryMigrationPrepareResult = Schema.Struct({
+  ready: Schema.Boolean,
+  token: Schema.NullOr(Schema.String),
+  expiresAt: Schema.NullOr(Schema.Number),
+  active: Schema.Array(HistoryMigrationActive),
+  reason: Schema.NullOr(Schema.Literals(["locked", "active"])),
+})
+export const HistoryMigrationReleasePayload = Schema.Struct({ token: Schema.String })
+
+export class SessionExportBusyError extends Schema.ErrorClass<SessionExportBusyError>("SessionExportBusyError")(
+  {
+    sessionIDs: Schema.Array(SessionID),
+  },
+  { httpApiStatus: 409 },
+) {}
 
 export const RemoveSkillPayload = Schema.Struct({
   location: Schema.String,
@@ -82,6 +102,9 @@ export const ChipMatePaths = {
   skillMarketReply: `${root}/skill-market/:requestID/reply`,
   skillMarketReject: `${root}/skill-market/:requestID/reject`,
   sessionModelUsage: `/session/:sessionID/model-usage`,
+  sessionExport: `${root}/session/:sessionID/export`,
+  historyMigrationPrepare: `${root}/history-migration/prepare`,
+  historyMigrationRelease: `${root}/history-migration/release`,
 } as const
 
 export const ChipMateApi = HttpApi.make("chipmate")
@@ -285,6 +308,42 @@ export const ChipMateApi = HttpApi.make("chipmate")
             identifier: "chipmate.sessionModelUsage",
             summary: "Get session model usage",
             description: "Get token usage and direct cost by model for the complete top-level session tree.",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionExport", ChipMatePaths.sessionExport, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(
+            Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/markdown; charset=utf-8" })),
+            "Complete raw ChipMate QA session transcript",
+          ),
+          error: [HttpApiError.NotFound, SessionExportBusyError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "chipmate.sessionExport",
+            summary: "Export a raw QA session tree",
+            description:
+              "Export the routed local ChipMate QA root session and all descendants from a stable raw database snapshot.",
+          }),
+        ),
+        HttpApiEndpoint.post("historyMigrationPrepare", ChipMatePaths.historyMigrationPrepare, {
+          query: WorkspaceRoutingQuery,
+          success: described(HistoryMigrationPrepareResult, "History migration maintenance gate status"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "chipmate.historyMigration.prepare",
+            summary: "Prepare local chat history migration",
+            description: "Acquire a short-lived maintenance gate only when all loaded workspaces are idle.",
+          }),
+        ),
+        HttpApiEndpoint.post("historyMigrationRelease", ChipMatePaths.historyMigrationRelease, {
+          query: WorkspaceRoutingQuery,
+          payload: HistoryMigrationReleasePayload,
+          success: described(Schema.Boolean, "Maintenance gate released"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "chipmate.historyMigration.release",
+            summary: "Release local chat history migration gate",
           }),
         ),
       )

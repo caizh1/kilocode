@@ -212,7 +212,7 @@ async function attempt(number) {
       "installed.agentManager.open",
       "正式安装态打开 Agent Manager",
       consoleOpens,
-      budgets.consoleOpenMs,
+      budgets.agentManagerOpenMs,
       "median",
       true,
     ),

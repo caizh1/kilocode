@@ -62,9 +62,7 @@ export interface ReasoningPart extends BasePart {
 // Step parts from the backend
 export interface StepStartPart extends BasePart {
   type: "step-start"
-  // Wall-clock timestamps captured at the processor when the LLM stream
-  // emits `step-start`. Used by the webview to compute per-message
-  // throughput as a weighted aggregate of step durations.
+  // Wall-clock timestamp captured when the LLM stream emits `step-start`.
   time?: {
     start: number
   }
@@ -79,16 +77,44 @@ export interface StepStartPart extends BasePart {
 export interface StepThroughputMetrics {
   prompt?: number
   generation?: number
-  source: "computed"
+  ttftMs?: number
+  source: "provider" | "computed"
 }
+
+export type StepBilling =
+  | { status: "pending"; source: "new-api-log"; requestID: string }
+  | {
+      status: "settled"
+      source: "new-api-log"
+      requestID: string
+      currency: "CNY"
+      amount: number
+      quota: number
+      quotaPerUnit: number
+      exchangeRate: number
+      group: string
+      modelName: string
+      settledAt: number
+    }
+  | {
+      status: "unavailable"
+      source: "new-api-log"
+      requestID: string
+      reason:
+        | "credentials"
+        | "unsupported-url"
+        | "request-log-missing"
+        | "network"
+        | "invalid-response"
+        | "model-mismatch"
+    }
 
 export interface StepFinishPart extends BasePart {
   type: "step-finish"
   reason?: string
   // Wall-clock timestamps captured at the processor across the LLM step.
-  // `elapsed` is the active model-generation duration in milliseconds — it
-  // excludes tool execution and idle waiting — and is what the webview uses
-  // to weight the throughput aggregate.
+  // `elapsed` covers the complete step. `metrics.generation` is persisted
+  // separately and already excludes TTFT and tool execution.
   time?: {
     start: number
     end: number
@@ -100,6 +126,7 @@ export interface StepFinishPart extends BasePart {
   }
   generationID?: string
   vercelID?: string
+  billing?: StepBilling
   cost?: number
   tokens?: {
     input: number

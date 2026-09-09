@@ -26,6 +26,16 @@ const param = (name: string, where: "path" | "query" | "header", required = fals
   schema: { type: "string" },
 })
 
+const adminIdentity = {
+  type: "object", required: ["subject", "username", "displayName"],
+  properties: {
+    subject: { type: "string" }, username: { type: "string" }, displayName: { type: "string" },
+    email: { type: "string" }, dn: { type: "string" }, userId: { type: "string" },
+  },
+}
+const adminChange = { type: "object", required: ["ok", "changed", "sessionsRevoked"],
+  properties: { ok: { const: true }, changed: { type: "boolean" }, sessionsRevoked: { type: "boolean" } } }
+
 function clean(value: unknown): Json {
   if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
     return value
@@ -48,6 +58,69 @@ const skill = param("id", "path")
 const revision = param("revision", "path")
 const run = param("runId", "path")
 const token = param("token", "path")
+const ldapConfig: Json = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "enabled",
+    "name",
+    "host",
+    "port",
+    "security",
+    "verifyCertificate",
+    "bindDn",
+    "userSearchBase",
+    "userFilter",
+    "usernameAttribute",
+    "emailAttribute",
+    "attributesInBindContext",
+    "insecureAcknowledged",
+  ],
+  properties: {
+    enabled: { type: "boolean" },
+    name: { type: "string" },
+    host: { type: "string" },
+    port: { type: "integer", minimum: 1, maximum: 65535 },
+    security: { enum: ["unencrypted", "starttls", "ldaps"] },
+    verifyCertificate: { type: "boolean" },
+    bindDn: { type: "string" },
+    userSearchBase: { type: "string" },
+    userFilter: { type: "string" },
+    adminFilter: { type: "string" },
+    restrictedFilter: { type: "string" },
+    usernameAttribute: { type: "string" },
+    firstNameAttribute: { type: "string" },
+    surnameAttribute: { type: "string" },
+    emailAttribute: { type: "string" },
+    attributesInBindContext: { type: "boolean" },
+    insecureAcknowledged: { type: "boolean" },
+    group: {
+      type: "object",
+      additionalProperties: false,
+      required: ["enabled", "searchBase", "filter", "memberAttribute", "userAttribute"],
+      properties: {
+        enabled: { type: "boolean" },
+        searchBase: { type: "string" },
+        filter: { type: "string" },
+        memberAttribute: { type: "string" },
+        userAttribute: { type: "string" },
+      },
+    },
+  },
+}
+const tokenPair: Json = {
+  type: "object",
+  additionalProperties: false,
+  required: ["accessToken", "refreshToken", "tokenType", "expiresIn", "refreshExpiresIn", "user"],
+  properties: {
+    accessToken: { type: "string" },
+    refreshToken: { type: "string" },
+    tokenType: { const: "Bearer" },
+    expiresIn: { type: "integer" },
+    refreshExpiresIn: { type: "integer" },
+    user: ref("MarketUser"),
+  },
+}
 
 export const openapi = {
   openapi: "3.1.0",
@@ -67,6 +140,7 @@ export const openapi = {
     { name: "analytics" },
     { name: "extensions" },
     { name: "status" },
+    { name: "administration" },
   ],
   paths: {
     "/api/v1/capabilities": {
@@ -96,8 +170,11 @@ export const openapi = {
         requestBody: body({
           type: "object",
           additionalProperties: false,
-          required: ["apiKey"],
-          properties: { apiKey: { type: "string", minLength: 1 } },
+          required: ["username", "password"],
+          properties: {
+            username: { type: "string", minLength: 1 },
+            password: { type: "string", minLength: 1 },
+          },
         }),
         responses: ok(ref("MarketUser")),
       },
@@ -115,6 +192,197 @@ export const openapi = {
         tags: ["identity"],
         security: [{ cookieSession: [] }, { bearerKey: [] }],
         responses: ok(ref("MarketUser")),
+      },
+    },
+    "/api/v1/auth/status": {
+      get: {
+        operationId: "getAuthStatus",
+        tags: ["identity"],
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/auth/device/code": {
+      post: {
+        operationId: "createDeviceCode",
+        tags: ["identity"],
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/auth/device/approve": {
+      post: {
+        operationId: "approveDeviceCode",
+        tags: ["identity"],
+        security: [{ cookieSession: [] }],
+        parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["userCode"],
+          properties: { userCode: { type: "string" } },
+        }),
+        responses: ok({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
+      },
+    },
+    "/api/v1/auth/device/deny": {
+      post: {
+        operationId: "denyDeviceCode",
+        tags: ["identity"],
+        security: [{ cookieSession: [] }],
+        parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["userCode"],
+          properties: { userCode: { type: "string" } },
+        }),
+        responses: ok({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
+      },
+    },
+    "/api/v1/auth/device/token": {
+      post: {
+        operationId: "exchangeDeviceCode",
+        tags: ["identity"],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["deviceCode"],
+          properties: { deviceCode: { type: "string" } },
+        }),
+        responses: ok(tokenPair),
+      },
+    },
+    "/api/v1/auth/token/refresh": {
+      post: {
+        operationId: "refreshAccessToken",
+        tags: ["identity"],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["refreshToken"],
+          properties: { refreshToken: { type: "string" } },
+        }),
+        responses: ok(tokenPair),
+      },
+    },
+    "/api/v1/auth/token/revoke": {
+      post: {
+        operationId: "revokeAccessToken",
+        tags: ["identity"],
+        security: [{ bearerKey: [] }],
+        responses: ok({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
+      },
+    },
+    "/api/v1/admin/auth/session": {
+      get: {
+        operationId: "getAdminSession", tags: ["administration"],
+        responses: ok({ type: "object", required: ["mode"], properties: {
+          mode: { type: "string", enum: ["ldap", "break-glass"] }, expiresAt: { type: "string", format: "date-time" },
+          subject: { type: "string" }, userId: { type: "string" },
+        } }),
+      },
+      delete: {
+        operationId: "deleteBreakGlassSession", tags: ["administration"],
+        parameters: [param("X-CSRF-Token", "header", true)],
+        responses: ok({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
+      },
+      post: {
+        operationId: "createBreakGlassSession",
+        tags: ["administration"],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["key"],
+          properties: { key: { type: "string" } },
+        }),
+        responses: ok({ type: "object", required: ["ok"], properties: { ok: { const: true } } }),
+      },
+    },
+    "/api/v1/admin/auth/admins": {
+      get: {
+        operationId: "listServerAdministrators", tags: ["administration"],
+        responses: ok({ type: "object", required: ["items"], properties: { items: { type: "array", items: {
+          ...adminIdentity, required: [...adminIdentity.required, "grantedAt", "grantedBy"],
+          properties: { ...adminIdentity.properties, grantedAt: { type: "string", format: "date-time" }, grantedBy: { type: "string" } },
+        } } } }),
+      },
+      post: {
+        operationId: "grantServerAdministrator", tags: ["administration"], parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({ type: "object", additionalProperties: false, required: ["username", "subject"],
+          properties: { username: { type: "string", minLength: 1 }, subject: { type: "string", minLength: 1 } } }),
+        responses: ok(adminChange),
+      },
+    },
+    "/api/v1/admin/auth/admins/resolve": {
+      post: {
+        operationId: "resolveServerAdministrator", tags: ["administration"], parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({ type: "object", additionalProperties: false, required: ["username"], properties: { username: { type: "string", minLength: 1 } } }),
+        responses: ok(adminIdentity),
+      },
+    },
+    "/api/v1/admin/auth/admins/{subject}": {
+      delete: {
+        operationId: "revokeServerAdministrator", tags: ["administration"],
+        parameters: [param("subject", "path"), param("X-CSRF-Token", "header", true)], responses: ok(adminChange),
+      },
+    },
+    "/api/v1/admin/auth/ldap": {
+      get: {
+        operationId: "getLdapConfig",
+        tags: ["administration"],
+        responses: ok({ type: "object" }),
+      },
+      put: {
+        operationId: "putLdapConfig",
+        tags: ["administration"],
+        parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["config"],
+          properties: { config: ldapConfig, bindPassword: { type: "string" }, testUsername: { type: "string" } },
+        }),
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/admin/auth/ldap/test": {
+      post: {
+        operationId: "testLdapConfig",
+        tags: ["administration"],
+        parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["config"],
+          properties: { config: ldapConfig, bindPassword: { type: "string" }, username: { type: "string" } },
+        }),
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/admin/auth/identity-mappings": {
+      get: {
+        operationId: "listIdentityMappings",
+        tags: ["administration"],
+        responses: ok({ type: "object" }),
+      },
+      post: {
+        operationId: "createIdentityMapping",
+        tags: ["administration"],
+        parameters: [param("X-CSRF-Token", "header", true)],
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["username", "userId"],
+          properties: { username: { type: "string" }, userId: { type: "string" } },
+        }),
+        responses: ok({ type: "object" }),
+      },
+    },
+    "/api/v1/admin/auth/identity-mappings/{subject}": {
+      delete: {
+        operationId: "deleteIdentityMapping",
+        tags: ["administration"],
+        parameters: [param("subject", "path"), param("X-CSRF-Token", "header", true)],
+        responses: ok({ type: "object" }),
       },
     },
     "/api/v1/skills": {
@@ -606,13 +874,14 @@ export const openapi = {
         responses: ok({
           type: "object",
           additionalProperties: false,
-          required: ["ok", "transport", "render", "market", "packages"],
+          required: ["ok", "transport", "render", "market", "packages", "auth"],
           properties: {
             ok: { type: "boolean" },
             transport: { enum: ["trusted-http", "https"] },
             render: { enum: ["ready", "degraded", "unavailable"] },
             market: { enum: ["ready", "degraded", "unavailable"] },
             packages: { enum: ["ready", "degraded", "unavailable"] },
+            auth: { type: "object" },
             extensions: {
               type: "object",
               additionalProperties: false,

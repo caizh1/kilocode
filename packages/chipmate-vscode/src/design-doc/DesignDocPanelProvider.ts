@@ -1,3 +1,4 @@
+import { bindAppearance } from "../appearance"
 import path from "path"
 import * as vscode from "vscode"
 import type { DesignDocArtifactContent } from "@chipmate/sdk/v2/client"
@@ -69,6 +70,7 @@ export class DesignDocPanelProvider implements vscode.Disposable {
       light: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-light.svg"),
       dark: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-dark.svg"),
     }
+    bindAppearance(panel)
     panel.webview.html = buildWebviewHtml(panel.webview, {
       scriptUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "design-doc.js")),
       styleUri: panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "design-doc.css")),

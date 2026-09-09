@@ -89,6 +89,8 @@ export const dict = {
   "marketplace.install.cancel": "Cancel",
   "marketplace.install.success": "Successfully installed!",
   "marketplace.install.failed": "Installation failed",
+  "marketplace.install.identityMismatch":
+    "This Marketplace Skill has inconsistent identity metadata. No files were installed. Ask the publisher to repair the Marketplace entry.",
   "marketplace.install.done": "Done",
   "marketplace.install.close": "Close",
   "marketplace.remove.title": "Remove {{name}}?",

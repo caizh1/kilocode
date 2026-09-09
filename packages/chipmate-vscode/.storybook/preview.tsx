@@ -1,6 +1,8 @@
 /** @jsxImportSource solid-js */
 import type { Preview, SolidRenderer } from "storybook-solidjs-vite"
 import type { DecoratorFunction } from "storybook/internal/types"
+import { onMount, onCleanup } from "solid-js"
+import { mountAppearance } from "../webview-ui/appearance"
 // Reference chipmate-ui stories helpers directly — not exported via package.json
 import { applyChipMateTheme, applyVscodeTheme, clearVscodeTheme } from "../../chipmate-ui/src/stories/theme-decorator"
 import "../../chipmate-ui/.storybook/fonts.css"
@@ -22,6 +24,22 @@ const themeDecorator: DecoratorFunction<SolidRenderer> = (Story, context) => {
   })()
 
   applyChipMateTheme(themeId, colorScheme)
+  const skin = context.globals["skin"] === "night-city" ? "night-city" : "default"
+  document.documentElement.dataset.chipmateSkin = skin
+  document.documentElement.dataset.chipmateNativeNavigation = String(context.parameters.nativeNavigation === true)
+  document.documentElement.dataset.chipmateMotion = "immersive"
+  document.documentElement.style.setProperty("--night-city-frame", 'url("/appearance/future-page-frame.png")')
+  for (const part of ["page", "composer", "tab"]) {
+    document.documentElement.style.setProperty(`--future-${part}-frame`, `url("/appearance/future-${part}-frame.png")`)
+  }
+  document.documentElement.style.setProperty("--future-composer-slice", "245 90 250 90")
+  document.documentElement.style.setProperty("--future-tab-slice", "280 70 290 70")
+  if (skin === "night-city") document.documentElement.dataset.colorScheme = "dark"
+  onMount(() => {
+    // 固定夹具只用于视觉与性能，真实导航和保存另由开发宿主测试覆盖。
+    const cleanup = mountAppearance({ postMessage: () => {}, getState: () => undefined, setState: () => {} })
+    onCleanup(cleanup)
+  })
   document.body.style.background = "var(--background-base)"
   document.body.style.color = "var(--text-base)"
   return Story()
@@ -39,6 +57,16 @@ const preview: Preview = {
   },
   decorators: [themeDecorator],
   globalTypes: {
+    skin: {
+      description: "插件皮肤",
+      toolbar: {
+        title: "皮肤",
+        items: [
+          { value: "default", title: "原皮肤" },
+          { value: "night-city", title: "未来风" },
+        ],
+      },
+    },
     theme: {
       description: "Theme",
       toolbar: {

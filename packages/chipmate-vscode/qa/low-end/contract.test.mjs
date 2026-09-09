@@ -19,7 +19,7 @@ test("exposes the three low-end QA commands", () => {
 })
 
 test("renders the real production component chain with the frozen fixture sizes", () => {
-  for (const name of ["Settings", "ChatView", "HistoryView", "AgentConsoleContent"]) {
+  for (const name of ["Settings", "ChatView", "HistoryView"]) {
     assert.match(story, new RegExp(`import .*${name}`))
   }
   assert.match(story, /Array\.from\(\{ length: 20 \}/)

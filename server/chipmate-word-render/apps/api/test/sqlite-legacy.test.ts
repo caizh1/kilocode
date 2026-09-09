@@ -49,6 +49,11 @@ async function port() {
 
 async function start(packages: string, source: string, market: string, store: string) {
   const selected = await port()
+  const secretDir = join(packages, ".auth-test")
+  const master = join(secretDir, "master.key")
+  const breakGlass = join(secretDir, "break-glass.key")
+  await mkdir(secretDir, { recursive: true })
+  await Promise.all([writeFile(master, "m".repeat(48)), writeFile(breakGlass, "break-glass-test-key\n")])
   const child = spawn(process.execPath, ["--import", "tsx", "apps/api/src/start.ts"], {
     cwd: root,
     env: {
@@ -59,6 +64,8 @@ async function start(packages: string, source: string, market: string, store: st
       PACKAGE_ROOT: packages,
       PORT: String(selected),
       SKILL_MARKET_ROOT: market,
+      CHIPMATE_AUTH_MASTER_KEY_FILE: master,
+      CHIPMATE_AUTH_BREAK_GLASS_KEY_FILE: breakGlass,
     },
     stdio: ["ignore", "pipe", "pipe"],
   })

@@ -15,6 +15,7 @@ import { validateWordDocument } from "@/chipmate/documents/word-validation"
 import * as WorkflowGuard from "@/chipmate/skill/workflow-guard"
 import * as Readiness from "@/chipmate/skill/workflow-readiness"
 import { Instance } from "@/chipmate/instance"
+import { WordToImagesTool } from "./word-to-images"
 
 const ImageBlock = Schema.Struct({
   type: Schema.Literal("image"),
@@ -850,6 +851,7 @@ export const RenderWordDocumentTool = Tool.define(
 )
 
 export const WordDocumentTools = Effect.all({
+  images: WordToImagesTool,
   create: CreateWordDocumentTool,
   inspect: InspectWordDocumentTool,
   validate: ValidateWordDocumentTool,

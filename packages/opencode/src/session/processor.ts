@@ -28,6 +28,7 @@ import { ChipMateSessionOverflow } from "@/chipmate/session/overflow"
 import { ChipMateSessionThinking } from "@/chipmate/session/thinking"
 import { ChipMateRoutedModel } from "@/chipmate/session/routed-model"
 import { ChipMateResponseMetadata } from "@/chipmate/session/response-metadata"
+import { NewAPIBilling } from "@/chipmate/session/new-api-billing"
 import { Suggestion } from "@/chipmate/suggestion"
 // chipmate_change end
 import { errorMessage } from "@/util/error"
@@ -71,6 +72,7 @@ type Input = {
   // chipmate_change start
   telemetry?: ReviewTelemetry
   snapshotInitialization?: "wait"
+  billing?: { baseURL: unknown; apiKey: unknown }
   // chipmate_change end
 }
 
@@ -98,6 +100,7 @@ interface ProcessorContext extends Input {
   // chipmate_change start
   stepStart: number
   stepStartDate: number | undefined
+  stepTimer: ChipMateSessionProcessor.StepTimer
   step: { reasoning: boolean; text: boolean; tool: boolean }
   // chipmate_change end
 }
@@ -152,6 +155,7 @@ export const layer = Layer.effect(
         telemetry: input.telemetry,
         stepStart: 0,
         stepStartDate: undefined,
+        stepTimer: {},
         step: { reasoning: false, text: false, tool: false },
         // chipmate_change end
       }
@@ -409,6 +413,7 @@ export const layer = Layer.effect(
           case "reasoning-delta":
             // Match dev: silently drop orphan deltas (no preceding reasoning-start).
             if (!(value.id in ctx.reasoningMap)) return
+            ctx.stepTimer = ChipMateSessionProcessor.observeFirstToken(ctx.stepTimer, value.text, performance.now()) // chipmate_change
             ctx.reasoningMap[value.id].text += value.text
             if (value.text.trim()) ctx.step.reasoning = true // chipmate_change
             if (value.providerMetadata) ctx.reasoningMap[value.id].metadata = value.providerMetadata
@@ -450,6 +455,7 @@ export const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
+            ctx.stepTimer = ChipMateSessionProcessor.observeToolStart(ctx.stepTimer, performance.now()) // chipmate_change
             ctx.step.tool = true // chipmate_change
             yield* ensureToolCall(value)
             const input = isRecord(value.input) ? value.input : { value: value.input }
@@ -511,6 +517,7 @@ export const layer = Layer.effect(
           }
 
           case "tool-result": {
+            ctx.stepTimer = ChipMateSessionProcessor.observeToolFinish(ctx.stepTimer, performance.now()) // chipmate_change
             const toolCall = yield* readToolCall(value.id)
             if (!toolCall && value.result.type === "error") return
             if (value.result.type === "error") {
@@ -556,6 +563,7 @@ export const layer = Layer.effect(
           }
 
           case "tool-error": {
+            ctx.stepTimer = ChipMateSessionProcessor.observeToolFinish(ctx.stepTimer, performance.now()) // chipmate_change
             yield* failToolCall(value.id, value.error ?? new Error(value.message))
             return
           }
@@ -567,6 +575,7 @@ export const layer = Layer.effect(
             // chipmate_change start
             ctx.stepStart = performance.now()
             ctx.stepStartDate = Date.now()
+            ctx.stepTimer = ChipMateSessionProcessor.startStepPerformance(ctx.stepStart)
             ctx.step = { reasoning: false, text: false, tool: false }
             if (!ctx.snapshot)
               ctx.snapshot = yield* snapshot.track({
@@ -621,17 +630,22 @@ export const layer = Layer.effect(
             })
             const generationID = ChipMateSessionProcessor.generationID(value.providerMetadata)
             const vercelID = ChipMateResponseMetadata.read(value.providerMetadata)
+            const newAPIRequestID = ChipMateResponseMetadata.readNewAPI(value.providerMetadata)
             // chipmate_change end
             // chipmate_change start - guard against finish-step without start-step:
             // ctx.stepStart is 0 until `start-step` fires, which would feed a
             // huge bogus `elapsed` into telemetry. Fall back to now().
             const endDate = Date.now()
-            const elapsedMs = Math.round(performance.now() - (ctx.stepStart || performance.now()))
+            const endTime = performance.now()
+            ctx.stepTimer = ChipMateSessionProcessor.finishStepPerformance(ctx.stepTimer, endTime)
+            const elapsedMs = Math.round(endTime - (ctx.stepStart || endTime))
             const startDate = ctx.stepStartDate ?? (Number.isFinite(elapsedMs) ? endDate - elapsedMs : endDate)
             const metrics = ChipMateSessionProcessor.computeMetrics({
               providerMetadata: value.providerMetadata,
               tokens: usage.tokens,
               elapsedMs,
+              ttftMs: ctx.stepTimer.ttftMs,
+              toolElapsedMs: ctx.stepTimer.toolElapsedMs,
             })
             ChipMateSessionProcessor.trackStep({
               sessionID: ctx.sessionID,
@@ -648,7 +662,8 @@ export const layer = Layer.effect(
             // chipmate_change end
             ctx.assistantMessage.cost += usage.cost
             ctx.assistantMessage.tokens = usage.tokens
-            yield* session.updatePart({
+            // chipmate_change start - persist the request identity first, then reconcile the read-only bill off-stream
+            const finishPart = {
               id: PartID.ascending(),
               reason: value.reason,
               snapshot: completedSnapshot,
@@ -662,7 +677,48 @@ export const layer = Layer.effect(
               ...(metrics ? { metrics } : {}), // chipmate_change
               tokens: usage.tokens,
               cost: usage.cost,
-            })
+            } satisfies SessionV1.StepFinishPart
+            if (!newAPIRequestID) yield* session.updatePart(finishPart)
+            if (newAPIRequestID) {
+              const target = NewAPIBilling.target({
+                baseURL: input.billing?.baseURL ?? ctx.model.api.url,
+                apiKey: input.billing?.apiKey,
+              })
+              const billing =
+                typeof target === "string"
+                  ? ({
+                      status: "unavailable",
+                      source: "new-api-log",
+                      requestID: newAPIRequestID,
+                      reason: target,
+                    } as const)
+                  : ({ status: "pending", source: "new-api-log", requestID: newAPIRequestID } as const)
+              const billedPart = { ...finishPart, billing }
+              yield* session.updatePart(billedPart)
+              if (billing.status === "pending" && typeof target !== "string")
+                yield* Effect.tryPromise({
+                  try: () =>
+                    NewAPIBilling.settleOnce({
+                      target,
+                      requestID: billing.requestID,
+                      modelNames: [ctx.model.id, ctx.model.api.id, ctx.assistantMessage.modelID, model?.modelID ?? ""],
+                      startedAt: startDate,
+                      completedAt: endDate,
+                    }),
+                  catch: () =>
+                    ({
+                      status: "unavailable",
+                      source: "new-api-log",
+                      requestID: billing.requestID,
+                      reason: "network",
+                    }) as const,
+                }).pipe(
+                  Effect.flatMap((settled) => session.updatePart({ ...billedPart, billing: settled })),
+                  Effect.ignore,
+                  Effect.forkIn(scope),
+                )
+            }
+            // chipmate_change end
             // chipmate_change start - surface output limit stops, with a stronger message for reasoning-only stops
             const warn = ChipMateSessionProcessor.lengthWarning({ msg: ctx.assistantMessage, step: ctx.step })
             if (warn) {
@@ -741,6 +797,7 @@ export const layer = Layer.effect(
 
           case "text-delta":
             if (!ctx.currentText) return
+            ctx.stepTimer = ChipMateSessionProcessor.observeFirstToken(ctx.stepTimer, value.text, performance.now()) // chipmate_change
             ctx.currentText.text += value.text
             if (value.text.trim()) ctx.step.text = true // chipmate_change
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
@@ -939,6 +996,7 @@ export const layer = Layer.effect(
             Effect.gen(function* () {
               ctx.currentText = undefined
               ctx.reasoningMap = {}
+              ctx.stepTimer = {}
               yield* status.set(ctx.sessionID, { type: "busy" })
               ctx.step = { reasoning: false, text: false, tool: false }
               // chipmate_change start - recover DeepSeek V4 think tags emitted as ordinary content

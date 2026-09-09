@@ -116,7 +116,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       // chipmate_change end
       // chipmate_change start - indexing settings are consumed by the indexing hot-reload path
       const hot = isIndexingOnlyConfig(ctx.payload)
-      const result = yield* config.updateGlobal(ctx.payload, ProviderSave.options(hot, defer))
+      const result = yield* config.updateGlobal(ctx.payload, { ...ProviderSave.options(hot, defer), indexing: hot })
       // chipmate_change end
       // chipmate_change start
       if (result.changed && defer) {

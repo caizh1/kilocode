@@ -6,6 +6,10 @@
 
 ## 作用与边界
 
+### 1.2.2 LDAP 连接修复
+
+相较 1.2.1，修复 `ldapts@8.2.0` 将非空 `tlsOptions` 解释为隐式 TLS 的兼容问题：Unencrypted 不再发送 TLS 握手；StartTLS 先建立普通连接再显式升级；LDAPS 保持直接 TLS 和原证书校验设置。真实本地 TCP/TLS 回归覆盖这三种方式、不受信证书拒绝、升级失败不降级，以及应急登录后的管理测试接口。真实 Microsoft AD 的网页测试与登录仍需在目标机升级后验收；本次不改变扩展版本或 LDAP 配置值。
+
 服务默认监听 `6001`，包含七类能力：
 
 | 能力 | 用途 | 关键依赖 |
@@ -13,10 +17,10 @@
 | Word 渲染 | 通过受控 UNO 刷新原生目录字段，再把 DOCX 转为 PDF 和逐页 PNG，供聊天预览或文档检查使用。 | LibreOffice、python3-uno、Poppler |
 | Mermaid 渲染 | 在 Chromium 中离线加载 Mermaid，将图表导出为裁剪后的 PNG。 | Chromium、Mermaid |
 | 离线包分发 | 从挂载的 `/packages` 目录提供 VSIX 下载，并扫描生成更新清单。 | Node、JSZip |
-| 内部 Skill Market | 读取、分发或写入 skill 压缩包和目录清单；可选地通过 New API key 识别上传者。 | Node、本地卷、可选 New API |
+| 内部 Skill Market | 读取、分发或写入 skill 压缩包和目录清单；通过 Server LDAP 身份识别上传者。 | Node、本地卷、Microsoft AD |
 | Skill Market Web | 提供首页、目录、详情、发布、个人状态、聚合分析与服务诊断的同源 React 应用。 | Vite 构建产物、Fastify 静态路由 |
-| VS Code 插件市场 | 结构校验、目录导入、Web 上传、手动 VSIX 下载、评价与聚合分析；不执行扩展代码。 | SQLite、Yauzl、本地可写卷、可选 New API |
-| Embedded Review 规则包 | 确定性解析团队编码规范 DOCX，保存不可变 RulePack 并发布当前版本。 | JSZip、本地可写卷、New API 身份 |
+| VS Code 插件市场 | 结构校验、目录导入、Web 上传、手动 VSIX 下载、评价与聚合分析；不执行扩展代码。 | SQLite、Yauzl、本地可写卷、LDAP 身份 |
+| Embedded Review 规则包 | 确定性解析团队编码规范 DOCX，保存不可变 RulePack 并发布当前版本。 | JSZip、本地可写卷、LDAP 身份 |
 
 它不是 ChipMate 的主服务，也不会替代 `chipmate serve`。它是扩展配置的远端渲染端点和内网文件服务。
 
@@ -32,7 +36,7 @@ server/chipmate-word-render/
 ├── Dockerfile                   # 多阶段 linux/amd64 构建与运行镜像定义
 ├── package.json                 # Node 运行时依赖和服务版本
 ├── install-render-server.sh     # 目标 Linux 主机的离线镜像安装脚本
-├── build-offline-bundle.mjs     # 将镜像和预置 skills 组合成离线交付包的辅助脚本
+├── build-offline-bundle.mjs     # 将内置运行时的镜像和预置 skills 组合成离线交付包
 └── README.md
 ```
 
@@ -46,14 +50,23 @@ server/chipmate-word-render/
 | `POST /render/word` | 接收 `filename`、`docxBase64` 和可选 `timeoutMs`，返回 PDF、逐页 PNG、字段刷新状态和目录计数。仅在 UNO 刷新后标题、Heading、drawing、目录条目及数字页码全部验证通过时返回 `updatedDocxBase64`；无目录返回 `not-required`。 |
 | `POST /render/mermaid` | 接收 `source`、可选 `filename`、`scale`（1–4）和 `timeoutMs`，返回裁剪后的 PNG 和尺寸信息。 |
 | `GET /packages/manifest.json` | 扫描包目录内的 VSIX，生成 schema v2 更新清单；按内部发行目标返回版本、SHA-256、大小、下载 URL 与 `latestByTarget`。 |
+| `GET /packages/runtimes/deepseek-harness/manifest.json` | 返回固定的 DeepSeek Harness 运行时清单；不依赖插件市场开关。 |
+| `GET /packages/runtimes/deepseek-harness/<version>/<target>/<sha256>.zip` | 按内容哈希分发不可变运行时，支持完整下载与 Range。 |
 | `GET /packages/<file>` | 下载包目录中的文件，路径越界会被拒绝。 |
 | `GET /marketplace/skills` | 返回 ChipMate 兼容的 Skill Market 目录，下载链接被规范化为同源 URL。 |
 | `GET /marketplace/manifest.json` | 返回 Skill Market 的概要与告警。 |
 | `GET /marketplace/skills/<id>.tar.gz` | 下载一个 skill 的归档，并增加下载计数。 |
 | `GET /marketplace/skills/<id>/files` | 返回 skill 的文件列表，供客户端安装流程使用。 |
-| `POST /marketplace/skills` | 上传 skill 文件清单；需要 `Authorization: Bearer <New API key>`。 |
-| `POST /marketplace/skills/<id>/stars` | 对 skill 点赞；同样需要 New API key。 |
-| `POST /auth/new-api/resolve-user` | 使用 New API 管理端配置反查调用方身份，只返回用户信息，不返回原始密钥。 |
+| `POST /marketplace/skills`、`POST /marketplace/skills/<id>/stars` | 已废止的旧写接口；返回 `410 client-upgrade-required`。 |
+| `POST /auth/new-api/resolve-user` | 已废止；返回 `410 client-upgrade-required`。 |
+| `POST /api/v1/auth/session`、`GET/DELETE /api/v1/auth/session` | LDAP 用户名/密码网页登录，以及当前会话读取和退出。 |
+| `POST /api/v1/auth/device/code`、`device/approve`、`device/token` | VS Code 浏览器设备码登录；LDAP 密码只进入 Server 网页。 |
+| `POST /api/v1/auth/token/refresh`、`token/revoke` | 插件访问令牌轮换与撤销。 |
+| `GET/PUT /api/v1/admin/auth/ldap`、`POST /api/v1/admin/auth/ldap/test` | 测试、保存和读取脱敏后的 LDAP 配置。 |
+| `GET/POST/DELETE /api/v1/admin/auth/identity-mappings` | 把 AD `objectGUID` 显式映射到历史本地用户。 |
+| `GET/POST/DELETE /api/v1/admin/auth/session` | 验证管理权限、创建或退出应急管理会话。 |
+| `GET/POST /api/v1/admin/auth/admins`、`DELETE /api/v1/admin/auth/admins/:subject` | 查询、授予和撤销 Server 本地管理员。 |
+| `POST /api/v1/admin/auth/admins/resolve` | 查询待授权的唯一 LDAP 身份，授权前核对不可变标识。 |
 | `GET /api/v1/capabilities` | 发现 aligned-v1 版本、catalogVersion 与能力开关。 |
 | `GET /api/v1/skills` | SQLite/FTS 目录、筛选、排序和游标分页。 |
 | `GET /api/v1/skills/<id>/releases/<revision>/archive` | 下载不可变 Skill 归档；文件名固定为 `<skill-id>-r<revision>.tar.gz`，拒绝 Range，并仅在完整 `GET 200` 响应结束后原子增加一次下载量。 |
@@ -124,6 +137,7 @@ VERSION=$(node -p 'require("./package.json").version')
 IMAGE="chipmate-word-render:${VERSION}"
 ARCHIVE="chipmate-word-render-${VERSION}-linux-amd64.docker.tar.gz"
 
+CHIPMATE_DSH_RUNTIME_CATALOG=/path/to/dsh-runtimes/manifest.json npm run runtime:seed
 docker build --pull --no-cache --platform linux/amd64 -t "$IMAGE" .
 docker save "$IMAGE" | gzip -9 > "$ARCHIVE"
 shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
@@ -147,7 +161,7 @@ gzip -t "$ARCHIVE"
 
 ## 生成包含预置 skills 的完整离线交付包
 
-`build-offline-bundle.mjs` 会把已生成的 Docker 归档、安装脚本，以及 ChipMate 仓库 `.chipmate/skills/` 中的 `source-backed-detail-design` 和 `documents` 组合到 `out/chipmate-server-offline-<version>-linux-amd64.tar.gz`。脚本总是按当前 Docker 归档重新计算内外层校验文件，不会复制可能过期的旁车哈希。执行前必须已经完成上一节的镜像归档构建：
+`build-offline-bundle.mjs` 会把已经内置 Windows/Linux DeepSeek Harness 运行时的 Docker 归档、安装脚本，以及 ChipMate 仓库 `.chipmate/skills/` 中的 `source-backed-detail-design` 和 `documents` 组合到 `out/chipmate-server-offline-<version>-linux-amd64.tar.gz`。运行时不会在离线包外层重复保存；脚本总是按当前 Docker 归档重新计算内外层校验文件。执行前必须已经完成上一节的镜像归档构建：
 
 ```bash
 node build-offline-bundle.mjs
@@ -181,7 +195,7 @@ chmod +x install-render-server.sh
 curl -fsS http://127.0.0.1:6001/health
 ```
 
-安装脚本会先校验同目录 `.sha256`（如存在），再导入镜像并以 `--restart unless-stopped` 启动容器。默认把宿主机 `/home/share/chipmate/packages` 只读挂载为 `/packages`，把 `/home/share/chipmate/data/skill-market` 和 `/home/share/chipmate/data/review-rules` 分别可写挂载为 `/data/skill-market` 与 `/data/review-rules`，避免升级丢失市场和规则发布状态。升级前会把现有 `skills.json`、归档、SQLite、legacy-latest 和整个 `extensions/` 复制到带 UTC 时间戳的备份目录。预置 `source-backed-detail-design` 与 `documents` 只替换其受管归档和元数据，同时保留用户自建 skill、现有下载数与收藏数。可按部署环境覆盖服务名、端口和宿主机目录：
+安装脚本会先校验同目录 `.sha256`（如存在），再导入镜像，把镜像内置的 DeepSeek Harness 运行时逐个校验并原子合并到宿主机 package root，最后以 `--restart unless-stopped` 启动容器。合并只新增或替换当前内容寻址文件和 manifest，不删除旧运行时。默认把宿主机 `/home/share/chipmate/packages` 只读挂载为 `/packages`，把 `/home/share/chipmate/data/skill-market` 和 `/home/share/chipmate/data/review-rules` 分别可写挂载为 `/data/skill-market` 与 `/data/review-rules`，避免升级丢失市场和规则发布状态。升级前会把现有 `skills.json`、归档、SQLite、legacy-latest 和整个 `extensions/` 复制到带 UTC 时间戳的备份目录。预置 `source-backed-detail-design` 与 `documents` 只替换其受管归档和元数据，同时保留用户自建 skill、现有下载数与收藏数。可按部署环境覆盖服务名、端口和宿主机目录：
 
 ```bash
 PORT=6001 \
@@ -193,9 +207,15 @@ BACKUP_ROOT_ON_HOST=/srv/chipmate/backups \
 ./install-render-server.sh ./chipmate-word-render-<version>-linux-amd64.docker.tar.gz
 ```
 
-如需启用 New API 身份解析，将配置放入目标机受限权限的环境文件并用 `ENV_FILE=/path/to/render.env` 传入。至少需要 `NEW_API_BASE_URL`；服务优先使用当前用户 key 调用 New API 只读 token usage 接口。旧 New API 不支持该接口时，才使用 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID` 进入管理接口兼容回退。安装脚本不会把环境文件复制进镜像或交付包；覆盖升级未显式传 `ENV_FILE` 时，会从旧容器继承 `NEW_API_*`、`EXTENSION_MARKET_*`、`EXTENSION_OWNER_BINDINGS_JSON`、`EXTENSION_DROP_*` 和 `REVIEW_RULE_*`，不会输出这些值。
+安装脚本首次运行会在宿主机数据目录的 `auth/` 下生成 `master.key` 和 `break-glass.key`，权限设为 `0600`，并分别只读挂载到容器。主密钥用于 AES-256-GCM 加密 Bind 密码；break-glass 只允许配置认证、历史身份映射及管理员授权，不代表普通市场身份。脚本只输出文件路径，不输出密钥内容。可用 `AUTH_SECRET_ROOT_ON_HOST` 或两个具体文件变量覆盖位置。生产部署应设置 `CHIPMATE_PUBLIC_BASE_URL=https://<server>`；覆盖升级会保留该地址及市场、规则配置，但不会继承任何 `NEW_API_*` 人员认证变量。
 
-插件市场在镜像和安装脚本中默认关闭。首次升级保持 `EXTENSION_MARKET_ENABLED=0`，完成 `/health`、`/api/v1/status` 和既有 Skill/渲染回归后，再以 `EXTENSION_MARKET_ENABLED=1 ./install-render-server.sh <同一归档>` 重启启用；默认扫描周期为 `EXTENSION_DROP_SCAN_MS=5000`。上传资源保护默认值为 `EXTENSION_UPLOAD_MAX_ACTIVE=20`、`EXTENSION_UPLOAD_MIN_FREE_BYTES=2147483648`、`EXTENSION_UPLOAD_IDLE_MS=60000`、`EXTENSION_UPLOAD_MAX_MS=7200000`，可在受限权限的 `ENV_FILE` 中调整。安装脚本不会从旧容器继承已启用状态，因此升级不会意外提前开放插件路由。默认宿主机目录如下：
+首次上线后由运维取得宿主机 `break-glass.key`，打开不在公共导航中的 `/admin/login`，完成应急登录后进入 `/admin/auth`，测试并保存 Microsoft AD BindDN 配置。保存成功才递增认证版本并启用配置，同时撤销旧网页、插件及应急会话。Bind 密码只写不读。选择 `Unencrypted` 时必须显式确认风险，且 `/status` 会持续显示告警；生产环境建议在域控条件允许时切换 STARTTLS 或 LDAPS。
+
+管理员改由 Server 本地名单管理，LDAP Admin Filter 仅保留旧配置、不再参与授权。首次设置及从数据库 v10 升级时名单均为空，不会根据 LDAP 标记或用户名自动授权。配置保存后重新进入 `/admin/login`，在“管理员管理”输入 LDAP 用户名，查询并核对目录 DN、邮箱、不可变身份和市场账号 ID，再点击“确认授予管理员”。被授权用户重新使用 LDAP 登录后才显示“认证设置”入口，并可继续授权其他管理员；系统禁止撤销名单中的最后一人。应急登录有效期为 15 分钟，可主动退出。
+
+管理员权限绑定 AD `objectGUID`，不会因同名用户或历史市场账号重新映射而转移。角色与映射变更会撤销受影响身份的旧 Web、访问／刷新令牌和待兑换设备授权，但不会改写插件的上传者或作品归属。升级前备份整个市场数据目录（包含 SQLite 及其 WAL），停止服务后制作一致性备份；本次迁移保留历史业务数据并清除旧认证会话，回滚需使用升级前镜像及对应完整备份，不应只替换数据库文件。
+
+插件市场在镜像和全新安装中默认关闭。覆盖升级未显式传 `EXTENSION_MARKET_ENABLED` 时，安装脚本会保留旧容器的开关状态，避免升级意外关闭或开放插件路由；需要变更时必须显式传入 `EXTENSION_MARKET_ENABLED=0` 或 `1`。默认扫描周期为 `EXTENSION_DROP_SCAN_MS=5000`。上传资源保护默认值为 `EXTENSION_UPLOAD_MAX_ACTIVE=20`、`EXTENSION_UPLOAD_MIN_FREE_BYTES=2147483648`、`EXTENSION_UPLOAD_IDLE_MS=60000`、`EXTENSION_UPLOAD_MAX_MS=7200000`，可在受限权限的 `ENV_FILE` 中调整。默认宿主机目录如下：
 
 ```text
 /home/share/chipmate/data/skill-market/extensions/
@@ -217,7 +237,7 @@ BACKUP_ROOT_ON_HOST=/srv/chipmate/backups \
 
 扩展 ID 首次成功上传时绑定当前 Server 登录身份。后续只有原始发布者可以上传或下架；同版本、同 target、不同 SHA-256 会返回 `EXTENSION_VERSION_CONFLICT`，Server 不会自动覆盖或删除任何一方。下架后动态 manifest 立即回退到该 target 的剩余最高版本，已安装客户端不会自动降级。
 
-旧只读 `/packages` 目录仍作为兼容来源并与网页产物合并。升级已有系统记录时，可在受限环境文件中临时设置一次 `EXTENSION_OWNER_BINDINGS_JSON`，值为“扩展 ID 到 New API 登录名”的 JSON 对象；绑定成功后即可移除该设置。旧 `/packages` 文件仍保持原下载 URL，数据库网页产物使用 `/packages/artifacts/<artifactId>.vsix` 直接流式下载。
+旧只读 `/packages` 目录仍作为兼容来源并与网页产物合并。升级已有系统记录时，可在受限环境文件中临时设置一次 `EXTENSION_OWNER_BINDINGS_JSON`，先把扩展 ID 绑定到历史本地用户，再在 `/admin/auth` 将该本地用户显式映射到 LDAP 用户；绑定成功后即可移除环境设置。旧 `/packages` 文件仍保持原下载 URL，数据库网页产物使用 `/packages/artifacts/<artifactId>.vsix` 直接流式下载。
 
 当前自更新扩展 ID 固定为 `chipmate.chipmate`，且不改变 publisher、name、SecretStorage key 或配置命名空间。发布后应访问真实 `/packages/manifest.json` 确认 target、版本、SHA-256 和下载 URL。
 
@@ -233,7 +253,7 @@ Skill Market 的宿主机目录结构如下：
 
 `skills.json` 可以是数组或 `{ "items": [...] }`。每个条目至少应有安全的 `id`；`content` 可以是 `skills/<skill-id>.tar.gz`。服务对外会把该字段转换为同源的 `/marketplace/skills/<skill-id>.tar.gz`。
 
-可写 Skill Market 和“New API key 反查用户”在设置 `NEW_API_BASE_URL` 后启用直接 token identity 解析。仅旧 New API 兼容回退需要同时设置 `NEW_API_ADMIN_ACCESS_TOKEN` 和 `NEW_API_USER_ID`。将敏感值通过 Docker secret、受限环境文件或部署系统注入；绝不要把实际地址、管理员令牌或用户 ID 写进本仓库的 README、源码、测试或镜像标签。
+可写市场操作统一使用 LDAP 网页会话或设备码签发的短期访问令牌。Provider、Embedding 和 Rerank 的 API Key 仍只用于模型服务，不参与人员登录，也不会被市场功能读取或发送。
 
 ## 修改与交付检查清单
 
@@ -252,15 +272,10 @@ Skill Market 的宿主机目录结构如下：
 - Word 返回 `fieldRefreshStatus: failed`：查看 `fieldRefreshDiagnostics`。服务会继续渲染原始 DOCX，但不会返回一个未经标题、Heading、drawing 和真实目录页码验证的 `updatedDocxBase64`。
 - `/packages/manifest.json` 未发现网页上传包：确认插件市场已启用、扩展 ID 为 `chipmate.chipmate`、上传者是 owner，并且包内 `chipmatePackageTarget` 是允许的内部目标；旧系统包仍检查只读 `/packages` 根目录。
 - Skill Market 为空：检查 `skill-market/skills.json` 的 JSON 格式、归档是否位于 `skill-market/skills/`，再访问 `/marketplace/manifest.json` 查看告警。
-- 登录或上传返回 `token-resolver-disabled`：`NEW_API_BASE_URL` 未设置；如果目标 New API 不支持直接 token usage 接口，还需要补齐 admin fallback 的另外两项配置。
-- 登录返回 `new-api-rate-limited` 或日志出现 `new-api-http-429`：New API 正在限流。0.1.8 会合并同一 key 的并发解析，不会在 429 后切换分页参数重试；停止重复点击并等待上游 `Retry-After` 后再试。
+- 登录返回 `AUTH_NOT_CONFIGURED`：使用 break-glass 打开 `/admin/login`，进入认证设置并完成 LDAP 测试和保存。
+- 普通账号看不到“认证设置”：这是正常权限限制。通过 `/admin/login` 应急入口明确授权管理员；若已授权，请重新登录。姓名相同不能证明是同一身份，应核对不可变目录标识。
+- 登录返回 `RATE_LIMITED`：同一来源和用户名连续失败次数过多；按 `Retry-After` 等待，并检查域账号密码与禁用状态。
+- 旧插件返回 `client-upgrade-required`：Server 不提供 New API Key 认证回退，需升级到支持浏览器设备码登录的 VSIX。
 - 内网 HTTP 打开 Skill Market 后白屏且控制台提示 `crypto.randomUUID is not a function`：这是 0.1.6 Web 在非 localhost HTTP 下的兼容问题；升级到 0.1.7 或更高版本。0.1.7 使用 `crypto.getRandomValues` 安全生成 fallback UUID，不要求为了该问题关闭浏览器安全策略。
 
-身份解析日志使用统一前缀和同一次解析的短 `requestId`：
-
-```bash
-docker logs --since 10m chipmate-word-render 2>&1 \
-  | grep '\[new-api-token-resolver\]'
-```
-
-重点事件依次为 `resolve.start`、`config.ready`、`upstream.request.start/finish`、`direct.identity.result/error`、可选的 `admin.fallback.start` 与 `admin.catalog.*`，最后是 `resolve.failure` 和 `resolve.finish`。日志只包含固定 endpoint 名、层级、状态码、耗时、分页计数、候选序号、Retry-After 和结果码；不会记录用户 API Key、Authorization、admin token、完整 URL/query 或 key hash。
+认证配置、令牌和设备码只在 SQLite 中保存密文或哈希；日志不得记录 LDAP 密码、Bind 密码、Cookie、访问令牌、刷新令牌或 break-glass 内容。

@@ -216,6 +216,7 @@ describe("Marketplace Skill cache refresh", () => {
   })
 
   it("reports missing Skill IDs when refresh succeeds with stale discovery", async () => {
+    const dispose = mock(async () => ({ data: true }))
     const ctx = {
       connection: {
         getClientAsync: mock(async () => ({
@@ -225,6 +226,7 @@ describe("Marketplace Skill cache refresh", () => {
             })),
           },
           chipmate: { refreshSkills: mock(async () => ({ data: true })) },
+          instance: { dispose },
         })),
       },
     } as unknown as MarketplaceActionContext
@@ -236,6 +238,7 @@ describe("Marketplace Skill cache refresh", () => {
       phase: "post-refresh-verification",
       missingIds: ["missing-skill"],
     })
+    expect(dispose).toHaveBeenCalledWith({ directory: project }, { throwOnError: true })
   })
 
   it("refreshes only Skill state after project installation", async () => {
@@ -244,18 +247,63 @@ describe("Marketplace Skill cache refresh", () => {
     const ctx = {
       connection: {
         getClientAsync: mock(async () => ({
+          app: {
+            skills: mock(async () => ({
+              data: [{ name: skill.id, location: `${project}/.chipmate-v2/skills/${skill.id}/SKILL.md` }],
+            })),
+          },
           global: { config: { update: mock(async () => {}) } },
           instance: { dispose },
           chipmate: { refreshSkills: refresh },
         })),
       },
-      marketplace: { install: mock(async () => ({ success: true, slug: skill.id })) },
+      marketplace: {
+        install: mock(async () => ({
+          success: true,
+          slug: skill.id,
+          filePath: `${project}/.chipmate-v2/skills/${skill.id}/SKILL.md`,
+        })),
+      },
     } as unknown as MarketplaceActionContext
 
-    await installMarketplaceItem(ctx, skill, { target: "project" }, project, project)
+    const result = await installMarketplaceItem(ctx, skill, { target: "project" }, project, project)
 
-    expect(refresh).toHaveBeenCalledWith({ directory: project, scope: "project" })
+    expect(result.success).toBe(true)
+    expect(refresh).toHaveBeenCalledWith({ directory: project, scope: "project" }, { throwOnError: true })
     expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it("returns installation success only after rebuilding a stale CLI instance and finding the exact location", async () => {
+    const location = `${project}/.chipmate-v2/skills/${skill.id}/SKILL.md`
+    const state = { calls: 0 }
+    const dispose = mock(async () => ({ data: true }))
+    const skills = mock(async () => {
+      state.calls += 1
+      return {
+        data:
+          state.calls === 1
+            ? []
+            : [{ name: skill.id, location }],
+      }
+    })
+    const ctx = {
+      connection: {
+        getClientAsync: mock(async () => ({
+          app: { skills },
+          chipmate: { refreshSkills: mock(async () => ({ data: true })) },
+          instance: { dispose },
+        })),
+      },
+      marketplace: {
+        install: mock(async () => ({ success: true, slug: skill.id, filePath: location })),
+      },
+    } as unknown as MarketplaceActionContext
+
+    const result = await installMarketplaceItem(ctx, skill, { target: "project" }, project, project)
+
+    expect(result.success).toBe(true)
+    expect(dispose).toHaveBeenCalledWith({ directory: project }, { throwOnError: true })
+    expect(skills).toHaveBeenCalledTimes(2)
   })
 
   it("revalidates the selected physical instance and scope before update", async () => {
@@ -269,7 +317,11 @@ describe("Marketplace Skill cache refresh", () => {
     }
     const ctx = {
       connection: {
-        getClientAsync: mock(async () => ({ chipmate: { refreshSkills: mock(async () => ({ data: true })) } })),
+        getClientAsync: mock(async () => ({
+          app: { skills: mock(async () => ({ data: [{ name: skill.id, location: selected.localLocation }] })) },
+          chipmate: { refreshSkills: mock(async () => ({ data: true })) },
+          instance: { dispose: mock(async () => ({ data: true })) },
+        })),
       },
       marketplace: {
         skillInstance: mock(async () => ({

@@ -1,3 +1,4 @@
+import { diagnosticsEnvironment } from "../diagnostics/record"
 import { type ChildProcess } from "child_process"
 import { spawn } from "../../util/process"
 import * as crypto from "crypto"
@@ -118,6 +119,7 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv, storage: string)
     "CHIPMATE_CONFIG",
     "CHIPMATE_CONFIG_CONTENT",
     "CHIPMATE_CONFIG_DIR",
+    "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
     "CHIPMATE_DB",
     "CHIPMATE_DEV_CWD",
     "CHIPMATE_DEV_REPO",
@@ -256,6 +258,7 @@ export class ServerManager {
           ...(extraCaCerts && { NODE_EXTRA_CA_CERTS: extraCaCerts }),
           ...(!proxyStrictSSL && { NODE_TLS_REJECT_UNAUTHORIZED: "0" }),
           ...resolveManagedServerEnv(process.env, this.context.globalStorageUri.fsPath),
+          ...diagnosticsEnvironment(),
           ...cliRuntimeEnv(cliPath),
           ...render,
           // VS Code's http.proxy / http.noProxy settings are not reflected in
@@ -424,6 +427,78 @@ export class ServerManager {
     return this.lastExitInfo
   }
 
+  async stopForMaintenance(): Promise<void> {
+    if (this.startupPromise) await this.startupPromise.catch(() => undefined)
+    const proc = this.instance?.process ?? this.starting
+    if (!proc) return
+    if (proc.exitCode !== null) {
+      if (this.instance?.process === proc) this.instance = null
+      if (this.starting === proc) this.starting = null
+      return
+    }
+    this.expected.add(proc)
+    ServerManager.killProcess(proc, "SIGTERM")
+    await new Promise<void>((resolve, reject) => {
+      const force = setTimeout(() => {
+        if (proc.exitCode === null) ServerManager.killProcess(proc, "SIGKILL")
+      }, 5000)
+      const timeout = setTimeout(() => {
+        reject(new Error("ChipMate Server 未能在维护超时内完全停止，已取消聊天历史迁移"))
+      }, 8000)
+      force.unref()
+      timeout.unref()
+      proc.once("exit", () => {
+        clearTimeout(force)
+        clearTimeout(timeout)
+        if (this.instance?.process === proc) this.instance = null
+        if (this.starting === proc) this.starting = null
+        resolve()
+      })
+    })
+  }
+
+  async runMaintenance(args: string[], onLine: (line: string) => void): Promise<number> {
+    if (this.instance || this.starting || this.startupPromise)
+      throw new Error("CLI server must be stopped before maintenance")
+    const cliPath = this.getCliPath()
+    const storage = this.context.globalStorageUri.fsPath
+    fs.mkdirSync(storage, { recursive: true })
+    return new Promise<number>((resolve, reject) => {
+      const child = spawn(cliPath, args, {
+        cwd: storage,
+        env: {
+          ...resolveManagedServerEnv(process.env, storage),
+          ...cliRuntimeEnv(cliPath),
+          ...buildBundledToolEnv(this.context.extensionPath),
+          CHIPMATE_PARENT_PID: String(process.pid),
+          CHIPMATE_CLIENT: "vscode-maintenance",
+          CHIPMATE_TELEMETRY_LEVEL: "off",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false,
+      })
+      let pending = ""
+      child.stdout?.on("data", (data: Buffer) => {
+        pending += data.toString()
+        const lines = pending.split(/\r?\n/)
+        pending = lines.pop() ?? ""
+        for (const line of lines) if (line.trim()) onLine(line)
+      })
+      child.stderr?.on("data", (data: Buffer) => {
+        console.error("[ChipMate New] 聊天历史维护进程输出了诊断信息（内容已隐藏）", data.byteLength)
+      })
+      child.once("error", reject)
+      child.once("exit", (code) => {
+        if (pending.trim()) onLine(pending)
+        if (code === 0 || code === 2) {
+          resolve(code)
+          return
+        }
+        reject(new Error(`聊天历史维护进程异常退出（${code ?? "unknown"}），请查看 ChipMate 本地日志`))
+      })
+    })
+  }
+
   private getCliPath(): string {
     // Always use the bundled binary from the extension directory
     const cliPath = resolveCliPath(this.context.extensionPath)
@@ -502,8 +577,13 @@ export function renderEnv(): Record<string, string> {
   const review = unified.endpoints?.reviewRules ?? ""
   return {
     ...(word && !process.env.CHIPMATE_WORD_RENDER_ENDPOINT ? { CHIPMATE_WORD_RENDER_ENDPOINT: word } : {}),
+    ...(unified.endpoints?.wordImages && !process.env.CHIPMATE_WORD_TO_IMAGES_ENDPOINT
+      ? { CHIPMATE_WORD_TO_IMAGES_ENDPOINT: unified.endpoints.wordImages }
+      : {}),
     ...(mermaid && !process.env.CHIPMATE_MERMAID_RENDER_ENDPOINT ? { CHIPMATE_MERMAID_RENDER_ENDPOINT: mermaid } : {}),
-    ...(plantuml && !process.env.CHIPMATE_PLANTUML_RENDER_ENDPOINT ? { CHIPMATE_PLANTUML_RENDER_ENDPOINT: plantuml } : {}),
+    ...(plantuml && !process.env.CHIPMATE_PLANTUML_RENDER_ENDPOINT
+      ? { CHIPMATE_PLANTUML_RENDER_ENDPOINT: plantuml }
+      : {}),
     ...(review && !process.env.CHIPMATE_REVIEW_RULES_ENDPOINT ? { CHIPMATE_REVIEW_RULES_ENDPOINT: review } : {}),
   }
 }

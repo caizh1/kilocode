@@ -23,11 +23,7 @@ import { IndexingRunLock } from "../run-lock"
 import { DocumentIndexCache } from "./cache"
 import { chunkDocument, splitDocumentChunk } from "./chunker"
 import { extractDocument, preflightPdfExtractor } from "./extractors"
-import {
-  classifyDocumentIssue,
-  DocumentDiagnosticLedger,
-  sanitizeDocumentDiagnostic,
-} from "./diagnostics"
+import { classifyDocumentIssue, DocumentDiagnosticLedger, sanitizeDocumentDiagnostic } from "./diagnostics"
 import {
   external as isExternalKey,
   id,
@@ -108,6 +104,8 @@ export class DocumentIndexService {
   private task: Promise<void> | undefined
   private close: Promise<void> | undefined
   private disposed = false
+  private readonly controller = new AbortController()
+  private refreshPaused = false
   private status: DocumentIndexStatus = disabled("Document RAG disabled.")
   private pressure: IndexingPressure = "normal"
   private root?: string
@@ -154,6 +152,7 @@ export class DocumentIndexService {
 
   dispose(): Promise<void> {
     this.disposed = true
+    this.controller.abort()
     if (this.close) return this.close
     this.clearRefreshTimers()
     this.resolveWatcherReady?.()
@@ -176,6 +175,11 @@ export class DocumentIndexService {
 
   setMemoryPressure(pressure: IndexingPressure): void {
     this.pressure = pressure
+  }
+
+  setRefreshPaused(paused: boolean): void {
+    this.refreshPaused = paused
+    if (!paused && this.appliedRefreshRevision < this.refreshRevision) this.runRefreshPump()
   }
 
   async rebuild(trigger: IndexingTelemetryTrigger = "manual"): Promise<void> {
@@ -325,7 +329,7 @@ export class DocumentIndexService {
         if (this.disposed) return
       }
       if (discovery.files.some((file) => path.extname(file.path).toLowerCase() === ".pdf")) {
-        await preflightPdfExtractor(this.cacheDirectory)
+        await preflightPdfExtractor(this.cacheDirectory, { signal: this.controller.signal })
       }
       await this.store.markIndexingIncomplete()
       storeMutationStarted = true
@@ -348,7 +352,9 @@ export class DocumentIndexService {
             if (info.size > cfg.maxFileBytes) return { kind: "large" as const }
             const hash = await fileHash(file.path)
             if (this.cache.get(key) === hash) return { kind: "unchanged" as const, hash }
-            const sections = await extractDocument(file.path, cfg.maxExtractedBytesPerFile)
+            const sections = await extractDocument(file.path, cfg.maxExtractedBytesPerFile, {
+              signal: this.controller.signal,
+            })
             const items = sections.flatMap((section) =>
               chunkDocument(section, this.workspace, cfg.chunkChars, cfg.chunkOverlapChars, file.source),
             )
@@ -410,14 +416,7 @@ export class DocumentIndexService {
         }
         indexed += 1
         chunks += written
-        this.report(
-          index + 1,
-          files.length,
-          `Indexed document: ${path.basename(file.path)}`,
-          skipped,
-          errors,
-          stale,
-        )
+        this.report(index + 1, files.length, `Indexed document: ${path.basename(file.path)}`, skipped, errors, stale)
       }
 
       for (const file of Object.keys(this.cache.all())) {
@@ -691,18 +690,19 @@ export class DocumentIndexService {
   }
 
   private runRefreshPump(): void {
-    if (this.disposed || this.refreshTask) return
+    if (this.disposed || this.refreshPaused || this.refreshTask) return
     this.refreshTask = (async () => {
-      while (!this.disposed && this.appliedRefreshRevision < this.refreshRevision) {
+      while (!this.disposed && !this.refreshPaused && this.appliedRefreshRevision < this.refreshRevision) {
         const revision = this.refreshRevision
         await this.task
-        if (this.disposed) return
+        if (this.disposed || this.refreshPaused) return
         await this.start("background", false)
         this.appliedRefreshRevision = revision
       }
     })().finally(() => {
       this.refreshTask = undefined
-      if (!this.disposed && this.appliedRefreshRevision < this.refreshRevision) this.runRefreshPump()
+      if (!this.disposed && !this.refreshPaused && this.appliedRefreshRevision < this.refreshRevision)
+        this.runRefreshPump()
     })
   }
 

@@ -229,6 +229,10 @@ export function filterVisibleAgents(agents: Agent[]): { visible: Agent[]; defaul
   return { visible, defaultAgent }
 }
 
+export function excludeReservedAgents(agents: Agent[], reservedNames: ReadonlySet<string>): Agent[] {
+  return agents.filter((agent) => !reservedNames.has(agent.name))
+}
+
 /**
  * Shared interface for the subset of ChipMateProvider state needed by session-refresh helpers.
  * Extracted here so the logic can be tested without importing ChipMateProvider (and vscode).

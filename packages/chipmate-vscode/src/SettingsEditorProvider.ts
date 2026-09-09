@@ -3,6 +3,7 @@ import { ChipMateProvider } from "./ChipMateProvider"
 import { resolvePanelProjectDirectory } from "./project-directory"
 import type { ChipMateConnectionService } from "./services/cli-backend"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
+import { SettingsPanelReturnState, type SettingsReturnTarget } from "./settings-panel-return"
 
 type PanelView = "settings" | "profile" | "indexing"
 
@@ -27,7 +28,9 @@ export class SettingsEditorProvider implements vscode.Disposable {
   private panels = new Map<PanelView, vscode.WebviewPanel>()
   private providers = new Map<PanelView, ChipMateProvider>()
   private tabs = new Map<PanelView, string>()
+  private returns = new Map<PanelView, SettingsPanelReturnState>()
   private remoteService: RemoteStatusService | null = null
+  private disposing = false
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -53,8 +56,11 @@ export class SettingsEditorProvider implements vscode.Disposable {
     return view
   }
 
-  openPanel(view: PanelView, tab?: string): void {
+  openPanel(view: PanelView, tab?: string, returnTarget?: SettingsReturnTarget): void {
     if (tab) this.tabs.set(view, tab)
+    const returnState = this.returns.get(view) ?? new SettingsPanelReturnState()
+    returnState.setTarget(returnTarget)
+    this.returns.set(view, returnState)
 
     const projectDirectory = this.getProjectDirectory()
     const existing = this.panels.get(view)
@@ -64,7 +70,7 @@ export class SettingsEditorProvider implements vscode.Disposable {
         const provider = this.providers.get(view)
         provider?.postMessage({ type: "navigate", view, tab })
       }
-      existing.reveal(vscode.ViewColumn.One)
+      existing.reveal(existing.viewColumn ?? vscode.ViewColumn.Active, false)
       this.providers.get(view)?.postMessage({ type: "navigate", view, ...(tab ? { tab } : {}) })
       return
     }
@@ -72,7 +78,7 @@ export class SettingsEditorProvider implements vscode.Disposable {
     const panel = vscode.window.createWebviewPanel(
       `chipmate.v2.${view}Panel`,
       PANEL_TITLES[view],
-      vscode.ViewColumn.One,
+      vscode.ViewColumn.Active,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -94,6 +100,9 @@ export class SettingsEditorProvider implements vscode.Disposable {
   }
 
   private wirePanel(panel: vscode.WebviewPanel, view: PanelView, projectDirectory: string | null): void {
+    const returnState = this.returns.get(view) ?? new SettingsPanelReturnState()
+    returnState.setActive(panel.active)
+    this.returns.set(view, returnState)
     panel.iconPath = {
       light: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-light.svg"),
       dark: vscode.Uri.joinPath(this.extensionUri, "assets", "icons", "chipmate-dark.svg"),
@@ -112,8 +121,13 @@ export class SettingsEditorProvider implements vscode.Disposable {
     // Close the editor tab when the Settings header close button requests it.
     const closePanelDisposable = panel.webview.onDidReceiveMessage((msg) => {
       if (msg.type === "closePanel") {
+        returnState.requestClose()
         panel.dispose()
       }
+    })
+
+    const viewStateDisposable = panel.onDidChangeViewState((event) => {
+      returnState.setActive(event.webviewPanel.active)
     })
 
     // Navigate to the target view on every webviewReady (including after
@@ -141,12 +155,20 @@ export class SettingsEditorProvider implements vscode.Disposable {
     panel.onDidDispose(() => {
       console.log(`[ChipMate New] ${title} panel disposed`)
       closePanelDisposable.dispose()
+      viewStateDisposable.dispose()
       readyDisposable.dispose()
       tabDisposable.dispose()
       provider.dispose()
       this.panels.delete(view)
       this.providers.delete(view)
       this.tabs.delete(view)
+      this.returns.delete(view)
+      const target = returnState.consume(this.disposing)
+      if (target) {
+        void Promise.resolve(target.restore()).catch((error) =>
+          console.warn(`[ChipMate New] Failed to restore Settings origin ${target.id}:`, error),
+        )
+      }
     })
   }
 
@@ -159,11 +181,13 @@ export class SettingsEditorProvider implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.disposing = true
     for (const [, panel] of this.panels) {
       panel.dispose()
     }
     this.panels.clear()
     this.providers.clear()
     this.tabs.clear()
+    this.returns.clear()
   }
 }

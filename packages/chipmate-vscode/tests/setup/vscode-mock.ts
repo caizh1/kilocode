@@ -76,10 +76,12 @@ const mockVscode = {
     },
   },
   StatusBarAlignment: { Left: 1, Right: 2 },
+  ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
   ThemeColor: class {
     constructor(public id: string) {}
   },
   window: {
+    showOpenDialog: async () => undefined,
     activeTextEditor: undefined,
     state: { focused: true },
     onDidChangeWindowState: () => ({ dispose: noop }),
@@ -95,6 +97,8 @@ const mockVscode = {
     showWarningMessage: async () => undefined,
     showInputBox: async () => undefined,
     showSaveDialog: async () => undefined,
+    withProgress: async (_options: unknown, task: Function) =>
+      task({ report: noop }, { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: noop }) }),
     createTerminal: () => ({ show: noop, sendText: noop, dispose: noop }),
     registerTerminalProfileProvider: () => ({ dispose: noop }),
     createOutputChannel: () => ({

@@ -75,7 +75,6 @@ await check("PKG-01", "VSIX 包内运行时审计", async () => {
     "extension/dist/extension.js",
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
-    "extension/dist/agent-console.js",
     "extension/dist/diff-viewer.js",
     "extension/dist/diff-virtual.js",
   ]

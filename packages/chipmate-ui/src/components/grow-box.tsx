@@ -197,8 +197,10 @@ export function GrowBox(props: GrowBoxProps) {
   }
 
   const setInstant = (visible: boolean) => {
-    const next = visible ? targetHeight() : 0
-    springTarget = next
+    // 静态自适应内容交给 CSS 排版；逐条测量历史消息会强制反复布局。
+    const measured = visible && (props.autoHeight === false || watch())
+    const next = measured ? targetHeight() : 0
+    springTarget = visible && !measured ? -1 : next
     height.jump(next)
     root!.style.height = visible ? "" : "0px"
     root!.style.overflow = visible ? "" : "clip"

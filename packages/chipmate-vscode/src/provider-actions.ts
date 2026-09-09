@@ -5,10 +5,12 @@
 import type { Config, ChipMateClient } from "@chipmate/sdk/v2"
 import { validateProviderID as validateProviderIDShared } from "./shared/custom-provider"
 import {
+  providerOriginsDiffer,
   resolveCustomProviderAuth,
   sanitizeCustomProviderConfig,
   withCustomProviderDeletions,
 } from "./shared/custom-provider"
+import type { SanitizedProviderConfig } from "./shared/custom-provider"
 import { isCustomProviderPackage, CHIPMATE_PROVIDER_ID, parseModelString } from "./shared/provider-model"
 import { isInternalOfflineBuild } from "./shared/internal-offline"
 import { configFeatures } from "./features"
@@ -499,6 +501,25 @@ export async function disconnectProvider(
   }
 }
 
+async function changedOriginCredentialError(input: {
+  ctx: ActionContext
+  id: string
+  merged: Config
+  provider: SanitizedProviderConfig
+  apiKey: string | undefined
+  apiKeyChanged: boolean
+}) {
+  const effective = (input.merged.provider as Record<string, unknown> | undefined)?.[input.id]
+  const options = record(effective) && record(effective.options) ? effective.options : undefined
+  if (!providerOriginsDiffer(options?.baseURL, input.provider.options.baseURL)) return
+
+  const existingEnv = record(effective) && Array.isArray(effective.env) && effective.env.length > 0
+  const { authStates } = await fetchProviderData(input.ctx.client, input.ctx.workspaceDir)
+  if (!existingEnv && authStates[input.id] !== "api") return
+  if (input.apiKeyChanged && (input.apiKey?.trim() || input.provider.env?.length)) return
+  return "A new API key or environment credential is required when the provider URL origin changes"
+}
+
 export async function saveCustomProvider(
   ctx: ActionContext,
   requestId: string,
@@ -534,7 +555,23 @@ export async function saveCustomProvider(
   })
 
   try {
-    const globalConfig = (await ctx.client.global.config.get({ throwOnError: true })).data ?? {}
+    const [{ data: global }, { data: merged }] = await Promise.all([
+      ctx.client.global.config.get({ throwOnError: true }),
+      ctx.client.config.get({ directory: ctx.workspaceDir }, { throwOnError: true }),
+    ])
+    const globalConfig = global ?? {}
+    const credentialError = await changedOriginCredentialError({
+      ctx,
+      id,
+      merged: merged ?? {},
+      provider: normalized,
+      apiKey,
+      apiKeyChanged,
+    })
+    if (credentialError) {
+      postError(ctx, requestId, providerID, "connect", credentialError)
+      return
+    }
     const disabled = globalConfig.disabled_providers ?? []
     const nextDisabled = disabled.filter((item: string) => item !== id)
     const existing = (globalConfig.provider as Record<string, unknown> | undefined)?.[id]

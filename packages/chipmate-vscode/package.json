@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "1.1.0",
+  "version": "1.2.19",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -153,11 +153,6 @@
         "icon": "$(organization)"
       },
       {
-        "command": "chipmate.v2.sidebarTitle.agentTerminalOpen",
-        "title": "Agent Console",
-        "icon": "$(terminal)"
-      },
-      {
         "command": "chipmate.v2.sidebarTitle.chipmateClawOpen",
         "title": "ChipMateClaw",
         "icon": "$(comment-discussion)"
@@ -184,11 +179,57 @@
       },
       {
         "command": "chipmate.v2.openInTab",
-        "title": "ChipMate",
-        "icon": {
-          "light": "assets/icons/chipmate-light.svg",
-          "dark": "assets/icons/chipmate-dark.svg"
-        }
+        "title": "在主编辑区打开当前会话",
+        "category": "ChipMate",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "chipmate.v2.returnToSidebar",
+        "title": "收回侧栏",
+        "category": "ChipMate",
+        "icon": "$(layout-sidebar-left)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.scan",
+        "title": "Patent Radar：扫描当前工作区",
+        "category": "ChipMate",
+        "icon": "$(target)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.scanModule",
+        "title": "Patent Radar：扫描此模块",
+        "category": "ChipMate",
+        "icon": "$(symbol-module)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.manageModules",
+        "title": "Patent Radar：管理已保存模块",
+        "category": "ChipMate",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.open",
+        "title": "Patent Radar：查看候选",
+        "category": "ChipMate",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.research",
+        "title": "Patent Radar：重新检索",
+        "category": "ChipMate",
+        "icon": "$(search)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.export",
+        "title": "Patent Radar：导出证据包",
+        "category": "ChipMate",
+        "icon": "$(export)"
+      },
+      {
+        "command": "chipmate.v2.patentRadar.importReviews",
+        "title": "Patent Radar：导入盲审结果",
+        "category": "ChipMate",
+        "icon": "$(repo-pull)"
       },
       {
         "command": "chipmate.v2.showChanges",
@@ -254,12 +295,6 @@
         "command": "chipmate.v2.documents.exportDiagnostics",
         "title": "ChipMate: Export Document Artifact Diagnostics",
         "category": "ChipMate"
-      },
-      {
-        "command": "chipmate.v2.agentTerminal.open",
-        "title": "ChipMate: Open Agent Console",
-        "category": "ChipMate",
-        "icon": "$(terminal)"
       },
       {
         "command": "chipmate.v2.agentManager.previousSession",
@@ -437,6 +472,60 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "chipmate.v2.generateCommentsForCurrentCodeTarget",
+        "title": "为当前源码目标生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.migrateLocalChatHistory",
+        "title": "扫描并迁移旧聊天记录",
+        "category": "ChipMate",
+        "icon": "$(history)"
+      },
+      {
+        "command": "chipmate.v2.restoreChatHistoryBackup",
+        "title": "从聊天记录备份安全恢复",
+        "category": "ChipMate",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "chipmate.v2.openChatHistoryBackupFolder",
+        "title": "打开聊天记录备份目录",
+        "category": "ChipMate",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "chipmate.v2.retryDeepSeekHarnessRuntime",
+        "title": "重新下载 DeepSeek Harness 运行时",
+        "category": "ChipMate",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "chipmate.v2.generateCommentsForSelectedCodeTargets",
+        "title": "为选中源码目标生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "chipmate.v2.generateCommentsForCurrentFileHeader",
+        "title": "为当前文件生成或修订模块说明",
+        "category": "ChipMate",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "chipmate.v2.generateCommentsForCurrentFile",
+        "title": "为当前文件补充高可信注释",
+        "category": "ChipMate",
+        "icon": "$(files)"
+      },
+      {
+        "command": "chipmate.v2.generateCommentsForSelectedLogicBlock",
+        "title": "为选中逻辑块生成高可信注释",
+        "category": "ChipMate",
+        "icon": "$(symbol-event)"
+      },
+      {
         "command": "chipmate.v2.applyCodeCommentPreview",
         "title": "应用注释",
         "category": "ChipMate",
@@ -521,6 +610,14 @@
       {
         "command": "chipmate.v2.showUpdateLog",
         "title": "ChipMate: 显示更新日志"
+      },
+      {
+        "command": "chipmate.v2.diagnostics.submit",
+        "title": "ChipMate: 提交诊断"
+      },
+      {
+        "command": "chipmate.v2.diagnostics.export",
+        "title": "ChipMate: 保存日志包"
       }
     ],
     "submenus": [
@@ -553,10 +650,6 @@
         },
         {
           "command": "chipmate.v2.sidebarTitle.agentManagerOpen",
-          "when": "false"
-        },
-        {
-          "command": "chipmate.v2.sidebarTitle.agentTerminalOpen",
           "when": "false"
         },
         {
@@ -605,27 +698,27 @@
           "when": "view == chipmate.v2.SidebarProvider"
         },
         {
-          "command": "chipmate.v2.sidebarTitle.agentTerminalOpen",
-          "group": "navigation@3",
-          "when": "view == chipmate.v2.SidebarProvider"
-        },
-        {
           "command": "chipmate.v2.sidebarTitle.chipmateClawOpen",
-          "group": "navigation@4",
+          "group": "navigation@3",
           "when": "view == chipmate.v2.SidebarProvider && !chipmate.v2.internalOffline"
         },
         {
           "command": "chipmate.v2.sidebarTitle.marketplaceButtonClicked",
-          "group": "navigation@5",
+          "group": "navigation@4",
           "when": "view == chipmate.v2.SidebarProvider"
         },
         {
           "command": "chipmate.v2.sidebarTitle.profileButtonClicked",
-          "group": "navigation@6",
+          "group": "navigation@5",
           "when": "view == chipmate.v2.SidebarProvider && !chipmate.v2.internalOffline"
         },
         {
           "command": "chipmate.v2.sidebarTitle.settingsButtonClicked",
+          "group": "navigation@6",
+          "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.openInTab",
           "group": "navigation@7",
           "when": "view == chipmate.v2.SidebarProvider"
         }
@@ -656,11 +749,6 @@
           "when": "isInDiffEditor && resourceScheme == chipmate-code-comment-preview && chipmate.v2.codeComments.previewPending"
         },
         {
-          "command": "chipmate.v2.openInTab",
-          "group": "navigation",
-          "when": "true"
-        },
-        {
           "command": "chipmate.v2.plusButtonClicked",
           "group": "navigation@0",
           "when": "activeWebviewPanelId == chipmate.v2.TabPanel"
@@ -689,20 +777,35 @@
       ],
       "explorer/context": [
         {
+          "command": "chipmate.v2.patentRadar.scanModule",
+          "group": "2_workspace@40",
+          "when": "resourceScheme == file"
+        },
+        {
           "command": "chipmate.v2.addExplorerPathsToQa",
           "group": "2_workspace@50"
         }
       ],
       "chipmate.v2.editorContextMenu": [
         {
-          "command": "chipmate.v2.generateCommentsForCurrentFunction",
+          "command": "chipmate.v2.generateCommentsForCurrentCodeTarget",
           "group": "1_actions@0",
           "when": "(resourceLangId == c || resourceLangId == cpp) && !editorHasSelection"
         },
         {
-          "command": "chipmate.v2.generateCommentsForSelectedFunctions",
+          "command": "chipmate.v2.generateCommentsForSelectedCodeTargets",
           "group": "1_actions@0",
           "when": "(resourceLangId == c || resourceLangId == cpp) && editorHasSelection"
+        },
+        {
+          "command": "chipmate.v2.generateCommentsForCurrentFileHeader",
+          "group": "1_actions@0.1",
+          "when": "(resourceLangId == c || resourceLangId == cpp) && !editorHasSelection"
+        },
+        {
+          "command": "chipmate.v2.generateCommentsForCurrentFile",
+          "group": "1_actions@0.2",
+          "when": "(resourceLangId == c || resourceLangId == cpp) && !editorHasSelection"
         },
         {
           "command": "chipmate.v2.explainCode",
@@ -1128,7 +1231,8 @@
         "chipmate.v2.updateCheck.codeCliPath": {
           "type": "string",
           "default": "code",
-          "description": "VS Code CLI used to install ChipMate updates. On Windows, the default value \"code\" uses the CLI bundled with the current VS Code instance instead of PATH. Absolute .exe, .cmd, and .bat paths remain supported."
+          "description": "旧版更新 CLI 路径；当前更新安装由 VS Code 当前窗口和配置文件管理。",
+          "deprecationMessage": "此设置已弃用且不再用于自动更新；无需修改或删除原有配置。"
         },
         "chipmate.v2.updateCheck.maxDownloadBytes": {
           "type": "number",
@@ -1199,6 +1303,49 @@
           "type": "string",
           "default": "http://127.0.0.1:6001",
           "description": "Unified remote ChipMate Server address used by the skill market and document rendering services. Configure this profile-wide value from the extension settings."
+        },
+        "chipmate.v2.patentRadar.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用 Patent Radar 周期补跑。手动扫描命令不受此开关限制。"
+        },
+        "chipmate.v2.patentRadar.serverBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "独立内网 Patent Server 的 HTTP 或 HTTPS 地址；HTTP 仅用于受控内网。源码和本地证据不会上传到该服务。"
+        },
+        "chipmate.v2.patentRadar.scheduleDays": {
+          "type": "number",
+          "default": 7,
+          "minimum": 1,
+          "description": "VS Code 打开工作区时补跑 Patent Radar 的最小间隔天数。"
+        },
+        "chipmate.v2.patentRadar.analysisModel": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "providerID": {
+              "type": "string"
+            },
+            "modelID": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "providerID",
+            "modelID"
+          ],
+          "additionalProperties": false,
+          "default": null,
+          "scope": "resource",
+          "description": "Patent Radar 使用的已连接 Provider 模型。在 ChipMate 设置的专利中心中选择，修改后需重新扫描。"
+        },
+        "chipmate.v2.patentRadar.uploadFullSnapshot": {
+          "type": "boolean",
+          "default": false,
+          "description": "保留的项目级显式开关。首版 Patent Server 不提供源码上传接口，因此开启后仍不会上传完整源码快照。"
         },
         "chipmate.v2.autocomplete.model": {
           "type": "string",
@@ -1452,6 +1599,36 @@
           "minimum": 0,
           "description": "Show a non-blocking alert when a session exceeds this USD amount. Use whole dollars; set to 0 to disable."
         },
+        "chipmate.v2.appearance.skin": {
+          "type": "string",
+          "scope": "application",
+          "enum": [
+            "default",
+            "night-city"
+          ],
+          "enumDescriptions": [
+            "使用现有插件皮肤。",
+            "使用固定深色的未来风皮肤。"
+          ],
+          "default": "default",
+          "description": "选择 ChipMate 自绘页面的皮肤。"
+        },
+        "chipmate.v2.appearance.motion": {
+          "type": "string",
+          "scope": "application",
+          "enum": [
+            "off",
+            "subtle",
+            "immersive"
+          ],
+          "enumDescriptions": [
+            "关闭装饰动画。",
+            "保留柔和的交互反馈。",
+            "启用边缘流光和状态脉冲。"
+          ],
+          "default": "immersive",
+          "description": "未来风皮肤的装饰动效强度，遵循 VS Code 减少动态效果设置。"
+        },
         "chipmate.v2.fontSize": {
           "type": "number",
           "default": 13,
@@ -1540,8 +1717,8 @@
         },
         "chipmate.v2.showTokenThroughput": {
           "type": "boolean",
-          "default": false,
-          "description": "Show text-generation tokens-per-second values on assistant messages."
+          "default": true,
+          "description": "Show decode speed and time to first token for the latest completed response."
         },
         "chipmate.v2.chat.shiftTabCyclesVariant": {
           "type": "boolean",
@@ -1581,6 +1758,7 @@
     }
   },
   "scripts": {
+    "package:dsh-runtimes": "bun script/package-dsh-runtimes.ts",
     "prepare:cli-binary": "bun script/local-bin.ts",
     "compile": "bun run prepare:cli-binary -- --force && bun run rebuild-sdk && bun run typecheck && bun run lint && node esbuild.js",
     "watch": "bun run rebuild-sdk && bun run --parallel watch:esbuild watch:tsc",
@@ -1599,8 +1777,6 @@
     "benchmark:low-end:webview": "node qa/low-end/run-webview.mjs",
     "benchmark:low-end:installed": "node qa/low-end/run-installed.mjs",
     "test:low-end:contract": "node --test qa/low-end/contract.test.mjs",
-    "qa:agent-console:render-proxy": "node qa/agent-console-render/run.mjs",
-    "test:agent-console:render-contract": "node --test qa/agent-console-render/contract.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip",
@@ -1640,6 +1816,8 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/qrcode": "^1.5.6",
+    "@types/react": "18.3.1",
+    "@types/react-dom": "18.3.0",
     "@types/ws": "8.18.1",
     "@types/yazl": "^2.4.5",
     "@types/yauzl": "^3.4.0",
@@ -1665,6 +1843,18 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-modules": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-schema-form": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-attachment": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-web": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-web-react": "0.1.0-rc.6",
     "@chipmate/skill-spec": "workspace:*",
     "@kobalte/core": "catalog:",
     "fuzzysort": "3.1.0",
@@ -1694,6 +1884,8 @@
     "marked": "catalog:",
     "openai": "^4.85.4",
     "quick-lru": "^7.0.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
     "simple-git": "3.36.0",
     "solid-js": "^1.9.11",
     "uri-js": "^4.4.1",

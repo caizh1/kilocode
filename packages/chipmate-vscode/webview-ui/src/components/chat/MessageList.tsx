@@ -36,7 +36,6 @@ import type { ErrorDisplayProps } from "./ErrorDisplay"
 import { RevertBanner } from "./RevertBanner"
 import { AccountSwitcher } from "../shared/AccountSwitcher"
 import { ChipMateNotifications } from "./ChipMateNotifications"
-import { WorkingIndicator } from "../shared/WorkingIndicator"
 import { TurnOutcome } from "../shared/TurnOutcome"
 import { QuestionDock } from "./QuestionDock"
 import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
@@ -74,6 +73,7 @@ import {
 import { onTimelineHighlight, type TimelineHighlight } from "../../utils/timeline/highlight"
 import { useTranscriptSearch, type SearchMatch } from "../../context/transcript-search"
 import { applyTranscriptHighlights, clearTranscriptHighlights } from "./transcript-search-highlight"
+import type { UserInputJumpRequest } from "./conversation-navigation"
 import {
   isUnauthorizedPaidModelError,
   isUnauthorizedPromotionLimitError,
@@ -87,6 +87,7 @@ interface MessageListProps {
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
   onForkMessage?: (sessionId: string, messageId: string) => void
+  forkState?: { sessionID: string; afterMessageID?: string; state: "pending" | "slow" }
   /** Non-tool question requests to render inline at the bottom of the message list */
   questions?: () => QuestionRequest[]
   /** Non-tool suggestion requests to render inline at the bottom of the message list */
@@ -187,6 +188,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
       turns(),
       (msg) => session.getParts(msg),
       {
+        turnChanges: true,
         queued: queuedIDs(),
         live: new Set(active ? [active] : []),
         hidden: session.isErrorHidden,
@@ -195,6 +197,13 @@ export const MessageList: Component<MessageListProps> = (props) => {
       },
       prev,
     )
+  })
+  const suppressTurnOutcome = createMemo(() => {
+    const current = rows()
+    const latest = current.at(-1)
+    const compaction = current.findLast((row) => row.type === "compaction")
+    if (!latest || !compaction || latest.turn !== compaction.turn) return false
+    return compaction.status.state !== "running"
   })
 
   const search = useTranscriptSearch()
@@ -220,6 +229,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
   function rowText(row: TranscriptRow): { text: string; ranges: RowTextRange[] } {
     if (row.type === "error") return { text: errorText(row.error), ranges: [] }
     if (row.type === "diff") return { text: "", ranges: [] }
+    if (row.type === "compaction") return { text: "", ranges: [] }
     // User message text is rendered by UserMessageDisplay/HighlightedText
     // (message-part.tsx), which never parses markdown at all — [label](url)
     // always shows literally, brackets and all, unlike assistant text/
@@ -747,8 +757,13 @@ export const MessageList: Component<MessageListProps> = (props) => {
     return result
   })
 
+  let searchFirstRowKey: string | undefined
   createEffect(
     on(matches, (m) => {
+      const firstRowKey = rows()[0]?.key
+      const prepended =
+        searchFirstRowKey !== undefined && firstRowKey !== undefined && firstRowKey !== searchFirstRowKey
+      searchFirstRowKey = firstRowKey
       search.setCount(m.length)
       if (m.length === 0) {
         search.setIndex(0)
@@ -756,6 +771,12 @@ export const MessageList: Component<MessageListProps> = (props) => {
       }
       const idx = search.index()
       if (idx >= m.length) search.setIndex(m.length - 1)
+      // Loading older pages changes the first row while a full-history search
+      // is active. Re-issue the jump so Virtua follows the same logical match
+      // after that prepend instead of preserving the now-stale scroll offset
+      // of the previously loaded suffix. Appended/streamed rows leave the
+      // first key unchanged and therefore never pull the reader away.
+      if (search.active() && search.query() && prepended) search.requestJump()
     }),
   )
 
@@ -829,6 +850,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
   let highlightFrame: number | undefined
   let highlightFrameInner: number | undefined
   let pendingCenter = false
+  let pendingCenterRetries = 0
   const paintHighlights = () => {
     const el = scrollEl()
     if (!el || !search.active()) {
@@ -843,8 +865,17 @@ export const MessageList: Component<MessageListProps> = (props) => {
       matchedPartsByRow(),
     )
     if (!pendingCenter) return
+    if (!range) {
+      if (pendingCenterRetries > 0) {
+        pendingCenterRetries -= 1
+        scheduleHighlight()
+        return
+      }
+      pendingCenter = false
+      return
+    }
     pendingCenter = false
-    if (!range) return
+    pendingCenterRetries = 0
     // Only nudge the scroll position when the match isn't already
     // comfortably placed — re-centering on every single step (even when
     // the match is already visible) reads as constant, distracting jumping
@@ -900,6 +931,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
         if (!match) return
         autoScroll.pause()
         pendingCenter = true
+        pendingCenterRetries = 4
         const el = scrollEl()
         const mounted = el?.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(match.key)}"]`)
         // Only force the coarse row-level scroll when the row isn't in the
@@ -910,6 +942,17 @@ export const MessageList: Component<MessageListProps> = (props) => {
           const index = keys().indexOf(match.key)
           if (index >= 0) {
             virtualizer()?.scrollToIndex(index, { align: "center" })
+          }
+        } else if (el) {
+          // The non-virtual direct suffix is mounted even while it is far
+          // outside the viewport. Portal-based search controls no longer
+          // trigger a surrounding layout pass that happened to bring that
+          // suffix into view, so give an entirely offscreen row one coarse
+          // centering step before the precise occurrence highlighter runs.
+          const rowBox = mounted.getBoundingClientRect()
+          const listBox = el.getBoundingClientRect()
+          if (rowBox.bottom < listBox.top || rowBox.top > listBox.bottom) {
+            mounted.scrollIntoView({ block: "center", inline: "nearest" })
           }
         }
         scheduleHighlight()
@@ -944,8 +987,53 @@ export const MessageList: Component<MessageListProps> = (props) => {
   const virtual = createMemo((prev: TranscriptRow[] | undefined) => stabilize(partition().virtual, prev))
   const tail = createMemo(() => partition().direct.map((row) => row.key))
   const lookup = createMemo(() => new Map(partition().direct.map((row) => [row.key, row])))
-  const keys = createMemo((prev: string[] | undefined) => stabilize(virtual().map((row) => row.key), prev))
+  const keys = createMemo((prev: string[] | undefined) =>
+    stabilize(
+      virtual().map((row) => row.key),
+      prev,
+    ),
+  )
   const fingerprint = createMemo(() => rowFingerprint(keys()))
+
+  const [navigationTarget, setNavigationTarget] = createSignal<string>()
+  let navigationFrame: number | undefined
+  let navigationTimer: number | undefined
+
+  const focusNavigationTarget = (key: string, attempts = 4) => {
+    if (navigationTarget() !== key) return
+    const target = scrollEl()?.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`)
+    target?.focus({ preventScroll: true })
+    if (attempts <= 0) return
+    navigationFrame = requestAnimationFrame(() => focusNavigationTarget(key, attempts - 1))
+  }
+
+  const onNavigateToUserInput = (event: Event) => {
+    const detail = (event as CustomEvent<UserInputJumpRequest>).detail
+    if (!detail?.messageID) return
+    const row = rows().find((candidate) => candidate.type === "user" && candidate.message.id === detail.messageID)
+    if (!row) return
+
+    autoScroll.pause()
+    setNavigationTarget(row.key)
+    if (navigationFrame !== undefined) cancelAnimationFrame(navigationFrame)
+    if (navigationTimer !== undefined) window.clearTimeout(navigationTimer)
+
+    const index = keys().indexOf(row.key)
+    if (index >= 0) virtualizer()?.scrollToIndex(index, { align: "center" })
+    else {
+      scrollEl()
+        ?.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(row.key)}"]`)
+        ?.scrollIntoView({ block: "center" })
+    }
+    navigationFrame = requestAnimationFrame(() => focusNavigationTarget(row.key))
+    navigationTimer = window.setTimeout(() => setNavigationTarget(undefined), 1_800)
+  }
+  window.addEventListener("navigateToUserInput", onNavigateToUserInput)
+  onCleanup(() => {
+    window.removeEventListener("navigateToUserInput", onNavigateToUserInput)
+    if (navigationFrame !== undefined) cancelAnimationFrame(navigationFrame)
+    if (navigationTimer !== undefined) window.clearTimeout(navigationTimer)
+  })
 
   // Clicking a bar in the task timeline scrolls the transcript to that message.
   // Jumps land instantly (no smooth animation): while pinned at the bottom, a
@@ -1186,8 +1274,11 @@ export const MessageList: Component<MessageListProps> = (props) => {
                         row={row}
                         index={index()}
                         onForkMessage={props.onForkMessage}
+                        forkState={props.forkState}
+                        readonly={props.readonly}
                         highlight={highlight}
                         activeSearch={activeKey() === row.key}
+                        activeNavigation={navigationTarget() === row.key}
                         activeSearchPartID={activeKey() === row.key ? activeMatch()?.partId : undefined}
                         activeSearchPartFile={activeKey() === row.key ? activeMatch()?.partFile : undefined}
                       />
@@ -1199,8 +1290,11 @@ export const MessageList: Component<MessageListProps> = (props) => {
                     <TranscriptRowView
                       row={lookup().get(key)!}
                       onForkMessage={props.onForkMessage}
+                      forkState={props.forkState}
+                      readonly={props.readonly}
                       highlight={highlight}
                       activeSearch={activeKey() === key}
+                      activeNavigation={navigationTarget() === key}
                       activeSearchPartID={activeKey() === key ? activeMatch()?.partId : undefined}
                       activeSearchPartFile={activeKey() === key ? activeMatch()?.partFile : undefined}
                     />
@@ -1216,13 +1310,13 @@ export const MessageList: Component<MessageListProps> = (props) => {
                 <TranscriptRowView
                   row={row}
                   activeSearch={activeKey() === row.key}
+                  activeNavigation={navigationTarget() === row.key}
                   activeSearchPartID={activeKey() === row.key ? activeMatch()?.partId : undefined}
                   activeSearchPartFile={activeKey() === row.key ? activeMatch()?.partFile : undefined}
                 />
               )}
             </For>
-            <WorkingIndicator />
-            <TurnOutcome />
+            <TurnOutcome hidden={suppressTurnOutcome()} />
             <For each={props.questions?.()}>{(req) => <QuestionDock request={req} />}</For>
             <For each={props.suggestions?.()}>{(req) => <SuggestBar request={req} />}</For>
           </Show>

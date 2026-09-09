@@ -985,12 +985,49 @@
   font-weight: var(--font-weight-normal);
 }
 
+.prompt-status-button {
+  --prompt-status-success: var(--vscode-testing-iconPassed, var(--titanium-success, #73c991));
+}
+
+.prompt-status-icon-stack {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.prompt-status-icon-stack > * {
+  grid-area: 1 / 1;
+}
+
+.prompt-status-indicator {
+  align-self: end;
+  justify-self: end;
+  width: 5px;
+  height: 5px;
+  visibility: hidden;
+  border-radius: 999px;
+  background: var(--prompt-status-success);
+  box-shadow: 0 0 0 1px var(--surface-base, var(--vscode-editor-background));
+}
+
 .prompt-status-button--active {
-  color: var(--vscode-testing-iconPassed, #73c991);
+  color: var(--prompt-status-success);
 
   [data-slot="icon-svg"] {
     color: currentColor !important;
   }
+}
+
+.prompt-status-button--active .prompt-status-icon-stack,
+.prompt-status-button--active .prompt-status-icon-stack [data-component="icon"],
+.prompt-status-button--active .prompt-status-icon-stack [data-slot="icon-svg"] {
+  color: var(--prompt-status-success) !important;
+}
+
+.prompt-status-button--active .prompt-status-indicator {
+  visibility: visible;
 }
 
 .prompt-speech-button--recording {

@@ -1304,6 +1304,8 @@ export const AgentManagerContent: Component = () => {
         session.selectSession(ev.sessionId)
       }
 
+      handleForkState(msg)
+
       if (msg.type === "agentManager.keybindings") {
         const ev = msg as AgentManagerKeybindingsMessage
         setKb(ev.bindings)
@@ -1963,9 +1965,25 @@ export const AgentManagerContent: Component = () => {
       vscode.postMessage({ type: "agentManager.addSessionToWorktree", worktreeId: sel })
     }
   }
+  const [forkState, setForkState] = createSignal<{
+    sessionID: string
+    afterMessageID?: string
+    state: "pending" | "slow"
+  }>()
+  const handleForkState = (message: ExtensionMessage) => {
+    if (message.type !== "sessionForkState") return
+    if (message.state !== "pending" && message.state !== "slow") return setForkState(undefined)
+    setForkState({ sessionID: message.sessionID, afterMessageID: message.afterMessageID, state: message.state })
+  }
   const handleForkSession = (sessionId: string, messageId?: string) => {
+    if (forkState()?.sessionID === sessionId) return
+    setForkState({ sessionID: sessionId, afterMessageID: messageId, state: "pending" })
     const sel = selection()
-    const msg = { type: "agentManager.forkSession" as const, sessionId, ...(messageId ? { messageId } : {}) }
+    const msg = {
+      type: "agentManager.forkSession" as const,
+      sessionId,
+      ...(messageId ? { afterMessageId: messageId } : {}),
+    }
     if (!sel || sel === LOCAL) return vscode.postMessage(msg)
     vscode.postMessage({ ...msg, worktreeId: sel })
   }
@@ -2930,7 +2948,8 @@ export const AgentManagerContent: Component = () => {
                       openLocally(id)
                     }}
                     onShowHistory={() => setHistory(true)}
-                    onForkMessage={readOnly() ? undefined : handleForkSession}
+                    onForkMessage={handleForkSession}
+                    forkState={forkState()}
                     onForkSession={readOnly() ? undefined : handleForkSession}
                     readonly={readOnly()}
                     continueInWorktree={selection() === LOCAL}

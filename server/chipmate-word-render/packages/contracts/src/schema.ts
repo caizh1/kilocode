@@ -52,6 +52,17 @@ export const MARKET_ERROR_CODES = [
   "HASH_MISMATCH",
   "ARCHIVE_UNSAFE",
   "RATE_LIMITED",
+  "AUTH_NOT_CONFIGURED",
+  "AUTHORIZATION_PENDING",
+  "SLOW_DOWN",
+  "DEVICE_CODE_INVALID",
+  "DEVICE_CODE_EXPIRED",
+  "ADMIN_REQUIRED",
+  "LAST_ADMIN_REQUIRED",
+  "IDENTITY_CHANGED",
+  "ADMIN_TARGET_INVALID",
+  "LDAP_CONFIG_INVALID",
+  "LDAP_UNAVAILABLE",
   "MARKET_UNAVAILABLE",
   "INTERNAL_ERROR",
 ] as const
@@ -116,6 +127,7 @@ export const MarketCapabilitiesSchema = Type.Object(
   {
     mode: literals(["aligned-v1", "legacy"] as const),
     apiVersion: Type.String({ minLength: 1 }),
+    diagnostics: Type.Optional(Type.Object({ enabled: Type.Boolean(), schemaVersion: Type.Integer(), maxBytes: Type.Integer(), retentionDays: Type.Integer() })),
     catalogVersion: Type.String({ minLength: 1 }),
     skillSpecVersion: Type.Optional(Type.String({ minLength: 1 })),
     features: Type.Object(
@@ -146,6 +158,8 @@ export const MarketUserSchema = Type.Object(
     displayName: Type.String({ minLength: 1, maxLength: 128 }),
     firstSeenAt: dt,
     lastSeenAt: dt,
+    isAdmin: Type.Optional(Type.Boolean()),
+    authSource: Type.Optional(Type.Literal("ldap")),
   },
   { $id: "MarketUser", additionalProperties: false },
 )

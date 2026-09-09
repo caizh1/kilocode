@@ -18,6 +18,7 @@ function ctx(overrides: Partial<ForkContext> = {}): ForkContext {
     forked: () => undefined,
     status: () => "idle",
     directory: () => "/repo",
+    ownerID: "test",
     ...overrides,
   }
 }

@@ -8,7 +8,7 @@ export function buildThroughputSettingMessage() {
   const config = vscode.workspace.getConfiguration(CONFIG)
   return {
     type: "throughputSettingLoaded" as const,
-    visible: config.get<boolean>("showTokenThroughput", false),
+    visible: config.get<boolean>("showTokenThroughput", true),
   }
 }
 

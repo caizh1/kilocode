@@ -1,3 +1,4 @@
+import "../appearance"
 /* @refresh reload */
 import "@chipmate/chipmate-ui/styles"
 import "@vscode/codicons/dist/codicon.css"

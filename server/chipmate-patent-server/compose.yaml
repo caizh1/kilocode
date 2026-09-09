@@ -1,0 +1,96 @@
+name: chipmate-patent
+
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: patent
+      POSTGRES_USER: patent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中配置 POSTGRES_PASSWORD}
+    volumes:
+      - ${PATENT_DATA_ROOT_HOST:-/srv/chipmate-patent}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U patent -d patent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [patent-internal]
+
+  opensearch:
+    image: opensearchproject/opensearch:3.8.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms4g -Xmx4g}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ${PATENT_DATA_ROOT_HOST:-/srv/chipmate-patent}/opensearch:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+    networks: [patent-internal]
+
+  patent-api:
+    image: chipmate-patent-server:0.1.2
+    build: .
+    restart: unless-stopped
+    environment: &patent-environment
+      PATENT_DATABASE_URL: postgresql://patent:${POSTGRES_PASSWORD}@postgres:5432/patent
+      PATENT_OPENSEARCH_URL: http://opensearch:9200
+      PATENT_DATA_ROOT: /srv/chipmate-patent
+      PATENT_PORT: "6020"
+      PATENT_ALLOWED_CIDRS: ${PATENT_ALLOWED_CIDRS:-127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      PATENT_SEARCH_MAX_CONCURRENCY: ${PATENT_SEARCH_MAX_CONCURRENCY:-8}
+      PATENT_JURISDICTIONS: ${PATENT_JURISDICTIONS:-CN,JP,KR,US,EP,RU}
+      PATENT_ALLOW_INCOMPLETE_CORPUS_SEARCH: ${PATENT_ALLOW_INCOMPLETE_CORPUS_SEARCH:-0}
+      PATENT_EMBEDDING_ENDPOINT: ${PATENT_EMBEDDING_ENDPOINT:-}
+      PATENT_EMBEDDING_API_KEY: ${PATENT_EMBEDDING_API_KEY:-}
+      PATENT_EMBEDDING_MODEL: ${PATENT_EMBEDDING_MODEL:-qwen3-embedding-8b}
+      PATENT_RERANK_MODE: "off"
+    ports:
+      - ${PATENT_BIND_ADDRESS:-127.0.0.1}:${PATENT_PORT:-6020}:6020
+    depends_on:
+      postgres: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [patent-internal, patent-egress]
+
+  patent-ingest:
+    image: chipmate-patent-server:0.1.2
+    restart: unless-stopped
+    command: ["node", "dist/src/cli.js", "watch"]
+    environment:
+      <<: *patent-environment
+      PATENT_DROP_SCAN_MS: ${PATENT_DROP_SCAN_MS:-30000}
+    volumes:
+      - ${PATENT_DATA_ROOT_HOST:-/srv/chipmate-patent}:/srv/chipmate-patent
+    depends_on:
+      postgres: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [patent-internal, patent-egress]
+
+networks:
+  patent-internal:
+    internal: true
+  patent-egress:
+    driver: bridge

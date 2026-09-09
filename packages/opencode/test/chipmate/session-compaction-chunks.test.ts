@@ -1,25 +1,21 @@
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test"
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Deferred, Effect, Fiber, Layer, ManagedRuntime } from "effect"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import * as Stream from "effect/Stream"
 import { LLMEvent, type LLMEvent as Event } from "@opencode-ai/llm"
-import { Database } from "@opencode-ai/core/database/database"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
 import { Config } from "../../src/config/config"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
-import { EventV2Bridge } from "../../src/event-v2-bridge"
-import { Image } from "../../src/image/image"
-import { Permission } from "../../src/permission"
-import { Plugin } from "../../src/plugin"
 import { disposeTestRuntime, provideTestInstance } from "../fixture/fixture"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
-import { Snapshot } from "../../src/snapshot"
 import { ChipMateCompactionChunks } from "../../src/chipmate/session/compaction-chunks"
+import { ChipMateCompactionStatus } from "../../src/chipmate/session/compaction-status"
 import { ChipMateSessionCompaction } from "../../src/chipmate/session/compaction"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -30,15 +26,16 @@ import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { Session as SessionNs } from "../../src/session/session"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
-import { SyncEvent } from "../../src/sync"
 import { ProviderTest } from "../fake/provider"
 import { tmpdir } from "../fixture/fixture"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { AppRuntime } from "../../src/effect/app-runtime"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { makeRuntime } from "../../src/effect/run-service"
 import { remove as cleanup } from "./cleanup"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Provider } from "../../src/provider/provider"
+import { Token } from "../../src/util/token"
 
 const providerID = ProviderV2.ID.make("test")
 const modelID = ModelV2.ID.make("test-model")
@@ -93,13 +90,13 @@ const summary = Layer.succeed(
   }),
 )
 
-async function user(sessionID: SessionID, text: string) {
+async function user(sessionID: SessionID, text: string, variant?: string) {
   const msg = await svc.updateMessage({
     id: MessageID.ascending(),
     role: "user",
     sessionID,
     agent: "build",
-    model: ref,
+    model: { ...ref, variant },
     time: { created: Date.now() },
   })
   await svc.updatePart({
@@ -173,10 +170,91 @@ function reply(text: string, capture?: (input: LLM.StreamInput) => void) {
   }
 }
 
-function fakeRuntime(outputTokenMax?: number, error?: MessageV2.Assistant["error"], empty = false) {
+function lengthReply(text: string, capture?: (input: LLM.StreamInput) => void) {
+  return (input: LLM.StreamInput) => {
+    capture?.(input)
+    const usage = { inputTokens: 1, outputTokens: 1_000, totalTokens: 1_001 }
+    return Stream.make(
+      LLMEvent.reasoningStart({ id: "reasoning-0" }),
+      LLMEvent.reasoningDelta({ id: "reasoning-0", text: "内部推理".repeat(1_700) }),
+      LLMEvent.reasoningEnd({ id: "reasoning-0" }),
+      LLMEvent.textStart({ id: "txt-0" }),
+      LLMEvent.textDelta({ id: "txt-0", text }),
+      LLMEvent.textEnd({ id: "txt-0" }),
+      LLMEvent.stepFinish({ index: 0, reason: "length", usage }),
+      LLMEvent.finish({ reason: "length", usage }),
+    )
+  }
+}
+
+function lengthTextReply(text: string, capture?: (input: LLM.StreamInput) => void) {
+  return (input: LLM.StreamInput) => {
+    capture?.(input)
+    const usage = { inputTokens: 1, outputTokens: 1_000, totalTokens: 1_001 }
+    return Stream.make(
+      LLMEvent.textStart({ id: "txt-0" }),
+      LLMEvent.textDelta({ id: "txt-0", text }),
+      LLMEvent.textEnd({ id: "txt-0" }),
+      LLMEvent.stepFinish({ index: 0, reason: "length", usage }),
+      LLMEvent.finish({ reason: "length", usage }),
+    )
+  }
+}
+
+function emptyStopReply(capture?: (input: LLM.StreamInput) => void) {
+  return (input: LLM.StreamInput) => {
+    capture?.(input)
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+    return Stream.make(
+      LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
+      LLMEvent.finish({ reason: "stop", usage }),
+    )
+  }
+}
+
+function reasoningStopReply(capture?: (input: LLM.StreamInput) => void) {
+  return (input: LLM.StreamInput) => {
+    capture?.(input)
+    const usage = { inputTokens: 1, outputTokens: 379, totalTokens: 380 }
+    return Stream.make(
+      LLMEvent.reasoningStart({ id: "reasoning-0" }),
+      LLMEvent.reasoningDelta({ id: "reasoning-0", text: "内部推理".repeat(440) }),
+      LLMEvent.reasoningEnd({ id: "reasoning-0" }),
+      LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
+      LLMEvent.finish({ reason: "stop", usage }),
+    )
+  }
+}
+
+function blockingReply(ready: Deferred.Deferred<void>, capture?: (input: LLM.StreamInput) => void) {
+  return (input: LLM.StreamInput) => {
+    capture?.(input)
+    return Stream.concat(
+      Stream.make(
+        LLMEvent.reasoningStart({ id: "reasoning-0" }),
+        LLMEvent.reasoningDelta({ id: "reasoning-0", text: "partial reasoning" }),
+        LLMEvent.textStart({ id: "txt-0" }),
+        LLMEvent.textDelta({ id: "txt-0", text: "partial summary" }),
+      ),
+      Stream.fromEffect(Deferred.succeed(ready, undefined).pipe(Effect.flatMap(() => Effect.never))),
+    )
+  }
+}
+
+function fakeRuntime(
+  outputTokenMax?: number,
+  error?: MessageV2.Assistant["error"],
+  empty = false,
+  reasoningOnly = false,
+  withNone = false,
+  reasoningCall?: number,
+  reasoningStage?: "chunk" | "reduce",
+  context = 10_000,
+  contextOverflowCall?: number,
+) {
   const calls: string[] = []
   const outputs: number[] = []
-  const bus = Bus.layer
+  const variants: Array<string | undefined> = []
   const processor = Layer.effect(
     SessionProcessorModule.SessionProcessor.Service,
     Effect.gen(function* () {
@@ -194,8 +272,14 @@ function fakeRuntime(outputTokenMax?: number, error?: MessageV2.Assistant["error
               Effect.gen(function* () {
                 outputs.push(input.model.limit.output)
                 calls.push(JSON.stringify(stream.messages))
-                if (error) {
-                  input.assistantMessage.error = error
+                variants.push(stream.user.model.variant)
+                const currentError =
+                  error ??
+                  (contextOverflowCall === calls.length
+                    ? new MessageV2.ContextOverflowError({ message: "provider context overflow" }).toObject()
+                    : undefined)
+                if (currentError) {
+                  input.assistantMessage.error = currentError
                   input.assistantMessage.finish = "error"
                   yield* sessions.updateMessage(input.assistantMessage)
                   return "stop" as const
@@ -207,7 +291,18 @@ function fakeRuntime(outputTokenMax?: number, error?: MessageV2.Assistant["error
                   : calls.length === 1
                     ? "chunk one"
                     : "chunk two"
-                if (!empty)
+                const reduce = stream.messages.some((msg) =>
+                  JSON.stringify(msg).includes("Create a new anchored summary"),
+                )
+                const exhaust =
+                  reasoningCall !== undefined
+                    ? calls.length === reasoningCall
+                    : reasoningStage === "reduce"
+                      ? reduce
+                      : reasoningStage === "chunk"
+                        ? !reduce
+                        : true
+                if (!empty || stream.user.model.variant === "none")
                   yield* sessions.updatePart({
                     id: PartID.ascending(),
                     messageID: input.assistantMessage.id,
@@ -215,7 +310,20 @@ function fakeRuntime(outputTokenMax?: number, error?: MessageV2.Assistant["error
                     type: "text",
                     text,
                   })
-                input.assistantMessage.finish = "stop"
+                if (reasoningOnly && stream.user.model.variant !== "none" && exhaust) {
+                  yield* sessions.updatePart({
+                    id: PartID.ascending(),
+                    messageID: input.assistantMessage.id,
+                    sessionID: input.sessionID,
+                    type: "reasoning",
+                    text: "内部推理".repeat(1_700),
+                    time: { start: Date.now(), end: Date.now() },
+                  })
+                  input.assistantMessage.tokens.reasoning = 2_040
+                  input.assistantMessage.finish = "length"
+                } else {
+                  input.assistantMessage.finish = "stop"
+                }
                 return "continue" as const
               }),
             ),
@@ -229,29 +337,42 @@ function fakeRuntime(outputTokenMax?: number, error?: MessageV2.Assistant["error
     layer: processor,
     deps: [SessionNs.node],
   })
-  const model = ProviderTest.model({ providerID, id: modelID, limit: { context: 10_000, output: 1_000 } })
+  const model = ProviderTest.model({
+    providerID,
+    id: modelID,
+    limit: { context, output: 1_000 },
+    variants: {
+      high: { thinking: { type: "enabled" } },
+      xhigh: { thinking: { type: "enabled" } },
+      ...(withNone ? { none: { thinking: { type: "disabled" } } } : {}),
+    },
+  })
   return {
     calls,
     outputs,
+    variants,
     rt: ManagedRuntime.make(
-      LayerNode.compile(LayerNode.group([SessionCompaction.node, SessionNs.node, SessionProjector.node, Bus.node]), [
-        [SessionProcessorModule.SessionProcessor.node, processorNode],
-        [Provider.node, ProviderTest.fake({ model }).layer],
-        [Agent.node, agents],
-        [RuntimeFlags.node, RuntimeFlags.layer({ outputTokenMax })],
+      LayerNode.compile(
+        LayerNode.group([SessionCompaction.node, SessionNs.node, SessionProjector.node, Bus.node, EventV2Bridge.node]),
         [
-          Config.node,
-          Layer.mock(Config.Service)({
-            get: () => Effect.succeed({ ...{}, compaction: { reserved: 1_000 } }),
-            directories: () => Effect.succeed([]),
-          }),
+          [SessionProcessorModule.SessionProcessor.node, processorNode],
+          [Provider.node, ProviderTest.fake({ model }).layer],
+          [Agent.node, agents],
+          [RuntimeFlags.node, RuntimeFlags.layer({ outputTokenMax })],
+          [
+            Config.node,
+            Layer.mock(Config.Service)({
+              get: () => Effect.succeed({ compaction: { reserved: 1_000 } }),
+              directories: () => Effect.succeed([]),
+            }),
+          ],
         ],
-      ]),
+      ),
     ),
   }
 }
 
-async function failure(error?: MessageV2.Assistant["error"], empty = false) {
+async function failure(error?: MessageV2.Assistant["error"], empty = false, reasoningOnly = false, withNone = false) {
   await using tmp = await tmpdir()
   return provideTestInstance({
     directory: tmp.path,
@@ -267,8 +388,16 @@ async function failure(error?: MessageV2.Assistant["error"], empty = false) {
           auto: false,
         }),
       )
+      const marker = (await svc.messages({ sessionID: session.id })).at(-1)!
+      await svc.updatePart(
+        ChipMateCompactionStatus.create({
+          sessionID: session.id,
+          messageID: marker.info.id,
+          source: "manual",
+        }),
+      )
 
-      const { rt } = fakeRuntime(undefined, error, empty)
+      const { rt, calls, variants } = fakeRuntime(undefined, error, empty, reasoningOnly, withNone)
       try {
         const msgs = await svc.messages({ sessionID: session.id })
         const parent = msgs.at(-1)?.info.id
@@ -285,7 +414,7 @@ async function failure(error?: MessageV2.Assistant["error"], empty = false) {
         )
         const all = await svc.messages({ sessionID: session.id })
         const summary = all.find((msg) => msg.info.role === "assistant" && msg.info.summary)
-        return { result, summary }
+        return { result, summary, messages: all, calls, variants }
       } finally {
         await rt.dispose()
       }
@@ -293,8 +422,17 @@ async function failure(error?: MessageV2.Assistant["error"], empty = false) {
   })
 }
 
-function liveRuntime(layer: Layer.Layer<LLM.Service>, context = 10_000) {
-  const model = ProviderTest.model({ providerID, id: modelID, limit: { context, output: 1_000 } })
+function liveRuntime(layer: Layer.Layer<LLM.Service>, context = 10_000, withNone = false) {
+  const model = ProviderTest.model({
+    providerID,
+    id: modelID,
+    limit: { context, output: 1_000 },
+    variants: {
+      high: { thinking: { type: "enabled" } },
+      xhigh: { thinking: { type: "enabled" } },
+      ...(withNone ? { none: { thinking: { type: "disabled" } } } : {}),
+    },
+  })
   return ManagedRuntime.make(
     LayerNode.compile(
       LayerNode.group([
@@ -313,7 +451,7 @@ function liveRuntime(layer: Layer.Layer<LLM.Service>, context = 10_000) {
         [
           Config.node,
           Layer.mock(Config.Service)({
-            get: () => Effect.succeed({ ...{}, compaction: { reserved: 1_000 } }),
+            get: () => Effect.succeed({ compaction: { reserved: 1_000 } }),
             directories: () => Effect.succeed([]),
           }),
         ],
@@ -364,7 +502,7 @@ describe("ChipMateCompactionChunks", () => {
     const outputTokenMax = 512
 
     expect(ChipMateCompactionChunks.needed({ cfg, model, tokens: 5_000, outputTokenMax })).toBe(false)
-    expect(ChipMateCompactionChunks.budget({ cfg, model, outputTokenMax })).toBe(5_692)
+    expect(ChipMateCompactionChunks.budget({ cfg, model, outputTokenMax })).toBe(6_000)
   })
 
   test("caps fallback chunks for providers that reject large compaction payloads", () => {
@@ -372,6 +510,183 @@ describe("ChipMateCompactionChunks", () => {
     const cfg = {} as Config.Info
 
     expect(ChipMateCompactionChunks.budget({ cfg, model, outputTokenMax: 32_000 })).toBe(48_000)
+  })
+
+  test("uses the safe remaining context as the dynamic worker output budget", () => {
+    const model = ProviderTest.model({ providerID, id: modelID, limit: { context: 32_000, output: 32_000 } })
+
+    expect(ChipMateCompactionChunks.outputBudget({ model, estimatedInputTokens: 20_000 })).toMatchObject({
+      kind: "available",
+      requestedOutputTokenLimit: 32_000,
+      effectiveOutputTokenLimit: 9_952,
+      capacityKnown: true,
+    })
+  })
+
+  test("keeps the 48K input cap and configured output cap when capacity metadata is unknown", () => {
+    const model = ProviderTest.model({ providerID, id: modelID, limit: { context: 0, output: 0 } })
+    const cfg = {} as Config.Info
+
+    expect(ChipMateCompactionChunks.budget({ cfg, model })).toBe(48_000)
+    expect(ChipMateCompactionChunks.outputBudget({ model, estimatedInputTokens: 40_000 })).toMatchObject({
+      kind: "available",
+      requestedOutputTokenLimit: 32_000,
+      effectiveOutputTokenLimit: 32_000,
+      capacityKnown: false,
+    })
+    expect(ChipMateCompactionChunks.needed({ cfg, model, tokens: 40_000 })).toBe(true)
+    expect(ChipMateCompactionChunks.outputBudget({ model, estimatedInputTokens: 48_001 })).toMatchObject({
+      kind: "context_overflow",
+      requestedOutputTokenLimit: 32_000,
+      capacityKnown: false,
+    })
+  })
+
+  test("honors a lower runtime cap in a known 128K context", () => {
+    const model = ProviderTest.model({ providerID, id: modelID, limit: { context: 128_000, output: 64_000 } })
+
+    expect(
+      ChipMateCompactionChunks.outputBudget({ model, estimatedInputTokens: 50_000, outputTokenMax: 8_000 }),
+    ).toMatchObject({
+      kind: "available",
+      requestedOutputTokenLimit: 8_000,
+      effectiveOutputTokenLimit: 8_000,
+      capacityKnown: true,
+    })
+  })
+
+  test("rejects input-limit overflow and unsafe remaining context before calling a worker", () => {
+    const inputLimited = ProviderTest.model({
+      providerID,
+      id: modelID,
+      limit: { context: 128_000, input: 32_000, output: 8_000 },
+    })
+    const noHeadroom = ProviderTest.model({
+      providerID,
+      id: modelID,
+      limit: { context: 32_000, output: 8_000 },
+    })
+
+    expect(ChipMateCompactionChunks.outputBudget({ model: inputLimited, estimatedInputTokens: 32_001 }).kind).toBe(
+      "context_overflow",
+    )
+    expect(ChipMateCompactionChunks.outputBudget({ model: noHeadroom, estimatedInputTokens: 29_000 }).kind).toBe(
+      "context_overflow",
+    )
+  })
+
+  test("splits only the failed unit after an unknown-capacity provider context overflow", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        await user(session.id, "unknown capacity " + "x".repeat(200_000))
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: ref,
+            auto: false,
+          }),
+        )
+        const { rt, calls } = fakeRuntime(undefined, undefined, false, false, false, undefined, undefined, 0, 1)
+        try {
+          const messages = await svc.messages({ sessionID: session.id })
+          const parentID = messages.at(-1)?.info.id
+          expect(parentID).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((service) =>
+              service.process({ parentID: parentID!, messages, sessionID: session.id, auto: false }),
+            ),
+          )
+          const initialCounts = calls.flatMap((call) => {
+            const match = call.match(/Summarize conversation chunk \d+ of (\d+)/)
+            return match ? [Number(match[1])] : []
+          })
+
+          expect(result).toBe("continue")
+          expect(calls.length).toBeGreaterThan(Math.max(...initialCounts))
+          expect(calls.every((call) => ChipMateCompactionChunks.adjustedTokens(Token.estimate(call)) <= 48_000)).toBe(
+            true,
+          )
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("publishes monotonic chunk and reduce progress before committing", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        await user(session.id, "progress " + "x".repeat(80_000))
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: ref,
+            auto: false,
+          }),
+        )
+        const initial = (await svc.messages({ sessionID: session.id })).at(-1)!
+        await svc.updatePart(
+          ChipMateCompactionStatus.create({
+            sessionID: session.id,
+            messageID: initial.info.id,
+            source: "manual",
+          }),
+        )
+        const { rt } = fakeRuntime()
+        try {
+          const messages = await svc.messages({ sessionID: session.id })
+          const marker = messages.at(-1)!
+          const statusPart = ChipMateCompactionStatus.find(marker.parts)!
+          const progress: ChipMateCompactionStatus.Value[] = []
+          const off = await rt.runPromise(
+            EventV2Bridge.Service.use((events) =>
+              events.listen((event) => {
+                if (event.type !== MessageV2.Event.PartUpdated.type) return Effect.void
+                const part = (event.data as typeof MessageV2.Event.PartUpdated.data.Type).part as SessionV1.Part
+                if (part.id !== statusPart.id) return Effect.void
+                const value = ChipMateCompactionStatus.value(part)
+                if (value) progress.push(value)
+                return Effect.void
+              }),
+            ),
+          )
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((service) =>
+              service.process({ parentID: marker.info.id, messages, sessionID: session.id, auto: false }),
+            ),
+          )
+          await rt.runPromise(off)
+
+          expect(result).toBe("continue")
+          expect(progress.some((value) => value.phase === "chunk" && (value.totalUnits ?? 0) >= 2)).toBe(true)
+          expect(progress.some((value) => value.phase === "reduce")).toBe(true)
+          expect(progress.at(-1)).toMatchObject({ state: "succeeded", phase: "committing" })
+          for (const phase of ["chunk", "reduce"] as const) {
+            const batches = Map.groupBy(
+              progress.filter((value) => value.phase === phase && value.totalUnits !== undefined),
+              (value) => `${value.attempt}:${value.reduceDepth ?? -1}:${value.totalUnits}`,
+            )
+            for (const values of batches.values()) {
+              const completed = values.map((value) => value.completedUnits ?? 0)
+              expect(completed).toEqual([...completed].sort((a, b) => a - b))
+              expect(completed.every((value, index) => value <= (values[index]?.totalUnits ?? 0))).toBe(true)
+            }
+          }
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
   })
 
   test("preserves gateway errors from chunk workers", async () => {
@@ -382,13 +697,30 @@ describe("ChipMateCompactionChunks", () => {
       responseBody: '{"error_type":"timeout"}',
     }).toObject()
 
-    const result = await failure(error)
+    const result = await failure(error, false, false, true)
 
     expect(result.result).toBe("stop")
     expect(result.summary?.info.role).toBe("assistant")
     if (result.summary?.info.role !== "assistant") return
     expect(result.summary.info.finish).toBe("error")
     expect(result.summary.info.error).toEqual(error)
+    expect(result.variants.some((variant) => variant === "none")).toBe(false)
+  })
+
+  test("never retries terminal provider failures with thinking disabled", () => {
+    const errors: MessageV2.Assistant["error"][] = [
+      new MessageV2.AbortedError({ message: "cancelled" }).toObject(),
+      new SessionV1.AuthError({ providerID: "test", message: "unauthorized" }).toObject(),
+      new MessageV2.APIError({ message: "unauthorized", statusCode: 401, isRetryable: false }).toObject(),
+      new MessageV2.APIError({ message: "forbidden", statusCode: 403, isRetryable: false }).toObject(),
+      new MessageV2.APIError({ message: "rate limited", statusCode: 429, isRetryable: true }).toObject(),
+      new MessageV2.APIError({ message: "gateway timeout", statusCode: 504, isRetryable: true }).toObject(),
+      new SessionV1.ContentFilterError({ message: "filtered" }).toObject(),
+    ]
+
+    for (const error of errors) {
+      expect(ChipMateCompactionChunks.retryWithoutThinking({ kind: "failure", error })).toBe(false)
+    }
   })
 
   test("keeps context overflow on the terminal compaction path", async () => {
@@ -404,8 +736,28 @@ describe("ChipMateCompactionChunks", () => {
     expect(result.summary.info.error?.name).toBe("ContextOverflowError")
     if (result.summary.info.error?.name !== "ContextOverflowError") return
     expect(result.summary.info.error.data.message).toBe(
-      "Session too large to compact - context exceeds model limit even after stripping media",
+      "Compaction chunk input still exceeds the model context limit after deterministic splitting",
     )
+  })
+
+  test("retries a terminal context overflow once with none and does not start a third pass", async () => {
+    const result = await failure(
+      new MessageV2.ContextOverflowError({
+        message: "worker context overflow",
+      }).toObject(),
+      false,
+      false,
+      true,
+    )
+
+    const fallback = result.variants.findIndex((variant) => variant === "none")
+    expect(result.result).toBe("stop")
+    expect(fallback).toBeGreaterThan(0)
+    expect(result.variants.slice(0, fallback).every((variant) => variant === undefined)).toBe(true)
+    expect(result.variants.slice(fallback).every((variant) => variant === "none")).toBe(true)
+    expect(result.summary?.info.role).toBe("assistant")
+    if (result.summary?.info.role !== "assistant") return
+    expect(result.summary.info.error?.name).toBe("ContextOverflowError")
   })
 
   test("reports empty chunk worker responses as API errors", async () => {
@@ -418,7 +770,563 @@ describe("ChipMateCompactionChunks", () => {
     expect(result.summary.info.error?.name).toBe("APIError")
     if (result.summary.info.error?.name !== "APIError") return
     expect(result.summary.info.error.data.message).toBe("Compaction worker returned an empty response")
-    expect(result.summary.info.error.data.isRetryable).toBe(true)
+    expect(result.summary.info.error.data.isRetryable).toBe(false)
+  })
+
+  test("restarts the whole chunk pipeline with none after empty worker responses", async () => {
+    const result = await failure(undefined, true, false, true)
+
+    const fallback = result.variants.findIndex((variant) => variant === "none")
+    expect(result.result).toBe("continue")
+    expect(fallback).toBeGreaterThan(0)
+    expect(result.variants.slice(0, fallback).every((variant) => variant === undefined)).toBe(true)
+    expect(result.variants.slice(fallback).every((variant) => variant === "none")).toBe(true)
+    expect(result.summary?.info.role).toBe("assistant")
+    if (result.summary?.info.role !== "assistant") return
+    expect(result.summary.info.variant).toBe("none")
+    const text = result.summary.parts.filter((part): part is MessageV2.TextPart => part.type === "text")
+    expect(text.map((part) => part.text)).toEqual(["final summary"])
+    const marker = result.messages.find((message) => message.parts.some((part) => part.type === "compaction"))
+    expect(ChipMateCompactionStatus.value(ChipMateCompactionStatus.find(marker?.parts ?? []))).toMatchObject({
+      state: "succeeded",
+      attempt: 2,
+      attemptMode: "none",
+      phase: "committing",
+    })
+  })
+
+  test("reports a non-retryable compatibility error when reasoning exhausts a model without none", async () => {
+    const result = await failure(undefined, true, true)
+
+    expect(result.result).toBe("stop")
+    expect(result.summary?.info.role).toBe("assistant")
+    if (result.summary?.info.role !== "assistant") return
+    expect(result.summary.info.error?.name).toBe("APIError")
+    if (result.summary.info.error?.name !== "APIError") return
+    expect(result.summary.info.error.data.message).toBe(
+      "Compaction reasoning exhausted the output budget, but this model has no none variant",
+    )
+    expect(result.summary.info.error.data.isRetryable).toBe(false)
+  })
+
+  test("does not retry when the selected variant is already none", async () => {
+    const stub = llm()
+    const variants: Array<string | undefined> = []
+    stub.push(lengthReply("partial summary", (input) => variants.push(input.user.model.variant)))
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "short history")
+        await assistant(session.id, first.id, tmp.path, "short response")
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "none" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const rt = liveRuntime(stub.layer, 100_000, true)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const text = summary?.parts.filter((part): part is MessageV2.TextPart => part.type === "text") ?? []
+
+          expect(result).toBe("stop")
+          expect(variants).toEqual(["none"])
+          expect(text).toHaveLength(0)
+          expect(summary?.info.role).toBe("assistant")
+          if (summary?.info.role !== "assistant") return
+          expect(summary.info.error?.name).toBe("APIError")
+          if (summary.info.error?.name !== "APIError") return
+          expect(summary.info.error.data.message).toBe(
+            "Compaction reasoning exhausted the output budget while thinking was already disabled",
+          )
+          expect(summary.info.error.data.isRetryable).toBe(false)
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  }, 30_000)
+
+  test("manual compaction inherits the last supported real-user variant across compaction markers", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        await user(session.id, "large history " + "x".repeat(80_000), "xhigh")
+        for (let index = 0; index < 2; index++) {
+          await Effect.runPromise(
+            ChipMateSessionCompaction.create({
+              session: store,
+              sessionID: session.id,
+              agent: "build",
+              model: ref,
+              auto: false,
+            }),
+          )
+        }
+
+        const { rt, variants } = fakeRuntime()
+        try {
+          const messages = await svc.messages({ sessionID: session.id })
+          const parentID = messages.at(-1)?.info.id
+          expect(parentID).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((service) =>
+              service.process({ parentID: parentID!, messages, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.findLast((message) => message.info.role === "assistant" && message.info.summary)
+
+          expect(result).toBe("continue")
+          expect(variants.length).toBeGreaterThan(1)
+          expect(variants.every((variant) => variant === "xhigh")).toBe(true)
+          expect(summary?.info.role === "assistant" ? summary.info.variant : undefined).toBe("xhigh")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("manual compaction does not inherit an unsupported variant", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        await user(session.id, "large history " + "x".repeat(80_000), "unsupported")
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: ref,
+            auto: false,
+          }),
+        )
+
+        const { rt, variants } = fakeRuntime()
+        try {
+          const messages = await svc.messages({ sessionID: session.id })
+          const parentID = messages.at(-1)?.info.id
+          expect(parentID).toBeTruthy()
+          await rt.runPromise(
+            SessionCompaction.Service.use((service) =>
+              service.process({ parentID: parentID!, messages, sessionID: session.id, auto: false }),
+            ),
+          )
+          expect(variants.length).toBeGreaterThan(1)
+          expect(variants.every((variant) => variant === undefined)).toBe(true)
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("restarts the whole chunk pipeline with none and discards the first pass output", async () => {
+    const result = await failure(undefined, false, true, true)
+
+    expect(result.result).toBe("continue")
+    const fallback = result.variants.findIndex((variant) => variant === "none")
+    expect(fallback).toBeGreaterThan(0)
+    expect(result.variants.slice(0, fallback)).toEqual(Array(fallback).fill(undefined))
+    expect(result.variants.slice(fallback)).toEqual(Array(result.variants.length - fallback).fill("none"))
+    expect(result.summary?.info.role).toBe("assistant")
+    if (result.summary?.info.role !== "assistant") return
+    expect(result.summary.info.variant).toBe("none")
+    const text = result.summary.parts.filter((part): part is MessageV2.TextPart => part.type === "text")
+    expect(text.map((part) => part.text)).toEqual(["final summary"])
+    const compact = result.messages.findLast(
+      (message) => message.info.role === "user" && message.parts.some((part) => part.type === "compaction"),
+    )
+    expect(compact?.info.role === "user" ? compact.info.model.variant : undefined).toBeUndefined()
+    expect(result.messages.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(
+      1,
+    )
+  })
+
+  test("waits for concurrent chunk workers and reruns every chunk when one exhausts reasoning", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        for (let index = 0; index < 4; index++) {
+          const input = await user(session.id, `request ${index} ` + "x".repeat(10_000))
+          await assistant(session.id, input.id, tmp.path, `response ${index} ` + "y".repeat(10_000))
+        }
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const { rt, variants } = fakeRuntime(undefined, undefined, false, true, true, 2)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const selected = variants.filter((variant) => variant === "high")
+          const none = variants.filter((variant) => variant === "none")
+
+          expect(result).toBe("continue")
+          expect(selected.length).toBeGreaterThan(1)
+          expect(none.length).toBeGreaterThanOrEqual(selected.length)
+          expect(variants.slice(0, selected.length)).toEqual(Array(selected.length).fill("high"))
+          expect(variants.slice(selected.length).every((variant) => variant === "none")).toBe(true)
+          expect(summary?.info.role === "assistant" ? summary.info.variant : undefined).toBe("none")
+          expect(all.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("restarts every chunk when the reduce stage exhausts reasoning", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        for (let index = 0; index < 3; index++) {
+          const input = await user(session.id, `request ${index} ` + "x".repeat(10_000))
+          await assistant(session.id, input.id, tmp.path, `response ${index} ` + "y".repeat(10_000))
+        }
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const { rt, calls, variants } = fakeRuntime(undefined, undefined, false, true, true, undefined, "reduce")
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const reduceCalls = calls.filter((call) => call.includes("Create a new anchored summary"))
+          const selected = variants.filter((variant) => variant === "high")
+          const none = variants.filter((variant) => variant === "none")
+
+          expect(result).toBe("continue")
+          expect(reduceCalls).toHaveLength(2)
+          expect(selected.length).toBeGreaterThan(1)
+          expect(none.length).toBe(selected.length)
+          expect(summary?.info.role === "assistant" ? summary.info.variant : undefined).toBe("none")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("restarts a full compaction with none and never commits length-truncated text", async () => {
+    const stub = llm()
+    const variants: Array<string | undefined> = []
+    stub.push(lengthReply("partial summary", (input) => variants.push(input.user.model.variant)))
+    stub.push(reply("complete summary", (input) => variants.push(input.user.model.variant)))
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "short history")
+        await assistant(session.id, first.id, tmp.path, "short response")
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const rt = liveRuntime(stub.layer, 100_000, true)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summaries = all.filter((message) => message.info.role === "assistant" && message.info.summary)
+          const parts = summaries.flatMap((message) => message.parts)
+          const text = parts.filter((part): part is MessageV2.TextPart => part.type === "text")
+
+          expect(result).toBe("continue")
+          expect(variants).toEqual(["high", "none"])
+          expect(summaries).toHaveLength(1)
+          expect(summaries[0]?.info.role === "assistant" ? summaries[0].info.variant : undefined).toBe("none")
+          expect(text.map((part) => part.text)).toEqual(["complete summary"])
+          expect(
+            text.some((part) => part.metadata?.["chipmate.compaction.status"] === "retrying-without-thinking"),
+          ).toBe(false)
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("restarts full compaction with none when stop contains no summary text", async () => {
+    const scenarios = [
+      { name: "reasoning-only", first: reasoningStopReply },
+      { name: "empty", first: emptyStopReply },
+    ]
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        for (const scenario of scenarios) {
+          const stub = llm()
+          const variants: Array<string | undefined> = []
+          stub.push(scenario.first((input) => variants.push(input.user.model.variant)))
+          stub.push(reply(`${scenario.name} complete summary`, (input) => variants.push(input.user.model.variant)))
+
+          const session = await svc.create({})
+          const first = await user(session.id, `${scenario.name} history`)
+          await assistant(session.id, first.id, tmp.path, `${scenario.name} response`)
+          await Effect.runPromise(
+            ChipMateSessionCompaction.create({
+              session: store,
+              sessionID: session.id,
+              agent: "build",
+              model: { ...ref, variant: "xhigh" } as typeof ref,
+              auto: false,
+            }),
+          )
+
+          const rt = liveRuntime(stub.layer, 100_000, true)
+          try {
+            const msgs = await svc.messages({ sessionID: session.id })
+            const parent = msgs.at(-1)?.info.id
+            expect(parent).toBeTruthy()
+            const result = await rt.runPromise(
+              SessionCompaction.Service.use((svc) =>
+                svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+              ),
+            )
+            const all = await svc.messages({ sessionID: session.id })
+            const summaries = all.filter((message) => message.info.role === "assistant" && message.info.summary)
+            const text = summaries.flatMap((message) =>
+              message.parts.filter((part): part is MessageV2.TextPart => part.type === "text"),
+            )
+
+            expect(result).toBe("continue")
+            expect(variants).toEqual(["xhigh", "none"])
+            expect(summaries).toHaveLength(1)
+            expect(summaries[0]?.info.role === "assistant" ? summaries[0].info.variant : undefined).toBe("none")
+            expect(text.map((part) => part.text)).toEqual([`${scenario.name} complete summary`])
+          } finally {
+            await rt.dispose()
+          }
+        }
+      },
+    })
+  })
+
+  test("restarts length-truncated text without reasoning with none", async () => {
+    const stub = llm()
+    const variants: Array<string | undefined> = []
+    stub.push(lengthTextReply("partial summary", (input) => variants.push(input.user.model.variant)))
+    stub.push(reply("complete summary", (input) => variants.push(input.user.model.variant)))
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "short history")
+        await assistant(session.id, first.id, tmp.path, "short response")
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const rt = liveRuntime(stub.layer, 100_000, true)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const text = summary?.parts.filter((part): part is MessageV2.TextPart => part.type === "text") ?? []
+
+          expect(result).toBe("continue")
+          expect(variants).toEqual(["high", "none"])
+          expect(text.map((part) => part.text)).toEqual(["complete summary"])
+          expect(summary?.info.role === "assistant" ? summary.info.variant : undefined).toBe("none")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("stops after the none pass also exhausts reasoning and never commits either partial summary", async () => {
+    const stub = llm()
+    const variants: Array<string | undefined> = []
+    stub.push(lengthReply("first partial", (input) => variants.push(input.user.model.variant)))
+    stub.push(lengthReply("second partial", (input) => variants.push(input.user.model.variant)))
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "short history")
+        await assistant(session.id, first.id, tmp.path, "short response")
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const rt = liveRuntime(stub.layer, 100_000, true)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const text = summary?.parts.filter((part): part is MessageV2.TextPart => part.type === "text") ?? []
+
+          expect(result).toBe("stop")
+          expect(variants).toEqual(["high", "none"])
+          expect(text).toHaveLength(0)
+          expect(summary?.info.role).toBe("assistant")
+          if (summary?.info.role !== "assistant") return
+          expect(summary.info.variant).toBe("none")
+          expect(summary.info.error?.name).toBe("APIError")
+          if (summary.info.error?.name !== "APIError") return
+          expect(summary.info.error.data.message).toBe("Compaction failed again after retrying with thinking disabled")
+          expect(summary.info.error.data.isRetryable).toBe(false)
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("cancellation removes second-pass partial output and the transient retry marker", async () => {
+    const stub = llm()
+    const ready = await Effect.runPromise(Deferred.make<void>())
+    const variants: Array<string | undefined> = []
+    stub.push(lengthReply("first partial", (input) => variants.push(input.user.model.variant)))
+    stub.push(blockingReply(ready, (input) => variants.push(input.user.model.variant)))
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "short history")
+        await assistant(session.id, first.id, tmp.path, "short response")
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: false,
+          }),
+        )
+
+        const rt = liveRuntime(stub.layer, 100_000, true)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const fiber = rt.runFork(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false }),
+            ),
+          )
+          await Effect.runPromise(Deferred.await(ready).pipe(Effect.timeout("5 seconds")))
+          await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.timeout("5 seconds")))
+
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const leaked = summary?.parts.filter((part) => part.type === "text" || part.type === "reasoning") ?? []
+
+          expect(variants).toEqual(["high", "none"])
+          expect(leaked).toHaveLength(0)
+          expect(summary?.info.role).toBe("assistant")
+          if (summary?.info.role !== "assistant") return
+          expect(summary.info.finish).toBeUndefined()
+          expect(summary.info.error).toBeUndefined()
+          expect(all.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
   })
 
   test("falls back to chunk workers after the first compaction overflows", async () => {
@@ -579,7 +1487,7 @@ describe("ChipMateCompactionChunks", () => {
       directory: tmp.path,
       fn: async () => {
         const session = await svc.create({})
-        const first = await user(session.id, "single huge request " + "a".repeat(80_000))
+        await user(session.id, "single huge request " + "a".repeat(80_000))
         await Effect.runPromise(
           ChipMateSessionCompaction.create({
             session: store,
@@ -607,8 +1515,9 @@ describe("ChipMateCompactionChunks", () => {
           )
 
           expect(result).toBe("continue")
-          expect(calls[0]).toContain("compacted transcript")
-          expect(calls[0]).toContain("Text truncated for compaction")
+          expect(calls[0]).toContain("transcript fragments")
+          expect(calls.join("\n")).not.toContain("Text truncated for compaction")
+          expect(calls.join("\n").match(/a/g)?.length).toBeGreaterThanOrEqual(80_000)
           expect(calls[0]).toContain("Summarize conversation chunk")
         } finally {
           await rt.dispose()
@@ -665,6 +1574,9 @@ describe("ChipMateCompactionChunks", () => {
     const stub = llm()
     const calls: string[] = []
     stub.push(reply("history summary"))
+    for (let index = 0; index < 3; index++) {
+      stub.push(reply(`replay chunk ${index + 1}`, (input) => calls.push(JSON.stringify(input.messages))))
+    }
     stub.push(reply("replay summary", (input) => calls.push(JSON.stringify(input.messages))))
 
     await using tmp = await tmpdir()
@@ -708,10 +1620,77 @@ describe("ChipMateCompactionChunks", () => {
           const part = replay?.parts.find((part): part is MessageV2.TextPart => part.type === "text")
 
           expect(result).toBe("continue")
-          expect(calls).toHaveLength(1)
-          expect(calls[0]).toContain("Summarize conversation chunk 1 of 1")
+          expect(calls).toHaveLength(4)
+          expect(calls[0]).toContain("Summarize conversation chunk 1 of 3")
           expect(part?.text).toContain("compacted representation")
           expect(part?.text).toContain("replay summary")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("restarts the full transaction when replay exhausts reasoning", async () => {
+    const stub = llm()
+    const variants: Array<string | undefined> = []
+    stub.push(reply("first history summary", (input) => variants.push(input.user.model.variant)))
+    stub.push(lengthReply("partial replay", (input) => variants.push(input.user.model.variant)))
+    stub.push(reply("first replay remainder 1", (input) => variants.push(input.user.model.variant)))
+    stub.push(reply("first replay remainder 2", (input) => variants.push(input.user.model.variant)))
+    stub.push(reply("second history summary", (input) => variants.push(input.user.model.variant)))
+    for (let index = 0; index < 3; index++) {
+      stub.push(reply(`second replay chunk ${index + 1}`, (input) => variants.push(input.user.model.variant)))
+    }
+    stub.push(reply("complete replay", (input) => variants.push(input.user.model.variant)))
+
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const old = await user(session.id, "old context")
+        await assistant(session.id, old.id, tmp.path, "old reply")
+        const large = await user(session.id, "large replay " + "x".repeat(40_000))
+        await Effect.runPromise(
+          ChipMateSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: { ...ref, variant: "high" } as typeof ref,
+            auto: true,
+            overflow: true,
+          }),
+        )
+
+        const rt = liveRuntime(stub.layer, 10_000, true)
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({
+                parentID: parent!,
+                messages: msgs,
+                sessionID: session.id,
+                auto: true,
+                overflow: true,
+              }),
+            ),
+          )
+          const all = await svc.messages({ sessionID: session.id })
+          const summary = all.find((message) => message.info.role === "assistant" && message.info.summary)
+          const summaryText = summary?.parts.filter((part): part is MessageV2.TextPart => part.type === "text") ?? []
+          const replay = all.findLast((message) => message.info.role === "user" && message.info.id !== large.id)
+          const replayText = replay?.parts.find((part): part is MessageV2.TextPart => part.type === "text")
+
+          expect(result).toBe("continue")
+          expect(variants).toEqual(["high", "high", "high", "high", "none", "none", "none", "none", "none"])
+          expect(summary?.info.role === "assistant" ? summary.info.variant : undefined).toBe("none")
+          expect(summaryText.map((part) => part.text)).toEqual(["second history summary"])
+          expect(replayText?.text).toContain("complete replay")
+          expect(replayText?.text).not.toContain("partial replay")
         } finally {
           await rt.dispose()
         }
@@ -740,7 +1719,6 @@ describe("ChipMateCompactionChunks", () => {
         )
 
         const captured: Array<{ opts: Record<string, unknown>; modelLimitOutput: number }> = []
-        const bus = Bus.layer
         const processor = Layer.effect(
           SessionProcessorModule.SessionProcessor.Service,
           Effect.gen(function* () {
@@ -804,7 +1782,7 @@ describe("ChipMateCompactionChunks", () => {
               [
                 Config.node,
                 Layer.mock(Config.Service)({
-                  get: () => Effect.succeed({ ...{}, compaction: { reserved: 1_000 } }),
+                  get: () => Effect.succeed({ compaction: { reserved: 1_000 } }),
                   directories: () => Effect.succeed([]),
                 }),
               ],

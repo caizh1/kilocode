@@ -1,3 +1,4 @@
+import { AppearanceMessageIdentity } from "./AppearanceMessageIdentity"
 import { createMemo, type Component } from "solid-js"
 import { UserMessageDisplay } from "@chipmate/chipmate-ui/message-part"
 import { partReview } from "../../../../src/shared/review-comments"
@@ -10,7 +11,6 @@ interface VscodeUserMessageProps {
   interrupted?: boolean
   queued?: boolean
   onDelete?: () => void
-  onFork?: () => void
   onRevert?: () => void
 }
 
@@ -24,6 +24,8 @@ export const VscodeUserMessage: Component<VscodeUserMessageProps> = (props) => {
   const body = createMemo(() => review()?.body)
 
   return (
+    <>
+    <AppearanceMessageIdentity role="user" created={props.message.time?.created} />
     <UserMessageDisplay
       message={props.message as unknown as Parameters<typeof UserMessageDisplay>[0]["message"]}
       parts={props.parts as unknown as Parameters<typeof UserMessageDisplay>[0]["parts"]}
@@ -37,8 +39,8 @@ export const VscodeUserMessage: Component<VscodeUserMessageProps> = (props) => {
       interrupted={props.interrupted}
       queued={props.queued}
       onDelete={props.onDelete}
-      onFork={props.onFork}
       onRevert={props.onRevert}
     />
+    </>
   )
 }

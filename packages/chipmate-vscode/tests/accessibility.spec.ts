@@ -21,6 +21,8 @@ const STORIES = [
   { id: "chat--qa-titanium-full-conversation", name: "QA / Titanium full conversation" },
   { id: "prompt-input--qa-all-controls-send", name: "QA / all controls send state" },
   { id: "prompt-input--qa-all-controls-stop", name: "QA / all controls busy stop state" },
+  { id: "prompt-input--qa-auto-approve-disabled-420", name: "QA / auto-approve disabled state" },
+  { id: "prompt-input--qa-auto-approve-enabled-420", name: "QA / auto-approve enabled state" },
   { id: "prompt-input--qa-indexing-standby", name: "QA / indexing standby state" },
   { id: "prompt-input--qa-indexing-warning", name: "QA / indexing warning state" },
   { id: "prompt-input--qa-thinking-open", name: "QA / thinking selector open state" },

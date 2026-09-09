@@ -14,6 +14,9 @@ import { Notebook } from "@/chipmate/notebook/service"
 import type { RequestID as SkillMarketRequestID } from "@/chipmate/skill-market/protocol"
 import { SkillMarket } from "@/chipmate/skill-market/service"
 import { ModelUsage } from "@/chipmate/session/model-usage"
+import { NewAPIBillingReconcile } from "@/chipmate/session/new-api-billing-reconcile"
+import { SessionAuditExport } from "@/chipmate/session/audit-export"
+import { HistoryMigrationMaintenance } from "@/chipmate/history/maintenance"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import { Skill } from "@/skill"
@@ -27,6 +30,8 @@ import {
   RemoveAgentPayload,
   RemoveCommandPayload,
   RemoveSkillPayload,
+  SessionExportBusyError,
+  HistoryMigrationReleasePayload,
   SkillMarketRejectPayload,
   SkillMarketReplyPayload,
 } from "../groups/chipmate"
@@ -194,7 +199,27 @@ export const chipmateHandlers = HttpApiBuilder.group(InstanceHttpApi, "chipmate"
     }) {
       const usage = yield* ModelUsage.get(ctx.params.sessionID)
       if (!usage) return yield* new HttpApiError.NotFound({})
+      yield* NewAPIBillingReconcile.pending(usage.sessionIDs).pipe(Effect.ignore)
       return usage
+    })
+
+    const sessionExport = Effect.fn("ChipMateHttpApi.sessionExport")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      const result = yield* SessionAuditExport.get(ctx.params.sessionID)
+      if (result.type === "not-found") return yield* new HttpApiError.NotFound({})
+      if (result.type === "busy") return yield* new SessionExportBusyError({ sessionIDs: result.sessionIDs })
+      return result.markdown
+    })
+
+    const historyMigrationPrepare = Effect.fn("ChipMateHttpApi.historyMigrationPrepare")(function* () {
+      return yield* HistoryMigrationMaintenance.prepare()
+    })
+
+    const historyMigrationRelease = Effect.fn("ChipMateHttpApi.historyMigrationRelease")(function* (ctx: {
+      payload: typeof HistoryMigrationReleasePayload.Type
+    }) {
+      return HistoryMigrationMaintenance.release(ctx.payload.token)
     })
 
     return handlers
@@ -215,5 +240,8 @@ export const chipmateHandlers = HttpApiBuilder.group(InstanceHttpApi, "chipmate"
       .handle("skillMarketReply", skillMarketReply)
       .handle("skillMarketReject", skillMarketReject)
       .handle("sessionModelUsage", sessionModelUsage)
+      .handle("sessionExport", sessionExport)
+      .handle("historyMigrationPrepare", historyMigrationPrepare)
+      .handle("historyMigrationRelease", historyMigrationRelease)
   }),
 )

@@ -27,20 +27,20 @@ function withDir(self: () => Effect.Effect<any, any, any>) {
 }
 
 describe("forced one-shot permissions", () => {
-  it.live("does not let saved allow rules or allow-everything bypass Agent Console approval", () =>
+  it.live("does not let saved allow rules or allow-everything bypass forced approval", () =>
     withDir(() =>
       Effect.gen(function* () {
         const service = yield* Permission.Service
-        const id = PermissionV1.ID.make("per_agent_console")
+        const id = PermissionV1.ID.make("per_forced_approval")
         const asking = yield* service
           .ask({
             id,
-            sessionID: SessionID.make("session_agent_console"),
-            permission: "agent_console_shell",
+            sessionID: SessionID.make("session_forced_approval"),
+            permission: "ufs_review_validation",
             patterns: ["pwd"],
             metadata: { command: "pwd" },
             always: [],
-            ruleset: Permission.fromConfig({ agent_console_shell: "allow" }),
+            ruleset: Permission.fromConfig({ ufs_review_validation: "allow" }),
             forceAsk: true,
           })
           .pipe(Effect.forkScoped)

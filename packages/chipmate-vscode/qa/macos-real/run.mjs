@@ -79,7 +79,6 @@ for (const item of [
   ["MAC-INDEXING", "indexing", "需要索引状态、落盘、恢复和项目隔离专用动作。"],
   ["MAC-RETRIEVAL", "retrieval", "需要 graph-only 与固定检索协议专用动作。"],
   ["MAC-QWEN", "autocomplete", "需要编辑器 ghost text、Tab 接受和取消专用动作。"],
-  ["MAC-AGENT-CONSOLE", "agent", "需要 session/worktree/terminal/审批专用动作。"],
   ["MAC-MARKETPLACE", "marketplace", "需要导入、删除、发布和取消专用动作。"],
   ["MAC-DOCUMENTS", "documents", "需要固定工具调用执行 Word/Mermaid/Artifact 专用动作。"],
   ["MAC-UPDATE-FAILURES", "failure", "需要更新协议及 401/403/503/超时专用动作。"],
@@ -110,7 +109,6 @@ function inspect() {
     "extension/dist/extension.js",
     "extension/dist/webview.js",
     "extension/dist/agent-manager.js",
-    "extension/dist/agent-console.js",
     "extension/dist/diff-viewer.js",
     "extension/dist/diff-virtual.js",
   ]

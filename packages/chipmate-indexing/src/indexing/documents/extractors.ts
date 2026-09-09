@@ -12,14 +12,20 @@ import { classifyDocumentIssue, DocumentExtractionError, sanitizeDocumentDiagnos
 const sheetRows = 50_000
 const archiveFloor = 64 * 1024 * 1024
 const archiveCeiling = 256 * 1024 * 1024
+export const PDF_EXTRACT_TIMEOUT_MS = 120_000
+export const PDF_PREFLIGHT_TIMEOUT_MS = 15_000
+
+type ExtractionOptions = { signal?: AbortSignal; timeoutMs?: number }
 
 export async function extractDocument(
   filePath: string,
   maxBytes = Number.MAX_SAFE_INTEGER,
+  options: ExtractionOptions = {},
 ): Promise<DocumentSection[]> {
   const ext = path.extname(filePath).toLowerCase()
   const max = Math.max(1, Math.floor(maxBytes))
-  if (ext === ".pdf") return pdf(filePath, max)
+  options.signal?.throwIfAborted()
+  if (ext === ".pdf") return pdf(filePath, max, options)
   if (ext === ".docx") return docx(filePath, max)
   if (ext === ".xlsx" || ext === ".ods") return sheet(filePath, max)
   return text(filePath, max)
@@ -94,8 +100,8 @@ async function docx(filePath: string, max: number): Promise<DocumentSection[]> {
   ]
 }
 
-async function pdf(filePath: string, max: number): Promise<DocumentSection[]> {
-  const raw = await pdftotext(filePath, max)
+async function pdf(filePath: string, max: number, options: ExtractionOptions): Promise<DocumentSection[]> {
+  const raw = await pdftotext(filePath, max, options)
   return raw.split("\f").flatMap((text, index) => {
     const value = text.trim()
     if (!value) return []
@@ -112,13 +118,17 @@ async function pdf(filePath: string, max: number): Promise<DocumentSection[]> {
   })
 }
 
-export async function preflightPdfExtractor(cacheDirectory: string): Promise<void> {
+export async function preflightPdfExtractor(cacheDirectory: string, options: ExtractionOptions = {}): Promise<void> {
+  options.signal?.throwIfAborted()
   await mkdir(cacheDirectory, { recursive: true })
   const dir = await mkdtemp(path.join(cacheDirectory, "PDF 预检 "))
   const file = path.join(dir, "中文 路径.pdf")
   try {
     await writeFile(file, pdfFixture("CHIPMATE_PDF_PREFLIGHT_OK"))
-    const text = await pdftotext(file, 64 * 1024)
+    const text = await pdftotext(file, 64 * 1024, {
+      ...options,
+      timeoutMs: options.timeoutMs ?? PDF_PREFLIGHT_TIMEOUT_MS,
+    })
     if (!text.includes("CHIPMATE_PDF_PREFLIGHT_OK")) {
       throw new DocumentExtractionError(
         `PDF extractor preflight returned no expected text. Executable: ${pdftotextPath()}`,
@@ -137,9 +147,10 @@ export async function preflightPdfExtractor(cacheDirectory: string): Promise<voi
   }
 }
 
-function pdftotext(filePath: string, max: number): Promise<string> {
+function pdftotext(filePath: string, max: number, options: ExtractionOptions): Promise<string> {
   const exe = pdftotextPath()
   return new Promise((resolve, reject) => {
+    options.signal?.throwIfAborted()
     const child = spawn(exe, ["-layout", filePath, "-"], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -150,9 +161,34 @@ function pdftotext(filePath: string, max: number): Promise<string> {
     let stderr = 0
     let capped = false
     let settled = false
+    let failure: Error | undefined
+    const terminate = (error: Error) => {
+      if (settled || failure) return
+      failure = error
+      child.kill("SIGKILL")
+    }
+    const timeout = options.timeoutMs ?? PDF_EXTRACT_TIMEOUT_MS
+    const timer = setTimeout(
+      () =>
+        terminate(
+          new DocumentExtractionError(
+            `PDF 抽取超时（${timeout} ms），已终止进程。Executable: ${exe}`,
+            "extraction-safety-limit",
+          ),
+        ),
+      timeout,
+    )
+    const abort = () => terminate(new Error(`PDF 抽取已取消。Executable: ${exe}`))
+    options.signal?.addEventListener("abort", abort, { once: true })
+    child.once("spawn", () => {
+      if (failure) child.kill("SIGKILL")
+    })
+    if (options.signal?.aborted) abort()
     const finish = (fn: () => void) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
+      options.signal?.removeEventListener("abort", abort)
       fn()
     }
     child.stdout.on("data", (chunk: Buffer) => {
@@ -164,7 +200,7 @@ function pdftotext(filePath: string, max: number): Promise<string> {
       }
       if (chunk.length <= left) return
       capped = true
-      child.kill()
+      child.kill("SIGKILL")
     })
     child.stderr.on("data", (chunk: Buffer) => {
       const left = Math.max(0, 64 * 1024 - stderr)
@@ -185,6 +221,10 @@ function pdftotext(filePath: string, max: number): Promise<string> {
       )
     })
     child.on("close", (code, signal) => {
+      if (failure) {
+        finish(() => reject(failure))
+        return
+      }
       if (code === 0 || capped) {
         finish(() => resolve(Buffer.concat(out).toString("utf8")))
         return

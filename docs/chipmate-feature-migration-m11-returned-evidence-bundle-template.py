@@ -28,7 +28,6 @@ BUNDLE_FILES = {
     "linux-target-intake": ("linux-target", "target-intake-summary.md"),
     "internal-embedded-c-intake": ("internal-embedded-c", "summary.md"),
     "company-template-summary": ("company-template", "summary.md"),
-    "agent-terminal-visible-ux-intake": ("agent-terminal-visible-ux", "summary.md"),
 }
 
 
@@ -101,7 +100,6 @@ def create_template(output_dir: Path, force: bool = False) -> None:
                 "| Linux target | `linux-target/target-intake-summary.md` | `chipmate-feature-migration-target-evidence-intake-verify.py --target linux-x64` |",
                 "| Internal embedded-C detail design | `internal-embedded-c/summary.md` | `chipmate-feature-migration-internal-embedded-c-intake.py` |",
                 "| Company DOCX template | `company-template/summary.md` | `chipmate-feature-migration-company-docx-template-validate.py` |",
-                "| Visible Agent Terminal UX | `agent-terminal-visible-ux/summary.md` | `chipmate-feature-migration-agent-terminal-visible-ux-intake.py` |",
                 "",
                 "## Boundary",
                 "",
@@ -141,11 +139,6 @@ def create_template(output_dir: Path, force: bool = False) -> None:
             "Company DOCX Template Validation",
             "python3 docs/chipmate-feature-migration-company-docx-template-validate.py --template-docx <company-template.docx> --generated-docx <generated.docx> --output <bundle>/company-template/summary.md",
             "Company template OOXML/style evidence only. Placeholder filling is outside this acceptance gate.",
-        ),
-        "agent-terminal-visible-ux-intake": placeholder_summary(
-            "Agent Terminal Visible UX Intake Summary",
-            "python3 docs/chipmate-feature-migration-agent-terminal-visible-ux-intake.py --evidence-dir <visible-ux-evidence-dir> --output <bundle>/agent-terminal-visible-ux/summary.md",
-            "Returned installed VS Code visible UX evidence only. Self-check summaries are not accepted.",
         ),
     }
 

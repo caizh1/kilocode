@@ -122,6 +122,12 @@ function openContent(content: string, language?: string): void {
 }
 
 function show(uri: vscode.Uri, line?: number, column?: number): void {
+  if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(uri.path)) {
+    void vscode.commands
+      .executeCommand("vscode.open", uri)
+      .then(undefined, (err) => console.error("[ChipMate New] 打开页面图片失败:", uri.fsPath, err))
+    return
+  }
   vscode.workspace.openTextDocument(uri).then(
     (doc) => {
       const options: vscode.TextDocumentShowOptions = { preview: true }
@@ -132,7 +138,9 @@ function show(uri: vscode.Uri, line?: number, column?: number): void {
       }
       vscode.window
         .showTextDocument(doc, options)
-        .then(undefined, (err) => console.error("[ChipMate New] ChipMateProvider: Failed to show document:", uri.fsPath, err))
+        .then(undefined, (err) =>
+          console.error("[ChipMate New] ChipMateProvider: Failed to show document:", uri.fsPath, err),
+        )
     },
     (err) => console.error("[ChipMate New] ChipMateProvider: Failed to open file:", uri.fsPath, err),
   )

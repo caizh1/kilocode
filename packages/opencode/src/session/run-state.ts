@@ -1,3 +1,4 @@
+import * as TurnChanges from "@/chipmate/turn-changes/runtime" // chipmate_change
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
 import { InstanceState } from "@/effect/instance-state"
@@ -30,6 +31,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const changes = yield* TurnChanges.Service // chipmate_change
     const background = yield* BackgroundJob.Service
     const status = yield* SessionStatus.Service
 
@@ -76,6 +78,7 @@ export const layer = Layer.effect(
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
+      yield* changes.stopping(sessionID) // chipmate_change
       yield* cancelBackgroundJobs(background, sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
@@ -149,6 +152,6 @@ function busyError(sessionID: SessionID) {
   return new Session.BusyError({ sessionID })
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [BackgroundJob.node, SessionStatus.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [TurnChanges.node, BackgroundJob.node, SessionStatus.node] }) // chipmate_change
 
 export * as SessionRunState from "./run-state"

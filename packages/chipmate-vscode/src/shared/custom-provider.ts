@@ -118,6 +118,15 @@ export function resolveCustomProviderAuth(apiKey: string | undefined, changed: b
   return { mode: "clear" }
 }
 
+export function providerOriginsDiffer(existing: unknown, next: unknown): boolean {
+  if (typeof existing !== "string" || typeof next !== "string") return false
+  try {
+    return new URL(existing).origin !== new URL(next).origin
+  } catch {
+    return false
+  }
+}
+
 export function resolveCustomProviderKey(auth: "api" | "oauth" | "wellknown" | undefined) {
   if (auth !== "api") return ""
   return MASKED_CUSTOM_PROVIDER_KEY

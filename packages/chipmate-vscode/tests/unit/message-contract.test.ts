@@ -23,6 +23,8 @@ const CHIPMATE_PROVIDER_UTILS_FILE = path.join(ROOT, "src/chipmate-provider-util
 // extension and webview; the contract checks must include it.
 const SHARED_STREAM_MESSAGES_FILE = path.join(ROOT, "src/shared/stream-messages.ts")
 const ANACONDA_DESKTOP_MESSAGES_FILE = path.join(ROOT, "src/shared/anaconda-desktop-messages.ts")
+const DEEPSEEK_HARNESS_MESSAGES_FILE = path.join(ROOT, "src/shared/deepseek-harness.ts")
+const SESSION_SURFACE_MESSAGES_FILE = path.join(ROOT, "src/shared/session-surface.ts")
 
 function readFile(filePath: string): string {
   return fs.readFileSync(filePath, "utf-8")
@@ -37,7 +39,13 @@ function readMessagesDir(): string {
 }
 
 function readMessageTypeSources(): string {
-  return [readMessagesDir(), readFile(SHARED_STREAM_MESSAGES_FILE), readFile(ANACONDA_DESKTOP_MESSAGES_FILE)].join("\n")
+  return [
+    readMessagesDir(),
+    readFile(SHARED_STREAM_MESSAGES_FILE),
+    readFile(ANACONDA_DESKTOP_MESSAGES_FILE),
+    readFile(DEEPSEEK_HARNESS_MESSAGES_FILE),
+    readFile(SESSION_SURFACE_MESSAGES_FILE),
+  ].join("\n")
 }
 
 /**

@@ -1,3 +1,4 @@
+import AppearanceSettings from "./AppearanceSettings"
 import { type Component } from "solid-js"
 import { Select } from "@chipmate/chipmate-ui/select"
 import { TextField } from "@chipmate/chipmate-ui/text-field"
@@ -31,6 +32,7 @@ const DisplayTab: Component = () => {
 
   return (
     <div>
+      <AppearanceSettings />
       <Card>
         <SettingsRow
           title={language.t("settings.display.username.title")}
@@ -96,7 +98,7 @@ const DisplayTab: Component = () => {
           description={language.t("settings.display.tokenThroughput.description")}
         >
           <Switch
-            checked={Boolean(settings()["showTokenThroughput"] ?? false)}
+            checked={Boolean(settings()["showTokenThroughput"] ?? true)}
             onChange={(checked: boolean) => updateSetting("showTokenThroughput", checked)}
             hideLabel
           >

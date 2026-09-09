@@ -58,12 +58,15 @@ it.effect("does not expose backend credentials or config to model shell commands
         config: process.env.CHIPMATE_CONFIG,
         content: process.env.CHIPMATE_CONFIG_CONTENT,
         directory: process.env.CHIPMATE_CONFIG_DIR,
+        defaults: process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS,
       }
       process.env.CHIPMATE_SERVER_PASSWORD = "secret"
       process.env.CHIPMATE_SERVER_USERNAME = "chipmate"
       process.env.CHIPMATE_CONFIG = "/secret/config.json"
       process.env.CHIPMATE_CONFIG_CONTENT = '{"provider":{"apiKey":"secret"}}'
       process.env.CHIPMATE_CONFIG_DIR = "/secret/config"
+      process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS =
+        '{"provider":{"chipmate":{"options":{"baseURL":"https://internal.test/v1"}}}}'
       return values
     }),
     () =>
@@ -73,8 +76,8 @@ it.effect("does not expose backend credentials or config to model shell commands
             run({
               command:
                 process.platform === "win32"
-                  ? "if ($env:CHIPMATE_SERVER_PASSWORD -or $env:CHIPMATE_SERVER_USERNAME -or $env:CHIPMATE_CONFIG -or $env:CHIPMATE_CONFIG_CONTENT -or $env:CHIPMATE_CONFIG_DIR) { 'set' } else { 'unset' }"
-                  : 'test -z "$CHIPMATE_SERVER_PASSWORD" && test -z "$CHIPMATE_SERVER_USERNAME" && test -z "$CHIPMATE_CONFIG" && test -z "$CHIPMATE_CONFIG_CONTENT" && test -z "$CHIPMATE_CONFIG_DIR" && printf unset',
+                  ? "if ($env:CHIPMATE_SERVER_PASSWORD -or $env:CHIPMATE_SERVER_USERNAME -or $env:CHIPMATE_CONFIG -or $env:CHIPMATE_CONFIG_CONTENT -or $env:CHIPMATE_CONFIG_DIR -or $env:CHIPMATE_INTERNAL_PROVIDER_DEFAULTS) { 'set' } else { 'unset' }"
+                  : 'test -z "$CHIPMATE_SERVER_PASSWORD" && test -z "$CHIPMATE_SERVER_USERNAME" && test -z "$CHIPMATE_CONFIG" && test -z "$CHIPMATE_CONFIG_CONTENT" && test -z "$CHIPMATE_CONFIG_DIR" && test -z "$CHIPMATE_INTERNAL_PROVIDER_DEFAULTS" && printf unset',
               description: "Check backend credential isolation",
             }),
           ),
@@ -93,6 +96,8 @@ it.effect("does not expose backend credentials or config to model shell commands
         else process.env.CHIPMATE_CONFIG_CONTENT = values.content
         if (values.directory === undefined) delete process.env.CHIPMATE_CONFIG_DIR
         else process.env.CHIPMATE_CONFIG_DIR = values.directory
+        if (values.defaults === undefined) delete process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS
+        else process.env.CHIPMATE_INTERNAL_PROVIDER_DEFAULTS = values.defaults
       }),
   ),
 )

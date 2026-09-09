@@ -165,7 +165,6 @@ Open VS Code on a representative workspace and confirm:
 | Sidebar contribution | Existing ChipMate/ChipMate sidebar appears. |
 | Native ChipMate commands | Existing ChipMate commands remain visible in Command Palette. |
 | Document sidecar commands | Document artifact commands appear, but do not trigger during ordinary QA unless requested. |
-| Agent Terminal | Default-off unless explicitly enabled. |
 | Qwen autocomplete settings | Existing qwen-direct settings remain present. |
 
 ## Optional Word render target configuration
@@ -225,8 +224,6 @@ unaccepted.
 | S11 | Mermaid | Generate state-machine Mermaid PNG. | `.mmd`, `.png`, diagnostics artifact. | TODO |
 | S12 | Mermaid + Word | Insert Mermaid PNG into Word. | New Word artifact with figure. | TODO |
 | S13 | Source-backed detail design | Run on one internal embedded C module. | Evidence, diagrams, Word output, quality report. | TODO |
-| S14 | Agent Terminal open | Open Agent Terminal. | Disabled prompt appears; terminal opens after workspace enable. | TODO |
-| S15 | Agent Terminal danger | Plan/delete temporary artifacts. | Dangerous command requires explicit confirmation. | TODO |
 | S16 | Autocomplete | Enable qwen-direct and trigger inline completion. | Provider still registers; diagnostics commands exist. | TODO |
 
 ## Status rules
@@ -252,7 +249,6 @@ Collect these files or screenshots after target validation:
 | VSIX checksum command output | Proves target artifact integrity. |
 | VSIX CLI marker boundary output | Proves migrated skill markers are present and old ChipMate document-contract repair markers are absent. |
 | VS Code extension list output | Proves installed extension ID and version. |
-| VS Code screenshots or logs | Useful for sidebar/command/Agent Terminal behavior. |
 | `.chipmate/artifacts` output paths | Required for artifact, Word, Mermaid, and detail-design checks. |
 | Provider/auth error logs | Required when status is `BLOCKED_AUTH`. |
 | Completed S1-S16 table | Required before M11 can claim installed runtime no-regression. |
@@ -368,7 +364,6 @@ It also fails if these old ChipMate document-contract repair markers appear:
 - `先渲染缺失图表`
 - `缺失文档合同规划`
 
-These scripts are package-integrity checks only. Passing them does not replace installed VS Code smoke S1-S16, provider/auth preflight, native QA preservation checks, Document RAG checks, autocomplete checks, Agent Terminal checks, Word/Mermaid artifact checks, or source-backed detailed-design runtime validation.
 
 Word validation scope after the latest migration boundary update: verify generic `.docx` create/inspect/edit/template-style/merge/diff/render tools only. Do not treat ChipMate Word/document runtime contracts, required-artifact validators, recipe repair loops, or skill contract gates as migrated target behavior.
 

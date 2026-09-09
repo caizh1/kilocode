@@ -16,6 +16,8 @@ const schema = z.object({
     }),
   ),
   phase: z.string(),
+  kind: z.string().optional(),
+  rejected: z.boolean(),
   answer: z.string(),
   sessions: z.number(),
 })
@@ -60,7 +62,7 @@ const task = {
           ? "Frozen Code answer"
           : params.subagent_type === "explore"
             ? "Verifier " + count + " source findings"
-            : "Independent synthesized answer"
+            : (process.env.SYNTHESIS_OUTPUT ?? "ULTRA_VERIFY_REQUEST_KIND=analysis\\nIndependent synthesized answer")
       return {
         title: params.description,
         metadata: { sessionId: "ses_child_" + count },
@@ -105,13 +107,18 @@ const result = await Effect.runPromise(
         ask: () => Effect.void,
         extra: {},
       }
-      const output = yield* tool.execute({ requestKind: "analysis" }, ctx)
+      const output = yield* tool.execute({}, ctx)
       const state = UltraVerify.load({ sessionID, messageID: userID, messages: ctx.messages })
+      const parsed = output.output.startsWith("ULTRA_VERIFY_RESULT\\n")
+        ? JSON.parse(output.output.slice("ULTRA_VERIFY_RESULT\\n".length))
+        : undefined
       return {
         max,
         calls,
         phase: output.metadata.ultraVerify.phase,
-        answer: JSON.parse(output.output.slice("ULTRA_VERIFY_RESULT\\n".length)).answer,
+        kind: output.metadata.ultraVerify.kind,
+        rejected: output.metadata.rejected,
+        answer: parsed?.answer ?? output.output,
         sessions: output.metadata.ultraVerify.sessions.length,
       }
     }),
@@ -127,7 +134,7 @@ process.stdout.write(JSON.stringify(result), () => process.exit(0))
 `
 
 describe("Ultra verification tool", () => {
-  test("runs one Code author, three parallel verifiers, and one Ask synthesizer", async () => {
+  async function run(synthesis?: string) {
     const storage = path.join(os.tmpdir(), `chipmate-ultra-verify-tool-${Math.random().toString(36).slice(2)}`)
     const child = Bun.spawn([process.execPath, "-e", script], {
       cwd: root,
@@ -137,6 +144,7 @@ describe("Ultra verification tool", () => {
         CHIPMATE_STORAGE_ROOT: storage,
         CHIPMATE_VSCODE_GLOBAL_STORAGE: storage,
         CHIPMATE_CONFIG_CONTENT: "{}",
+        ...(synthesis ? { SYNTHESIS_OUTPUT: synthesis } : {}),
       },
       stdout: "pipe",
       stderr: "pipe",
@@ -148,7 +156,11 @@ describe("Ultra verification tool", () => {
     ]).finally(() => fs.rm(storage, { recursive: true, force: true }))
     expect(status, stderr).toBe(0)
     const start = stdout.lastIndexOf('{"max":')
-    const output = schema.parse(JSON.parse(stdout.slice(start)))
+    return schema.parse(JSON.parse(stdout.slice(start)))
+  }
+
+  test("runs one Code author, three parallel verifiers, and one Ask synthesizer", async () => {
+    const output = await run()
     expect(output.max).toBe(3)
     expect(output.calls.map((item) => item.type)).toEqual([
       "ultra-code-baseline",
@@ -164,7 +176,28 @@ describe("Ultra verification tool", () => {
     expect(output.calls.slice(1, 4).every((item) => !item.prompt.includes("深化调查"))).toBe(true)
     expect(output.calls.at(-1)?.prompt).toContain("不使用 Council、投票或结构化协议")
     expect(output.phase).toBe("complete")
+    expect(output.kind).toBe("analysis")
+    expect(output.rejected).toBe(false)
     expect(output.answer).toBe("Independent synthesized answer")
     expect(output.sessions).toBe(5)
+  })
+
+  test.each([
+    ["review", "complete"],
+    ["implementation", "ready"],
+  ] as const)("accepts the %s synthesis marker and selects phase %s", async (kind, phase) => {
+    const output = await run(`ULTRA_VERIFY_REQUEST_KIND=${kind}\nVerified ${kind} answer`)
+    expect(output.kind).toBe(kind)
+    expect(output.phase).toBe(phase)
+    expect(output.rejected).toBe(false)
+    expect(output.answer).toBe(`Verified ${kind} answer`)
+  })
+
+  test("fails closed on a missing or invalid synthesis marker", async () => {
+    const output = await run("Independent synthesized answer")
+    expect(output.kind).toBeUndefined()
+    expect(output.phase).toBe("failed")
+    expect(output.rejected).toBe(true)
+    expect(output.answer).toContain("ULTRA_VERIFY_RUNTIME_DISCLOSURE")
   })
 })

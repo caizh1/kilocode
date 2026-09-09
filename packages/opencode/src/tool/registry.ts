@@ -260,6 +260,7 @@ const layer = Layer.effect(
         const chipmate = yield* ChipMateToolRegistry.build(chipmateToolInfos, {
           agent: agents,
           truncate,
+          task: tool.task, // chipmate_change - Ultra runtime registration requires the real Task tool
           indexing: indexing ?? false,
         })
         // chipmate_change end

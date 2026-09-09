@@ -39,7 +39,6 @@ BUNDLE_FILES = {
     "linux-target-intake": ("linux-target", "target-intake-summary.md"),
     "internal-embedded-c-intake": ("internal-embedded-c", "summary.md"),
     "company-template-summary": ("company-template", "summary.md"),
-    "agent-terminal-visible-ux-intake": ("agent-terminal-visible-ux", "summary.md"),
 }
 
 
@@ -94,7 +93,6 @@ def run_readiness(
         ("linux-target-intake", "--linux-target-intake"),
         ("internal-embedded-c-intake", "--internal-embedded-c-summary"),
         ("company-template-summary", "--company-template-summary"),
-        ("agent-terminal-visible-ux-intake", "--agent-terminal-visible-ux-intake"),
     ]
     for key, flag in mapping:
         item = by_key.get(key)
@@ -297,28 +295,6 @@ def build_ready_bundle(root: Path) -> tuple[Path, Path, Path]:
         bundle / "company-template" / "summary.md",
         "# Company DOCX Template Validation\n\n- Status: `PASS`\n- Template: `/tmp/company.docx`\n- Template size: `1000`\n- Style count: `12`\n\n## Failures\n- None\n\n## Warnings\n- None\n\n## Boundary\n\nThis helper validates a real .docx template or style source as OOXML input evidence only. It does not generate Word output, does not fill placeholders, does not require missing artifacts, does not run recipe repair, and does not decide installed chat/runtime S8 acceptance.\n",
     )
-    write(
-        bundle / "agent-terminal-visible-ux" / "summary.md",
-        "\n".join(
-            [
-                "# Agent Terminal Visible UX Intake Summary",
-                "",
-                "Status: `PASS`",
-                "Passed checks: `18`",
-                "Failed checks: `0`",
-                "",
-                "## Passed checks",
-                "- evidence file found: agent-terminal-visible-ux-evidence.md",
-                "- context filled: Installed VSIX profile",
-                "- status PASS: Agent Terminal command visible",
-                "- status PASS: Terminal pane opens after enable",
-                "- status PASS: Native ChipMate terminal unaffected",
-                "- status PASS: Dangerous command confirmation visible",
-                "- attached evidence assets: 2",
-                "",
-            ]
-        ),
-    )
     return bundle, s3, source_guard
 
 
@@ -336,37 +312,12 @@ def self_check(output_dir: Path) -> int:
             accept_company_template_pass_with_limits=False,
         )
         ready_code = intake(ready_args)
-        missing_bundle = root / "missing-bundle"
-        missing_bundle.mkdir()
-        for child in bundle.iterdir():
-            if child.name != "agent-terminal-visible-ux":
-                target = missing_bundle / child.name
-                if child.is_dir():
-                    import shutil
-
-                    shutil.copytree(child, target)
-        missing_out = root / "missing-out"
-        missing_args = argparse.Namespace(
-            bundle_dir=missing_bundle,
-            output_dir=missing_out,
-            s3_readiness=s3,
-            s16_source_guard=source_guard,
-            accept_s16_decision=True,
-            accept_company_template_pass_with_limits=False,
-        )
-        missing_code = intake(missing_args)
-
     passed: list[str] = []
     failed: list[str] = []
     if ready_code == 0:
         passed.append("complete returned-evidence bundle reaches READY_FOR_M11_REVIEW")
     else:
         failed.append("complete returned-evidence bundle was not accepted")
-    if missing_code != 0:
-        passed.append("bundle missing visible Agent Terminal UX evidence is rejected")
-    else:
-        failed.append("bundle missing visible Agent Terminal UX evidence was incorrectly accepted")
-
     status = "PASS" if not failed else "FAIL"
     output_dir.mkdir(parents=True, exist_ok=True)
     lines = [

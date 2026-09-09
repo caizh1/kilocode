@@ -19,7 +19,6 @@ import {
   FilePart,
   Message as MessageType,
   Part as PartType,
-  ReasoningPart,
   TextPart,
   ToolPart,
   UserMessage,
@@ -35,7 +34,6 @@ import { GenericTool, BasicTool } from "./basic-tool"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Card } from "./card"
-import { Collapsible } from "./collapsible"
 import { FileIcon } from "./file-icon"
 import { Icon } from "./icon"
 import { Checkbox } from "./checkbox"
@@ -55,7 +53,7 @@ import { busy, createThrottledValue, useToolFade, useContextToolPending } from "
 import { readToolOpen, toolOpenKey } from "./tool-open-state"
 import { ContextToolGroupHeader, ContextToolExpandedList, ContextToolRollingResults } from "./context-tool-results"
 import { ShellRollingResults } from "./shell-rolling-results"
-import { reasoningHeading } from "./reasoning-heading"
+import { ReasoningDisclosure } from "./reasoning-disclosure"
 import { extractFilePathFromHref } from "../file-path"
 import { normalize } from "./session-diff"
 import { deferredHighlight } from "../context/marked"
@@ -162,6 +160,13 @@ export interface MessagePartProps {
   feedback?: MessageFeedbackControls
   completion?: JSX.Element
   throughput?: JSX.Element
+  fork?: {
+    onSelect: () => void
+    disabled?: boolean
+    pending?: boolean
+    slow?: boolean
+    title?: string
+  }
 }
 
 export type PartComponent = Component<MessagePartProps>
@@ -1041,6 +1046,7 @@ export function Part(props: MessagePartProps) {
         feedback={props.feedback}
         completion={props.completion}
         throughput={props.throughput}
+        fork={props.fork}
       />
     </Show>
   )
@@ -1455,6 +1461,22 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
         </div>
         <Show when={showCopy()}>
           <div data-slot="assistant-copy-wrapper">
+            <Show when={props.fork}>
+              {(fork) => (
+                <Tooltip value={fork().title ?? i18n.t("ui.message.forkMessage")} placement="top" gutter={4}>
+                  <IconButton
+                    icon="fork"
+                    size="normal"
+                    variant="ghost"
+                    disabled={fork().disabled}
+                    aria-busy={fork().pending}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => fork().onSelect()}
+                    aria-label={i18n.t("ui.message.forkMessage")}
+                  />
+                </Tooltip>
+              )}
+            </Show>
             <Tooltip
               value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
               placement="top"
@@ -1515,8 +1537,25 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                 />
               </Tooltip>
             </Show>
-            <Show when={props.completion}>{(el) => <span data-slot="assistant-completion-inline">{el()}</span>}</Show>
-            <Show when={props.throughput}>{(el) => <span data-slot="assistant-throughput-inline">{el()}</span>}</Show>
+            <Show when={props.completion || props.throughput}>
+              <span data-slot="assistant-turn-metadata">
+                <Show when={props.completion}>
+                  {(el) => <span data-slot="assistant-completion-inline">{el()}</span>}
+                </Show>
+                <Show when={props.throughput}>
+                  {(el) => (
+                    <span data-slot="assistant-performance-metadata">
+                      <Show when={props.completion}>
+                        <span data-slot="assistant-turn-metadata-separator" aria-hidden="true">
+                          ·
+                        </span>
+                      </Show>
+                      <span data-slot="assistant-throughput-inline">{el()}</span>
+                    </span>
+                  )}
+                </Show>
+              </span>
+            </Show>
           </div>
         </Show>
         <Show when={summary()}>
@@ -1531,159 +1570,23 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   )
 }
 
-// Expanded mode tracks explicit user collapses so reactive or virtualized
-// remounts do not reopen a block the user closed.
-const userCollapsed = new Set<string>()
-// Auto-collapse mode preserves the original flow: streaming blocks open,
-// completed blocks collapse once, and manual opens survive later remounts.
-const streamed = new Set<string>()
-const autocollapsed = new Set<string>()
-const userOpened = new Set<string>()
-const MAX_REASONING_STATE = 1000
-
-function rememberReasoningState(set: Set<string>, id: string) {
-  // Remember the most recent manual display choices without growing forever.
-  // If an old id is evicted, only its open/collapsed override is forgotten;
-  // the reasoning block still renders normally if it appears again.
-  if (set.has(id)) set.delete(id)
-  set.add(id)
-  if (set.size <= MAX_REASONING_STATE) return
-  const first = set.values().next().value
-  if (first !== undefined) set.delete(first)
-}
-
 // Overrides upstream flat markdown render with streaming reasoning block.
 // Also filters encrypted reasoning data from OpenRouter that appears as [REDACTED].
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProps) {
-  const i18n = useI18n()
-
-  const text = () => {
-    const p = props.part as unknown as ReasoningPart
-    return (p.text ?? "").replace("[REDACTED]", "").trim()
-  }
-
-  // Throttle markdown re-renders during streaming
-  const display = createThrottledValue(text)
-  const view = createMemo(() => reasoningHeading(display()))
-
-  const Header = () => (
-    <div data-slot="reasoning-header">
-      <Icon name="brain" size="small" />
-      <span data-slot="reasoning-label">{i18n.t("ui.reasoning.label" as never)}</span>
-      <Show when={view().title}>{(title) => <span data-slot="reasoning-title">{title()}</span>}</Show>
-    </div>
-  )
-
   // time.end is set by the processor on reasoning-end.
   // v1 parts lack time entirely → treat as historical.
-  const done = () => {
+  const running = () => {
     const t = (props.part as any).time
-    return !t || !!t.end
+    return Boolean(t && !t.end)
   }
-
-  const id = (props.part as any).id as string
-  const was = streamed.has(id)
-  if (!done()) rememberReasoningState(streamed, id)
-
-  // Auto-collapse mode: streaming -> open, just-finished -> open briefly then
-  // collapse, historical -> collapsed. Expanded mode: open unless the user
-  // explicitly collapsed this reasoning part.
-  const initial = props.reasoningAutoCollapse ? !done() || was || userOpened.has(id) : !userCollapsed.has(id)
-  const [open, setOpen] = createSignal(initial)
-
-  const track = (value: boolean) => {
-    if (props.reasoningAutoCollapse) {
-      if (value) rememberReasoningState(userOpened, id)
-      else userOpened.delete(id)
-      setOpen(value)
-      return
-    }
-
-    if (value) userCollapsed.delete(id)
-    else rememberReasoningState(userCollapsed, id)
-    setOpen(value)
-  }
-
-  // Reasoning has no built-in "force open" hook (unlike BasicTool's forceOpen
-  // ratchet) — mirror that one-way-open behavior here so jumping a chat
-  // search match to a collapsed reasoning block reveals it, the same as it
-  // does for tool calls. Recorded into userOpened/userCollapsed the same way
-  // a manual open would be, so it stays open across remounts/re-renders.
-  createEffect(() => {
-    if (!props.forceOpen || open()) return
-    if (props.reasoningAutoCollapse) rememberReasoningState(userOpened, id)
-    else userCollapsed.delete(id)
-    setOpen(true)
-  })
-
-  createEffect(() => {
-    if (!props.reasoningAutoCollapse) return
-    // Skip auto-collapse for blocks the user explicitly opened.
-    if (done() && open() && !autocollapsed.has(id) && !userOpened.has(id)) {
-      rememberReasoningState(autocollapsed, id)
-      setOpen(false)
-    }
-  })
-
-  onCleanup(() => {
-    if (done()) streamed.delete(id)
-  })
-
-  // Auto-scroll the content container while streaming.
-  // Use a plain mutable flag rather than checking dist inside the reactive
-  // effect: by the time the effect runs the DOM has already grown, so reading
-  // scrollHeight post-update incorrectly reports the user as scrolled away
-  // whenever a streaming chunk is > 10px tall.
-  let ref: HTMLDivElement | undefined
-  let scrolled = false
-
-  const onScroll = (e: Event) => {
-    const el = e.currentTarget as HTMLDivElement
-    if (el.scrollHeight - el.clientHeight - el.scrollTop < 10) scrolled = false
-  }
-
-  const onWheel = (e: WheelEvent) => {
-    if (e.deltaY < 0) scrolled = true
-  }
-
-  createEffect(() => {
-    display()
-    if (!done() && ref && !scrolled) {
-      ref.scrollTop = ref.scrollHeight
-    }
-  })
-
   return (
-    <Show when={view().title || view().body}>
-      <div
-        data-component="reasoning-part"
-        data-streaming={!done() ? "" : undefined}
-        data-auto-collapse={props.reasoningAutoCollapse ? "" : undefined}
-      >
-        <Show
-          when={view().body}
-          fallback={
-            <div data-slot="collapsible-trigger" data-static="">
-              <Header />
-            </div>
-          }
-        >
-          <Collapsible open={open()} onOpenChange={track} class="tool-collapsible">
-            <Collapsible.Trigger>
-              <Header />
-              <Collapsible.Arrow />
-            </Collapsible.Trigger>
-            <Collapsible.Content>
-              <div data-slot="reasoning-details">
-                <div data-slot="reasoning-content" ref={ref} onScroll={onScroll} onWheel={onWheel}>
-                  <Markdown text={view().body} cacheKey={id} streaming={!done()} />
-                </div>
-              </div>
-            </Collapsible.Content>
-          </Collapsible>
-        </Show>
-      </div>
-    </Show>
+    <ReasoningDisclosure
+      id={(props.part as any).id as string}
+      text={(props.part as any).text ?? ""}
+      running={running()}
+      autoCollapse={Boolean(props.reasoningAutoCollapse)}
+      forceOpen={props.forceOpen}
+    />
   )
 }
 

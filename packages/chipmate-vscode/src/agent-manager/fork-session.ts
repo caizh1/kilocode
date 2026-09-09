@@ -4,6 +4,7 @@ import { TelemetryProxy, TelemetryEventName } from "../services/telemetry"
 import type { WorktreeStateManager } from "./WorktreeStateManager"
 import { PLATFORM } from "./constants"
 import { recordForkHandoff } from "./fork-handoff"
+import type { SessionForkCoordinator } from "../services/session-fork/coordinator"
 
 export interface ForkContext {
   getClient: () => ChipMateClient
@@ -15,6 +16,8 @@ export interface ForkContext {
   notifyForked: (session: Session, forkedFromId: string, worktreeId?: string) => void
   registerSession: (session: Session) => void
   log: (...args: unknown[]) => void
+  coordinator?: SessionForkCoordinator
+  ownerID?: string
 }
 
 /**
@@ -28,7 +31,7 @@ export async function forkSession(
   sessionId: string,
   worktreeId?: string,
   messageId?: string,
-): Promise<null> {
+): Promise<Session | null> {
   let client: ChipMateClient
   try {
     client = ctx.getClient()
@@ -45,9 +48,20 @@ export async function forkSession(
 
   let forked: Session
   try {
-    const input = { sessionID: sessionId, directory, ...(messageId ? { messageID: messageId } : {}) }
-    const { data } = await client.session.fork(input, { throwOnError: true })
-    forked = data
+    if (ctx.coordinator) {
+      forked = await ctx.coordinator.execute({
+        sourceSessionID: sessionId,
+        directory,
+        worktreeID: worktreeId,
+        ownerID: ctx.ownerID ?? "agent-manager",
+        boundary: messageId ? { type: "after", messageID: messageId } : { type: "full" },
+      })
+      if (!ctx.coordinator.claim(forked.id, ctx.ownerID ?? "agent-manager")) return forked
+    } else {
+      const input = { sessionID: sessionId, directory, ...(messageId ? { messageID: messageId } : {}) }
+      const { data } = await client.session.fork(input, { throwOnError: true })
+      forked = data
+    }
   } catch (error) {
     const err = getErrorMessage(error)
     ctx.postError(`Failed to fork session: ${err}`)
@@ -65,13 +79,15 @@ export async function forkSession(
     if (directory) ctx.registerWorktreeSession(forked.id, directory)
   }
 
-  await recordForkHandoff({ client, sessionId: forked.id, directory }).catch((err) => {
-    ctx.log("forkSession: failed to record fork handoff:", getErrorMessage(err))
-  })
+  if (!ctx.coordinator) {
+    await recordForkHandoff({ client, sessionId: forked.id, directory }).catch((err) => {
+      ctx.log("forkSession: failed to record fork handoff:", getErrorMessage(err))
+    })
+  }
 
   ctx.pushState()
   ctx.notifyForked(forked, sessionId, worktreeId)
   ctx.registerSession(forked)
   ctx.log(`Forked session ${sessionId} → ${forked.id}${worktreeId ? ` in worktree ${worktreeId}` : ""}`)
-  return null
+  return forked
 }

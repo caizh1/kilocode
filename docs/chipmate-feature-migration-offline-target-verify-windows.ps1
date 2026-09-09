@@ -169,7 +169,7 @@ try {
 - Tar contents evidence: ``tar-contents.actual.txt``
 - Tar contents diff: ``tar-contents.diff.txt``
 
-This verifies transfer/package integrity only. It does not prove installed VS Code chat QA, Document RAG, autocomplete, Agent Terminal, Word, Mermaid, or source-backed detail-design runtime behavior.
+This verifies transfer/package integrity only. It does not prove installed VS Code chat QA, Document RAG, autocomplete, Word, Mermaid, or source-backed detail-design runtime behavior.
 "@ | Set-Content -Encoding UTF8 -Path $Summary
 
   Write-Host "PASS: wrote $Summary"

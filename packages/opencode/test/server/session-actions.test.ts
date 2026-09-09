@@ -14,6 +14,7 @@ afterEach(async () => {
 })
 
 describe("session action routes", () => {
+  // chipmate_change start - inclusive/idempotent fork protocol compatibility
   it.instance(
     "session routes expose metadata on create, update, get, and fork",
     () =>
@@ -71,6 +72,7 @@ describe("session action routes", () => {
       }),
     { git: true },
   )
+  // chipmate_change end
 
   it.instance(
     "abort route returns success",
@@ -88,6 +90,48 @@ describe("session action routes", () => {
       }),
     { git: true },
   )
+
+  // chipmate_change start - bodyless compatibility and conflicting fork boundary rejection
+  it.instance(
+    "fork route keeps bodyless compatibility and rejects conflicting boundaries",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* Effect.acquireRelease(SessionNs.use.create({}), (created) =>
+          SessionNs.use.remove(created.id).pipe(Effect.ignore),
+        )
+        const bodyless = yield* requestInDirectory(`/session/${session.id}/fork`, test.directory, { method: "POST" })
+        expect(bodyless.status).toBe(200)
+        const forked = (yield* bodyless.json) as SessionNs.Info
+
+        const operationID = crypto.randomUUID()
+        const durable = yield* requestInDirectory(`/session/${session.id}/fork`, test.directory, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ operationID }),
+        })
+        expect(durable.status).toBe(200)
+        const target = (yield* durable.json) as SessionNs.Info
+        const retried = yield* requestInDirectory(`/session/${session.id}/fork`, test.directory, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ operationID }),
+        })
+        expect(retried.status).toBe(200)
+        expect(((yield* retried.json) as SessionNs.Info).id).toBe(target.id)
+
+        const invalid = yield* requestInDirectory(`/session/${session.id}/fork`, test.directory, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageID: "msg_one", afterMessageID: "msg_two" }),
+        })
+        expect(invalid.status).toBe(400)
+        yield* SessionNs.use.remove(target.id).pipe(Effect.ignore)
+        yield* SessionNs.use.remove(forked.id).pipe(Effect.ignore)
+      }),
+    { git: true },
+  )
+  // chipmate_change end
 
   it.instance(
     "experimental background route is a no-op without synchronous subagents",

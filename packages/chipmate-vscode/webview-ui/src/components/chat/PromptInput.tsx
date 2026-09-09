@@ -1,3 +1,4 @@
+import { useCommandIntroduction } from "../../hooks/useCommandIntroduction"
 /**
  * PromptInput component
  * Text input with send/abort buttons, ghost-text autocomplete, and @ file mention support
@@ -35,6 +36,7 @@ import { useProvider } from "../../context/provider"
 import { ModelSelector } from "../shared/ModelSelector"
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
+import { PromptStatusIcon } from "../shared/PromptStatusIcon"
 import { speechAction, SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
 import { canUseSpeechToText, selectedSpeechToTextModel } from "../speech-to-text/availability"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
@@ -49,6 +51,9 @@ import { isInternalOfflineBuild } from "../../../../src/shared/internal-offline"
 import { useGhostText } from "../../hooks/useGhostText"
 import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useImageAttachments, type ImageAttachment } from "../../hooks/useImageAttachments"
+import { usePromptReferences } from "../../hooks/usePromptReferences"
+import { useFutureSkin } from "../../hooks/useFutureSkin"
+import { PromptReferenceActions, PromptReferenceSummary } from "./PromptReferences"
 import { convertToMentionPath } from "../../utils/path-mentions"
 import { SessionMentionPicker } from "./SessionMentionPicker"
 import { usePromptHistory } from "../../hooks/usePromptHistory"
@@ -101,6 +106,8 @@ import { partReview, reviewBody } from "../../../../src/shared/review-comments"
 import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
 import { parseMemoryCommand } from "../../utils/memory-command"
 import { useMemory } from "../../context/memory"
+import { useSessionSurface } from "../../context/session-surface"
+import { useManualCompaction } from "../../context/manual-compaction"
 
 const IndexingProgressButton: Component<{
   title: string
@@ -346,6 +353,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const i18n = useI18n()
   const vscode = useVSCode()
   const projectMemory = useMemory()
+  const surface = useSessionSurface()
+  const manualCompaction = useManualCompaction()
   const sid = () => session.currentSessionID() ?? props.pendingSessionID ?? session.draftSessionID() ?? undefined
   const documentAgent = () => session.selectedAgent(sid()) === "document"
   const documentScope = () => {
@@ -369,7 +378,28 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const mention = useFileMention(vscode, sid, hasGit)
   const terminal = useTerminalContext(vscode)
   const git = useGitChangesContext(vscode, ctx, hasGit)
-  const imageAttach = useImageAttachments()
+  const imageAttach = useImageAttachments(() => draftKey())
+  const references = usePromptReferences({
+    scope: () => draftKey(),
+    text: () => text(),
+    directory: () => server.workspaceDirectory(),
+    element: () => textareaRef,
+    setText: (value) => setText(value),
+    resize: () => adjustHeight(),
+    mention,
+    addImage: imageAttach.add,
+  })
+  const night = useFutureSkin()
+  createEffect(
+    on(
+      night,
+      () => {
+        const frame = requestAnimationFrame(() => adjustHeight())
+        onCleanup(() => cancelAnimationFrame(frame))
+      },
+      { defer: true },
+    ),
+  )
   imageAttach.setFilePathDropHandler((paths) => {
     const cwd = server.workspaceDirectory()
     const resolved = paths.map((p) => convertToMentionPath(p, cwd))
@@ -509,13 +539,174 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (isInternalOfflineBuild()) hidden.add("chipmateclaw")
       return hidden
     },
+    { action: manualCompaction.request, enabled: manualCompaction.available },
   )
+  const introduction = useCommandIntroduction({
+    text,
+    context: () => `${draftKey()}:${JSON.stringify(surface.activeKey())}`,
+    enabled: () => !collapsed() && surface.canMutate(),
+    commands: slash.commands,
+    textarea: () => textareaRef,
+    vscode,
+  })
+  const commandSelected = (command: SlashCommandEntry) => {
+    adjustHeight()
+    introduction.selected(command)
+  }
   const reviewBoundaryVisible = () => isEmbeddedReviewPrompt(text()) && !slash.show()
   createEffect(
     on(reviewBoundaryVisible, (visible, previous) => {
       if (visible && previous === false) setReviewBoundaryExpanded(true)
     }),
   )
+
+  const sharedContent = new Map<string, string>()
+  let pendingSharedClear: { messageID: string; key: string; draftID?: string; revision: number } | undefined
+  const surfaceKey = () => {
+    const key = surface.activeKey()
+    return key ? `${key.kind}:${key.id}` : undefined
+  }
+  const retainSharedDraftUntilAccepted = (
+    messageID: string | undefined,
+    draftID: string | undefined,
+    revision: number | undefined,
+  ) => {
+    const key = surfaceKey()
+    if (!messageID || !key || revision === undefined) return
+    pendingSharedClear = { messageID, key, draftID, revision }
+  }
+  const sharedReferences = (value: string) =>
+    [...value.matchAll(/(?:^|\s)([@$][^\s]+)/g)].flatMap((match) => (match[1] ? [match[1]] : []))
+  const sharedDraftContent = () => {
+    const scope = sid()
+    const selected = session.selected(scope)
+    return {
+      boxId: boxKey(),
+      text: text(),
+      reviewComments: reviewComments(),
+      images: imageAttach.images(),
+      references: sharedReferences(text()),
+      inputScrollTop: textareaRef?.scrollTop ?? scrollDrafts.get(draftKey()) ?? 0,
+      deepSeekHarness: surface.draft()?.content.deepSeekHarness,
+      selection: selected
+        ? {
+            providerID: selected.providerID,
+            modelID: selected.modelID,
+            agent: session.selectedAgent(sid()),
+            variant: session.currentVariant(sid()),
+            override: scope ? session.hasSessionModelOverride(scope) : false,
+          }
+        : undefined,
+    }
+  }
+  const commitSharedDraft = async (ownerKey: string | undefined, content: ReturnType<typeof sharedDraftContent>) => {
+    if (!ownerKey) return { ok: true as const, revision: surface.draft()?.revision }
+    if (surfaceKey() !== ownerKey) {
+      showToast({ variant: "error", title: language.t("common.requestFailed"), description: "会话已切换，请重试" })
+      return { ok: false as const }
+    }
+    try {
+      const committed = await surface.commitDraft(content)
+      if (surfaceKey() !== ownerKey || `${committed.key.kind}:${committed.key.id}` !== ownerKey) {
+        throw new Error("会话已切换，请重试")
+      }
+      return { ok: true as const, revision: committed.revision }
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : "草稿提交失败，请重试",
+      })
+      return { ok: false as const }
+    }
+  }
+  const publishSharedDraft = () => {
+    const content = sharedDraftContent()
+    surface.stageDraft(content)
+    if (!surface.canMutate() || !surface.draft()) return
+    const key = surfaceKey()
+    if (!key) return
+    const serialized = JSON.stringify(content)
+    if (pendingSharedClear?.key === key) {
+      const empty = !content.text && content.reviewComments.length === 0 && content.images.length === 0
+      if (empty) return
+      pendingSharedClear = undefined
+    }
+    if (serialized === sharedContent.get(key)) return
+    sharedContent.set(key, serialized)
+    surface.updateDraft(content)
+  }
+
+  createEffect(() => {
+    const shared = surface.draft()
+    if (!shared) return
+    const content = shared.content
+    if (
+      pendingSharedClear?.key === `${shared.key.kind}:${shared.key.id}` &&
+      shared.revision > pendingSharedClear.revision &&
+      !content.text &&
+      content.reviewComments.length === 0 &&
+      content.images.length === 0
+    ) {
+      pendingSharedClear = undefined
+    }
+    if (
+      shared.revision === 0 &&
+      !content.text &&
+      content.reviewComments.length === 0 &&
+      content.images.length === 0 &&
+      (text() || reviewComments().length > 0 || imageAttach.images().length > 0)
+    ) {
+      publishSharedDraft()
+      return
+    }
+    const key = `${shared.key.kind}:${shared.key.id}`
+    const serialized = JSON.stringify(content)
+    if (serialized === sharedContent.get(key)) return
+    sharedContent.set(key, serialized)
+    const scope = sid()
+    if (scope && content.selection && shared.key.kind === "draft") {
+      session.setSessionAgent(scope, content.selection.agent ?? session.selectedAgent(scope))
+      if (content.selection.override) {
+        session.setSessionModel(scope, content.selection.providerID, content.selection.modelID)
+      }
+      if (content.selection.variant) {
+        session.setSessionVariant(
+          scope,
+          content.selection.providerID,
+          content.selection.modelID,
+          content.selection.variant,
+          content.selection.agent,
+        )
+      }
+    }
+    savePromptDraft(
+      draftKey(),
+      content.text,
+      content.reviewComments,
+      content.images as ImageAttachment[],
+      content.inputScrollTop,
+    )
+    setText(content.text)
+    setReviewComments(content.reviewComments)
+    imageAttach.replace(content.images as ImageAttachment[])
+    mention.seedFromText(content.text)
+    if (!textareaRef) return
+    textareaRef.value = content.text
+    textareaRef.scrollTop = content.inputScrollTop
+    adjustHeight()
+    if (highlightRef) highlightRef.scrollTop = content.inputScrollTop
+  })
+
+  createEffect(() => {
+    text()
+    reviewComments()
+    imageAttach.images()
+    session.selected(sid())
+    session.selectedAgent(sid())
+    session.currentVariant(sid())
+    publishSharedDraft()
+  })
   const clearSandboxRequest = (sessionID: string | undefined, requestID: string) => {
     setSandboxRequests((current) => {
       const key = sessionID ?? ""
@@ -656,13 +847,32 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   window.addEventListener("focusPrompt", onFocusPrompt)
   onCleanup(() => window.removeEventListener("focusPrompt", onFocusPrompt))
 
+  const onPrefillPrompt = (event: Event) => {
+    if (!(event instanceof CustomEvent) || typeof event.detail?.text !== "string") return
+    const value = event.detail.text
+    setText(value)
+    mention.seedFromText(value)
+    if (!textareaRef) return
+    textareaRef.value = value
+    textareaRef.setSelectionRange(value.length, value.length)
+    adjustHeight()
+    syncHighlightScroll()
+    textareaRef.focus()
+  }
+  window.addEventListener("prefillPrompt", onPrefillPrompt)
+  onCleanup(() => window.removeEventListener("prefillPrompt", onPrefillPrompt))
+
   // Start a new task, carrying over the current prompt text (without auto-sending it)
-  const onNewTaskRequest = () => {
+  let newTaskQueue = Promise.resolve()
+  const createNewTask = async () => {
     const before = draftKey()
     handoff = readDraft()
-    if (tabs?.add()) return
+    if (await tabs?.add()) return
     session.clearCurrentSession()
     if (draftKey() === before) handoff = undefined
+  }
+  const onNewTaskRequest = () => {
+    newTaskQueue = newTaskQueue.then(createNewTask, createNewTask)
   }
   window.addEventListener("newTaskRequest", onNewTaskRequest)
   onCleanup(() => window.removeEventListener("newTaskRequest", onNewTaskRequest))
@@ -695,16 +905,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   window.addEventListener("agentManagerDiscardDraft", onAgentManagerDiscardDraft)
   onCleanup(() => window.removeEventListener("agentManagerDiscardDraft", onAgentManagerDiscardDraft))
-
-  // Compact/summarize the current session (mirrors canCompact guards in TaskHeader)
-  const onCompact = () => {
-    if (session.status() === "busy") return
-    if (session.messages().length === 0) return
-    if (!session.selected(sid())) return
-    session.compact()
-  }
-  window.addEventListener("compactSession", onCompact)
-  onCleanup(() => window.removeEventListener("compactSession", onCompact))
 
   const onExport = () => {
     const id = session.currentSessionID()
@@ -988,10 +1188,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     if (message.type === "sendMessageFailed") {
+      if (pendingSharedClear?.messageID === message.messageID) pendingSharedClear = undefined
       restoreFailed(message as SendMessageFailedMessage)
     }
 
+    if (message.type === "sendMessageAccepted" && pendingSharedClear?.messageID === message.messageID) {
+      pendingSharedClear = undefined
+    }
+
     if (message.type === "sessionCreated") {
+      if (pendingSharedClear?.draftID && pendingSharedClear.draftID === message.draftID) {
+        pendingSharedClear.key = `session:${message.session.id}`
+      }
       const raw = createdDraftKey(message.draftID, sandboxRequest(undefined) !== undefined)
       if (raw) {
         const source = scopeDraftKey(boxKey(), raw)
@@ -1085,6 +1293,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!textareaRef) return
     scrollDrafts.set(draftKey(), textareaRef.scrollTop)
     if (highlightRef) highlightRef.scrollTop = textareaRef.scrollTop
+    publishSharedDraft()
   }
 
   const adjustHeight = () => {
@@ -1099,7 +1308,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       classList={{ "slash-command-item--active": index() === slash.index() }}
       onMouseDown={(e) => {
         e.preventDefault()
-        if (textareaRef) slash.select(cmd, textareaRef, setText, adjustHeight)
+        if (textareaRef) slash.select(cmd, textareaRef, setText, commandSelected)
       }}
       onMouseEnter={() => slash.setIndex(index())}
     >
@@ -1162,7 +1371,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Skip cursor over mentions on arrow keys
     if (mention.handleArrowKey(e, textareaRef)) return
 
-    if (slash.onKeyDown(e, textareaRef, setText, adjustHeight)) {
+    if (slash.onKeyDown(e, textareaRef, setText, commandSelected)) {
       ghost.setMentionOpen(slash.show())
       queueMicrotask(scrollToActiveSlashItem)
       return
@@ -1432,6 +1641,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     beginPending(pendingId)
     const context = ctx()
     const key = draftKey()
+    const ownerKey = surfaceKey()
+    const committedContent = sharedDraftContent()
 
     const terminalFile = await terminal.resolveAttachment(message, id).catch((err: Error) => {
       showToast({ variant: "error", title: "Terminal context unavailable", description: err.message })
@@ -1464,10 +1675,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ]
     const attachments = allFiles.length > 0 ? allFiles : undefined
 
+    const committed = await commitSharedDraft(ownerKey, committedContent)
+    if (!committed.ok) {
+      finishPending(pendingId)
+      return
+    }
+    const revision = committed.revision
+
     // Server-side slash command (cmdMatch/matched already computed above)
+    let submitted: string | undefined
     if (matched && !data) {
       const args = draft.slice(cmdMatch![0].length).trim()
-      session.sendCommand(
+      submitted = session.sendCommand(
         matched.name,
         args,
         sel.providerID,
@@ -1476,10 +1695,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         pendingId,
         context,
         origin ?? null,
+        revision,
       )
     } else {
-      session.sendMessage(message, sel.providerID, sel.modelID, attachments, pendingId, context, data, origin ?? null)
+      submitted = session.sendMessage(
+        message,
+        sel.providerID,
+        sel.modelID,
+        attachments,
+        pendingId,
+        context,
+        data,
+        origin ?? null,
+        revision,
+      )
     }
+
+    if (!submitted) {
+      finishPending(pendingId)
+      showToast({ variant: "error", title: language.t("common.requestFailed"), description: "消息未提交，请重试" })
+      return
+    }
+
+    retainSharedDraftUntilAccepted(submitted, pendingId, revision)
 
     drafts.delete(key)
     reviewDrafts.delete(key)
@@ -1522,6 +1760,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   return [
+    <Show when={introduction.visible() && !collapsed() && !slash.show()}>
+      <div class="spec-introduction-rail">
+        <span>Spec 文档驱动开发</span>
+        <Button
+          variant="ghost"
+          size="small"
+          onMouseDown={(event: MouseEvent) => event.preventDefault()}
+          onClick={introduction.open}
+          disabled={introduction.busy()}
+          aria-busy={introduction.busy()}
+        >
+          {introduction.busy() ? "正在加载…" : introduction.notice() ? "重试查看流程图" : "查看流程图"}
+        </Button>
+        <Show when={introduction.notice()}>
+          <span class="spec-introduction-feedback" role="status">
+            {introduction.notice()}
+          </span>
+        </Show>
+      </div>
+    </Show>,
     <Show when={reviewBoundaryVisible() && !collapsed()}>
       <EmbeddedReviewBoundary
         expanded={reviewBoundaryExpanded()}
@@ -1672,10 +1930,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   const server = all.filter((c) => !c.action)
                   const offset = actions.length
                   return (
-                    <Show
-                      when={slash.grouped()}
-                      fallback={<For each={all}>{renderSlashItem}</For>}
-                    >
+                    <Show when={slash.grouped()} fallback={<For each={all}>{renderSlashItem}</For>}>
                       <>
                         <Show when={actions.length > 0}>
                           <div class="slash-command-group-label">Actions</div>
@@ -1686,9 +1941,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             <div class="slash-command-separator" />
                           </Show>
                           <div class="slash-command-group-label">Commands</div>
-                          <For each={server}>
-                            {(cmd, index) => renderSlashItem(cmd, () => index() + offset)}
-                          </For>
+                          <For each={server}>{(cmd, index) => renderSlashItem(cmd, () => index() + offset)}</For>
                         </Show>
                       </>
                     </Show>
@@ -1787,6 +2040,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             )}
           </Show>
           <div class="prompt-input-hint" data-ui="qa-composer-footer">
+            <PromptReferenceActions references={references} disabled={isDisabled() || !!props.blocked?.()} />
             <div
               class="prompt-input-hint-selectors"
               data-ui="qa-composer-selectors"
@@ -1820,7 +2074,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </Tooltip>
               </Show>
               <ModelSelector sessionID={sid} />
-              <ThinkingSelector sessionID={sid} />
+              <ThinkingSelector class="night-city-thinking" sessionID={sid} />
               <Show when={session.hasModelOverride(sid())}>
                 <Tooltip value={language.t("prompt.action.resetModel")} placement="top">
                   <Button
@@ -1837,6 +2091,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </Show>
             </div>
             <div class="prompt-input-hint-actions" data-ui="qa-composer-actions">
+              <PromptReferenceSummary references={references} disabled={isDisabled() || !!props.blocked?.()} />
               <Show when={showIndexing()}>
                 <div class="prompt-input-indexing-actions" data-ui="qa-indexing-actions">
                   <IndexingSummaryMenu
@@ -1888,7 +2143,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   />
                 </div>
               </Show>
-              <div class="prompt-input-utility-actions" data-ui="qa-utility-actions">
+              <span class="night-city-send-hint">Enter 发送 · Shift+Enter 换行</span>
+              <div
+                class="prompt-input-utility-actions"
+                data-ui="qa-utility-actions"
+                data-night-auto-approve={autoApprove()}
+                data-night-sandbox={sandboxEnabled()}
+                data-night-speech={speech.active() || speechAction.busy(speech) || speech.state() === "error"}
+              >
                 <Tooltip value={language.t("prompt.panel.collapse")} placement="top">
                   <IconButton
                     icon="layout-bottom-partial"
@@ -1923,7 +2185,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     class={`prompt-status-button ${autoApprove() ? "prompt-status-button--active" : ""}`}
                     data-ui="qa-action-auto-approve"
                   >
-                    <Icon name="shield" size="small" />
+                    <PromptStatusIcon name="shield" />
                   </Button>
                 </Tooltip>
                 <Show when={sandboxVisible()}>
@@ -1977,6 +2239,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       class="prompt-compact-menu prompt-overflow-menu"
                       data-ui="qa-action-more-menu"
                     >
+                      <Show when={night()}>
+                        <DropdownMenu.Item onSelect={() => vscode.postMessage({ type: "toggleAutoApprove" })}>
+                          <span class="codicon codicon-shield" aria-hidden="true" />
+                          <DropdownMenu.ItemLabel>
+                            {autoApprove() ? "关闭自动审批" : "开启自动审批"}
+                          </DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item disabled={!canEnhance()} onSelect={handleEnhance}>
+                          <span class="codicon codicon-sparkle" aria-hidden="true" />
+                          <DropdownMenu.ItemLabel>{language.t("prompt.action.enhance")}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <Show when={showIndexing()}>
+                          <DropdownMenu.Item onSelect={handleOpenIndexingSettings}>
+                            <span class="codicon codicon-database" aria-hidden="true" />
+                            <DropdownMenu.ItemLabel>索引状态与设置</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                        </Show>
+                      </Show>
                       <DropdownMenu.Item disabled={speech.active()} onSelect={collapse}>
                         <Icon name="layout-bottom-partial" size="small" />
                         <DropdownMenu.ItemLabel>{language.t("prompt.panel.collapse")}</DropdownMenu.ItemLabel>
@@ -2035,6 +2315,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         data-ui="qa-action-submit"
                       >
                         <span class="codicon codicon-send prompt-action-codicon" aria-hidden="true" />
+                        <span class="codicon codicon-arrow-up night-city-send-icon" aria-hidden="true" />
                       </Button>
                     </Tooltip>
                   }

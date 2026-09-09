@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "source": "CNIPA",
+  "jurisdiction": "CN",
+  "batchId": "CNIPA-CN-fulltext-2026-01",
+  "dataType": "fulltext",
+  "coverageScope": "supplemental",
+  "periodStart": "2026-01-01",
+  "periodEnd": "2026-01-31",
+  "declaredRecords": 1000
+}

@@ -12,16 +12,19 @@ import { validateModelSelections } from "../provider-actions"
 
 type PostMessage = (msg: unknown) => void
 
-let cached: string | undefined
+const cached = new WeakMap<object, string>()
 let queue: Promise<void> = Promise.resolve()
 
 async function resolve(client: ChipMateClient | null): Promise<string | undefined> {
-  if (cached) return cached
+  if (!client) return undefined
+  const known = cached.get(client)
+  if (known) return known
   try {
-    const resp = await client?.path.get()
+    const resp = await client.path.get()
     if (!resp?.data?.state) return undefined
-    cached = path.join(resp.data.state, "model.json")
-    return cached
+    const target = path.join(resp.data.state, "model.json")
+    cached.set(client, target)
+    return target
   } catch {
     return undefined
   }
@@ -41,16 +44,32 @@ async function read(client: ChipMateClient | null): Promise<Record<string, unkno
   }
 }
 
-function write(client: ChipMateClient | null, key: string, value: unknown): Promise<void> {
+async function replace(target: string, data: Record<string, unknown>): Promise<void> {
+  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`
+  try {
+    await fs.promises.writeFile(temporary, JSON.stringify(data, null, 2))
+    await fs.promises.rename(temporary, target)
+  } catch (error) {
+    await fs.promises.rm(temporary, { force: true }).catch(() => {})
+    throw error
+  }
+}
+
+function mutate(
+  client: ChipMateClient | null,
+  update: (data: Record<string, unknown>) => void,
+): Promise<Record<string, unknown>> {
+  let output: Record<string, unknown> = {}
   const op = queue.then(async () => {
-    const p = await resolve(client)
-    if (!p) return
+    const target = await resolve(client)
+    if (!target) throw new Error("Model state path is unavailable")
     const existing = await read(client)
-    existing[key] = value
-    await fs.promises.writeFile(p, JSON.stringify(existing, null, 2))
+    update(existing)
+    await replace(target, existing)
+    output = existing
   })
   queue = op.catch(() => {})
-  return op
+  return op.then(() => output)
 }
 
 /**
@@ -63,20 +82,29 @@ export async function handleMessage(
   post: PostMessage,
 ): Promise<boolean> {
   if (type === "persistModelSelection") {
-    const data = await read(client)
-    const model = validateModelSelections(data.model)
-    model[message.agent as string] = {
-      providerID: message.providerID as string,
-      modelID: message.modelID as string,
-    }
-    await write(client, "model", model)
+    if (
+      typeof message.agent !== "string" ||
+      typeof message.providerID !== "string" ||
+      typeof message.modelID !== "string"
+    )
+      return true
+    await mutate(client, (data) => {
+      const model = validateModelSelections(data.model)
+      model[message.agent as string] = {
+        providerID: message.providerID as string,
+        modelID: message.modelID as string,
+      }
+      data.model = model
+    })
     return true
   }
   if (type === "clearModelSelection") {
-    const data = await read(client)
-    const model = validateModelSelections(data.model)
-    delete model[message.agent as string]
-    await write(client, "model", model)
+    if (typeof message.agent !== "string") return true
+    await mutate(client, (data) => {
+      const model = validateModelSelections(data.model)
+      delete model[message.agent as string]
+      data.model = model
+    })
     return true
   }
   if (type === "requestModelSelections") {
@@ -89,6 +117,8 @@ export async function handleMessage(
 }
 
 export async function reset(client: ChipMateClient | null, post: PostMessage): Promise<void> {
-  await write(client, "model", {})
+  await mutate(client, (data) => {
+    data.model = {}
+  })
   post({ type: "modelSelectionsLoaded", selections: {} })
 }

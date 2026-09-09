@@ -161,6 +161,52 @@ body:has(.chat-view[data-ui="qa-shell"]),
   min-height: 44px;
 }
 
+/* 普通 QA 使用紧凑导航，让会话正文保持为主要阅读区域；只读和 DSH 头部不带此标记。 */
+.chat-view[data-ui="qa-shell"] [data-component="task-header"][data-qa-navigation-compact] {
+  min-height: 32px;
+  margin: 2px 8px 0;
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-component="task-header"][data-qa-navigation-compact]
+  [data-slot="task-header-stats"] {
+  gap: 6px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-component="task-header"][data-qa-navigation-compact]
+  [data-slot="conversation-navigator-trigger"] {
+  min-height: 24px;
+  gap: 4px;
+  padding: 2px 6px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-component="task-header"][data-qa-navigation-compact]
+  [data-slot="task-header-expand"] {
+  box-sizing: border-box;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-view[data-ui="qa-shell"] [data-component="task-header-todos"][data-qa-navigation-compact] {
+  margin-inline: 8px;
+}
+
+.chat-view[data-ui="qa-shell"]
+  [data-component="task-header-todos"][data-qa-navigation-compact]
+  [data-slot="task-header-todos-trigger"] {
+  min-height: 24px;
+  gap: 4px;
+  padding: 2px 8px;
+}
+
 .chat-view[data-ui="qa-shell"]
   :is([data-component="task-header"], [data-component="task-header-graph"], [data-component="task-header-todos"]):has(
     + [data-ui="qa-conversation"]
@@ -547,8 +593,27 @@ body:has(.chat-view[data-ui="qa-shell"]) .model-selector-content {
   -webkit-backdrop-filter: var(--qa-blur);
 }
 
+body:has(.chat-view[data-ui="qa-shell"])
+  .conversation-navigator-popover[data-component="popover-content"] {
+  --conversation-navigator-popover-fill: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 6%, transparent), transparent 42%),
+    var(--conversation-navigator-popover-fill);
+}
+
 /* Small host surfaces keep the reading plane comfortable. */
 @media (max-width: 420px) {
+  .chat-view[data-ui="qa-shell"] [data-component="task-header"][data-qa-navigation-compact] {
+    gap: 4px;
+    padding-inline: 6px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    [data-component="task-header"][data-qa-navigation-compact]
+    [data-slot="task-header-stats"] {
+    gap: 4px;
+  }
+
   .chat-view[data-ui="qa-shell"] .message-list {
     padding: 14px 10px 18px;
   }
@@ -559,6 +624,39 @@ body:has(.chat-view[data-ui="qa-shell"]) .model-selector-content {
 
   .chat-view[data-ui="qa-shell"] .chipmate-about-text {
     font-size: var(--chipmate-font-size-15);
+  }
+}
+
+@media (max-width: 340px) {
+  .chat-view[data-ui="qa-shell"] [data-component="task-header"][data-qa-navigation-compact] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    gap: 2px;
+    padding-block: 2px;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    [data-component="task-header"][data-qa-navigation-compact]
+    [data-slot="task-header-title"],
+  .chat-view[data-ui="qa-shell"]
+    [data-component="task-header"][data-qa-navigation-compact]
+    [data-slot="task-header-stats"] {
+    width: 100%;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    [data-component="task-header"][data-qa-navigation-compact]
+    [data-slot="task-header-stats"] {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .chat-view[data-ui="qa-shell"]
+    [data-component="task-header"][data-qa-navigation-compact]
+    [data-slot="conversation-navigator-trigger"] {
+    flex: 1 1 116px;
+    max-width: 100%;
   }
 }
 
@@ -598,10 +696,19 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"]),
   --qa-shadow-control: none;
 }
 
+body.vscode-reduce-motion .chat-view[data-ui="qa-shell"] *,
+body.vscode-reduce-motion .chat-view[data-ui="qa-shell"] *::before,
+body.vscode-reduce-motion .chat-view[data-ui="qa-shell"] *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chat-view[data-ui="qa-shell"] *,
-  .chat-view[data-ui="qa-shell"] *::before,
-  .chat-view[data-ui="qa-shell"] *::after {
+  body:not([data-vscode-theme-id]) .chat-view[data-ui="qa-shell"] *,
+  body:not([data-vscode-theme-id]) .chat-view[data-ui="qa-shell"] *::before,
+  body:not([data-vscode-theme-id]) .chat-view[data-ui="qa-shell"] *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

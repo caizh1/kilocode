@@ -98,6 +98,7 @@ export type Event =
   | EventSessionTurnOpen
   | EventSessionTurnClose
   | EventSessionQueueChanged
+  | EventSessionTurnChanges
   | EventSessionNetworkAsked
   | EventSessionNetworkReplied
   | EventSessionNetworkRejected
@@ -1106,9 +1107,41 @@ export type StepFinishPart = {
   }
   generationID?: string
   vercelID?: string
+  billing?:
+    | {
+        status: "pending"
+        source: "new-api-log"
+        requestID: string
+      }
+    | {
+        status: "settled"
+        source: "new-api-log"
+        requestID: string
+        currency: "CNY"
+        amount: number
+        quota: number
+        quotaPerUnit: number
+        exchangeRate: number
+        group: string
+        modelName: string
+        settledAt: number
+      }
+    | {
+        status: "unavailable"
+        source: "new-api-log"
+        requestID: string
+        reason:
+          | "credentials"
+          | "unsupported-url"
+          | "request-log-missing"
+          | "network"
+          | "invalid-response"
+          | "model-mismatch"
+      }
   metrics?: {
     prompt?: number
     generation?: number
+    ttftMs?: number
     source: "provider" | "computed"
   }
   time?: {
@@ -1210,7 +1243,6 @@ export type Pty = {
   status: "running" | "exited"
   pid: number
   exitCode?: number
-  sessionID?: string | null
 }
 
 export type Todo = {
@@ -1359,6 +1391,7 @@ export type GlobalEvent = {
     | EventSessionTurnOpen
     | EventSessionTurnClose
     | EventSessionQueueChanged
+    | EventSessionTurnChanges
     | EventSessionNetworkAsked
     | EventSessionNetworkReplied
     | EventSessionNetworkRejected
@@ -3801,6 +3834,18 @@ export type Session5 = {
   }
 }
 
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
+export type SessionBusyError = {
+  _tag: "SessionBusyError"
+  sessionID: string
+  message: string
+}
+
 export type Session6 = {
   id: string
   slug: string
@@ -3956,12 +4001,6 @@ export type SubtaskPartInput = {
   }
   variant?: string
   command?: string
-}
-
-export type SessionBusyError = {
-  _tag: "SessionBusyError"
-  sessionID: string
-  message: string
 }
 
 export type Session8 = {
@@ -4716,12 +4755,6 @@ export type ChipMateEmbeddingModelCatalog = {
   }
 }
 
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
-}
-
 export type InteractiveTerminalSnapshot = {
   info: InteractiveTerminalInfo
   output: string
@@ -5037,6 +5070,10 @@ export type SkillMarketFailure = {
     | "host_error"
   message: string
   transactionId?: string
+}
+
+export type SessionExportBusyError = {
+  sessionIDs: Array<string>
 }
 
 export type AnacondaDesktopStatus =
@@ -5472,6 +5509,15 @@ export type EventSessionQueueChanged = {
   properties: {
     sessionID: string
     queued: Array<string>
+  }
+}
+
+export type EventSessionTurnChanges = {
+  id: string
+  type: "session.turn.changes"
+  properties: {
+    sessionID: string
+    messageID: string
   }
 }
 
@@ -13155,7 +13201,6 @@ export type PtyUpdateData = {
       rows: number
       cols: number
     }
-    sessionID?: string | null
   }
   path: {
     ptyID: string
@@ -14108,6 +14153,8 @@ export type SessionMessageResponse = SessionMessageResponses[keyof SessionMessag
 export type SessionForkData = {
   body?: {
     messageID?: string
+    afterMessageID?: string
+    operationID?: string
   }
   path: {
     sessionID: string
@@ -14128,6 +14175,10 @@ export type SessionForkErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
 }
 
 export type SessionForkError = SessionForkErrors[keyof SessionForkErrors]
@@ -15783,6 +15834,284 @@ export type BranchNameGenerateResponses = {
 }
 
 export type BranchNameGenerateResponse = BranchNameGenerateResponses[keyof BranchNameGenerateResponses]
+
+export type TurnChangesGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/turn-changes/{messageID}"
+}
+
+export type TurnChangesGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type TurnChangesGetError = TurnChangesGetErrors[keyof TurnChangesGetErrors]
+
+export type TurnChangesGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    ok: boolean
+    message?: string
+    summary?: {
+      directory: string
+      sessionID: string
+      messageID: string
+      revision: number
+      phase: "running" | "stopping" | "settling" | "ready" | "unavailable"
+      outcome: "completed" | "interrupted" | "error"
+      reason?: string
+      files: Array<{
+        id: string
+        file: string
+        oldFile?: string
+        status: "added" | "deleted" | "modified" | "renamed"
+        additions: number
+        deletions: number
+        binary: boolean
+        undone: Array<string>
+        state: "kept" | "partial" | "reverted"
+      }>
+      canRevert: boolean
+      canRestore: boolean
+    }
+    detail?: {
+      fileID: string
+      revision: number
+      patch: string
+      hunks: Array<{
+        id: string
+        patch: string
+        line: number
+        undone: boolean
+      }>
+      reason?: string
+    }
+  }
+}
+
+export type TurnChangesGetResponse = TurnChangesGetResponses[keyof TurnChangesGetResponses]
+
+export type TurnChangesMutateData = {
+  body?: {
+    revision: number
+    requestID: string
+    action: "revert" | "restore"
+    fileID?: string
+    hunkID?: string
+  }
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/turn-changes/{messageID}"
+}
+
+export type TurnChangesMutateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type TurnChangesMutateError = TurnChangesMutateErrors[keyof TurnChangesMutateErrors]
+
+export type TurnChangesMutateResponses = {
+  /**
+   * Success
+   */
+  200: {
+    ok: boolean
+    message?: string
+    summary?: {
+      directory: string
+      sessionID: string
+      messageID: string
+      revision: number
+      phase: "running" | "stopping" | "settling" | "ready" | "unavailable"
+      outcome: "completed" | "interrupted" | "error"
+      reason?: string
+      files: Array<{
+        id: string
+        file: string
+        oldFile?: string
+        status: "added" | "deleted" | "modified" | "renamed"
+        additions: number
+        deletions: number
+        binary: boolean
+        undone: Array<string>
+        state: "kept" | "partial" | "reverted"
+      }>
+      canRevert: boolean
+      canRestore: boolean
+    }
+    detail?: {
+      fileID: string
+      revision: number
+      patch: string
+      hunks: Array<{
+        id: string
+        patch: string
+        line: number
+        undone: boolean
+      }>
+      reason?: string
+    }
+  }
+}
+
+export type TurnChangesMutateResponse = TurnChangesMutateResponses[keyof TurnChangesMutateResponses]
+
+export type TurnChangesDetailData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+    fileID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/turn-changes/{messageID}/file/{fileID}"
+}
+
+export type TurnChangesDetailErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type TurnChangesDetailError = TurnChangesDetailErrors[keyof TurnChangesDetailErrors]
+
+export type TurnChangesDetailResponses = {
+  /**
+   * Success
+   */
+  200: {
+    ok: boolean
+    message?: string
+    summary?: {
+      directory: string
+      sessionID: string
+      messageID: string
+      revision: number
+      phase: "running" | "stopping" | "settling" | "ready" | "unavailable"
+      outcome: "completed" | "interrupted" | "error"
+      reason?: string
+      files: Array<{
+        id: string
+        file: string
+        oldFile?: string
+        status: "added" | "deleted" | "modified" | "renamed"
+        additions: number
+        deletions: number
+        binary: boolean
+        undone: Array<string>
+        state: "kept" | "partial" | "reverted"
+      }>
+      canRevert: boolean
+      canRestore: boolean
+    }
+    detail?: {
+      fileID: string
+      revision: number
+      patch: string
+      hunks: Array<{
+        id: string
+        patch: string
+        line: number
+        undone: boolean
+      }>
+      reason?: string
+    }
+  }
+}
+
+export type TurnChangesDetailResponse = TurnChangesDetailResponses[keyof TurnChangesDetailResponses]
+
+export type TurnChangesExternalData = {
+  body?: {
+    file: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/turn-changes/external"
+}
+
+export type TurnChangesExternalErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type TurnChangesExternalError = TurnChangesExternalErrors[keyof TurnChangesExternalErrors]
+
+export type TurnChangesExternalResponses = {
+  /**
+   * Success
+   */
+  200: {
+    ok: boolean
+    message?: string
+    summary?: {
+      directory: string
+      sessionID: string
+      messageID: string
+      revision: number
+      phase: "running" | "stopping" | "settling" | "ready" | "unavailable"
+      outcome: "completed" | "interrupted" | "error"
+      reason?: string
+      files: Array<{
+        id: string
+        file: string
+        oldFile?: string
+        status: "added" | "deleted" | "modified" | "renamed"
+        additions: number
+        deletions: number
+        binary: boolean
+        undone: Array<string>
+        state: "kept" | "partial" | "reverted"
+      }>
+      canRevert: boolean
+      canRestore: boolean
+    }
+    detail?: {
+      fileID: string
+      revision: number
+      patch: string
+      hunks: Array<{
+        id: string
+        patch: string
+        line: number
+        undone: boolean
+      }>
+      reason?: string
+    }
+  }
+}
+
+export type TurnChangesExternalResponse = TurnChangesExternalResponses[keyof TurnChangesExternalResponses]
 
 export type CommitMessageGenerateData = {
   body?: {
@@ -18143,6 +18472,18 @@ export type ChipmateSessionModelUsageResponses = {
     totals: {
       steps: number
       cost: number
+      billing: {
+        amountCNY: number
+        settledSteps: number
+        pendingSteps: number
+        unavailableSteps: number
+        otherCostUSD: number
+        groups: Array<{
+          name: string
+          steps: number
+          amountCNY: number
+        }>
+      }
       tokens: {
         input: number
         output: number
@@ -18158,6 +18499,18 @@ export type ChipmateSessionModelUsageResponses = {
       modelID: string
       steps: number
       cost: number
+      billing: {
+        amountCNY: number
+        settledSteps: number
+        pendingSteps: number
+        unavailableSteps: number
+        otherCostUSD: number
+        groups: Array<{
+          name: string
+          steps: number
+          amountCNY: number
+        }>
+      }
       tokens: {
         input: number
         output: number
@@ -18173,6 +18526,118 @@ export type ChipmateSessionModelUsageResponses = {
 
 export type ChipmateSessionModelUsageResponse =
   ChipmateSessionModelUsageResponses[keyof ChipmateSessionModelUsageResponses]
+
+export type ChipmateSessionExportData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/chipmate/session/{sessionID}/export"
+}
+
+export type ChipmateSessionExportErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+  /**
+   * SessionExportBusyError
+   */
+  409: SessionExportBusyError
+}
+
+export type ChipmateSessionExportError = ChipmateSessionExportErrors[keyof ChipmateSessionExportErrors]
+
+export type ChipmateSessionExportResponses = {
+  /**
+   * Complete raw ChipMate QA session transcript
+   */
+  200: string
+}
+
+export type ChipmateSessionExportResponse = ChipmateSessionExportResponses[keyof ChipmateSessionExportResponses]
+
+export type ChipmateHistoryMigrationPrepareData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/chipmate/history-migration/prepare"
+}
+
+export type ChipmateHistoryMigrationPrepareErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ChipmateHistoryMigrationPrepareError =
+  ChipmateHistoryMigrationPrepareErrors[keyof ChipmateHistoryMigrationPrepareErrors]
+
+export type ChipmateHistoryMigrationPrepareResponses = {
+  /**
+   * History migration maintenance gate status
+   */
+  200: {
+    ready: boolean
+    token: string
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    active: Array<{
+      directoryID: string
+      sessions: Array<{
+        sessionID: string
+        status: string
+      }>
+    }>
+    reason: "locked" | "active"
+  }
+}
+
+export type ChipmateHistoryMigrationPrepareResponse =
+  ChipmateHistoryMigrationPrepareResponses[keyof ChipmateHistoryMigrationPrepareResponses]
+
+export type ChipmateHistoryMigrationReleaseData = {
+  body?: {
+    token: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/chipmate/history-migration/release"
+}
+
+export type ChipmateHistoryMigrationReleaseErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ChipmateHistoryMigrationReleaseError =
+  ChipmateHistoryMigrationReleaseErrors[keyof ChipmateHistoryMigrationReleaseErrors]
+
+export type ChipmateHistoryMigrationReleaseResponses = {
+  /**
+   * Maintenance gate released
+   */
+  200: boolean
+}
+
+export type ChipmateHistoryMigrationReleaseResponse =
+  ChipmateHistoryMigrationReleaseResponses[keyof ChipmateHistoryMigrationReleaseResponses]
 
 export type AnacondaDesktopStatusData = {
   body?: never
@@ -18381,6 +18846,444 @@ export type NetworkRejectResponses = {
 }
 
 export type NetworkRejectResponse = NetworkRejectResponses[keyof NetworkRejectResponses]
+
+export type PatentRadarListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs"
+}
+
+export type PatentRadarListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarListError = PatentRadarListErrors[keyof PatentRadarListErrors]
+
+export type PatentRadarListResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarScanData = {
+  body?: {
+    cutoffDate?: string
+    serverBaseUrl?: string
+    analysisModel?: {
+      providerID: string
+      modelID: string
+    }
+    scope?:
+      | {
+          kind: "workspace"
+        }
+      | {
+          kind: "module"
+          moduleId?: string
+          name?: string
+          corePaths: Array<string>
+          expansionPolicy: "quality-first" | "balanced"
+        }
+    confirmLargeClosure?: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs"
+}
+
+export type PatentRadarScanErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarScanError = PatentRadarScanErrors[keyof PatentRadarScanErrors]
+
+export type PatentRadarScanResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarPreviewScopeData = {
+  body?:
+    | {
+        kind: "workspace"
+      }
+    | {
+        kind: "module"
+        moduleId?: string
+        name?: string
+        corePaths: Array<string>
+        expansionPolicy: "quality-first" | "balanced"
+      }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/scopes/preview"
+}
+
+export type PatentRadarPreviewScopeErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarPreviewScopeError = PatentRadarPreviewScopeErrors[keyof PatentRadarPreviewScopeErrors]
+
+export type PatentRadarPreviewScopeResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarListModulesData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/modules"
+}
+
+export type PatentRadarListModulesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarListModulesError = PatentRadarListModulesErrors[keyof PatentRadarListModulesErrors]
+
+export type PatentRadarListModulesResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarSaveModuleData = {
+  body?: {
+    id?: string
+    name: string
+    corePaths: Array<string>
+    expansionPolicy: "quality-first" | "balanced"
+    autoScan?: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/modules"
+}
+
+export type PatentRadarSaveModuleErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarSaveModuleError = PatentRadarSaveModuleErrors[keyof PatentRadarSaveModuleErrors]
+
+export type PatentRadarSaveModuleResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarDeleteModuleData = {
+  body?: never
+  path: {
+    moduleID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/modules/{moduleID}"
+}
+
+export type PatentRadarDeleteModuleErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarDeleteModuleError = PatentRadarDeleteModuleErrors[keyof PatentRadarDeleteModuleErrors]
+
+export type PatentRadarDeleteModuleResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarGetData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}"
+}
+
+export type PatentRadarGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarGetError = PatentRadarGetErrors[keyof PatentRadarGetErrors]
+
+export type PatentRadarGetResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarEvidenceData = {
+  body?: {
+    evidenceIds: Array<string>
+  }
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/evidence"
+}
+
+export type PatentRadarEvidenceErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarEvidenceError = PatentRadarEvidenceErrors[keyof PatentRadarEvidenceErrors]
+
+export type PatentRadarEvidenceResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarCancelData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/cancel"
+}
+
+export type PatentRadarCancelErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarCancelError = PatentRadarCancelErrors[keyof PatentRadarCancelErrors]
+
+export type PatentRadarCancelResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarResumeData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/resume"
+}
+
+export type PatentRadarResumeErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarResumeError = PatentRadarResumeErrors[keyof PatentRadarResumeErrors]
+
+export type PatentRadarResumeResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarResearchData = {
+  body?: {
+    serverBaseUrl?: string
+    candidateId?: string
+  }
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/research"
+}
+
+export type PatentRadarResearchErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarResearchError = PatentRadarResearchErrors[keyof PatentRadarResearchErrors]
+
+export type PatentRadarResearchResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarReviewData = {
+  body?: {
+    candidateId: string
+    reviewer: string
+    decision: "worthy" | "reject" | "needs-arbitration"
+    note: string
+  }
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/reviews"
+}
+
+export type PatentRadarReviewErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarReviewError = PatentRadarReviewErrors[keyof PatentRadarReviewErrors]
+
+export type PatentRadarReviewResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarImportReviewsData = {
+  body?: {
+    schemaVersion: 2
+    runId: string
+    sourceFingerprint: string
+    methodVersion: string
+    reviews: Array<{
+      candidateId: string
+      reviewer: string
+      decision: "worthy" | "reject" | "needs-arbitration"
+      note: string
+    }>
+  }
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/reviews/import"
+}
+
+export type PatentRadarImportReviewsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarImportReviewsError = PatentRadarImportReviewsErrors[keyof PatentRadarImportReviewsErrors]
+
+export type PatentRadarImportReviewsResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
+
+export type PatentRadarExportData = {
+  body?: never
+  path: {
+    runID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/patent-radar/runs/{runID}/export"
+}
+
+export type PatentRadarExportErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type PatentRadarExportError = PatentRadarExportErrors[keyof PatentRadarExportErrors]
+
+export type PatentRadarExportResponses = {
+  /**
+   * Patent Radar result
+   */
+  200: unknown
+}
 
 export type RemoteEnableData = {
   body?: never

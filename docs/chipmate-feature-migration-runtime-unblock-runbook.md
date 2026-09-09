@@ -99,7 +99,6 @@ Manual review gates:
 - [ ] S11 creates Mermaid source/PNG artifacts, or records renderer warning if renderer is unavailable.
 - [ ] S12 inserts Mermaid PNG into Word when prerequisites exist.
 - [ ] S13 runs source-backed detailed-design flow on internal embedded C source evidence.
-- [ ] S14 opens Agent Terminal only after expected enablement flow.
 - [ ] S15 requires explicit confirmation for dangerous delete-style commands.
 - [ ] S16 confirms qwen-direct autocomplete diagnostics/provider registration.
 
@@ -142,7 +141,6 @@ Pass condition:
 - [ ] Installed extension activates from isolated installed extensions dir.
 - [ ] Native ChipMate commands remain registered.
 - [ ] Document artifact commands remain registered.
-- [ ] Agent Terminal profile/command remain registered.
 - [ ] qwen autocomplete diagnostics/log commands remain registered.
 - [ ] Safe command smoke passes.
 

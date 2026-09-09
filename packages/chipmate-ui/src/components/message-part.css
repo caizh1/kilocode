@@ -34,6 +34,7 @@
     gap: 2px;
     row-gap: 4px;
     flex-wrap: wrap;
+    min-width: 0;
     margin-top: 2px;
 
     /* Thumbs up/down: fill the outline on hover to preview the rated state. */
@@ -42,22 +43,44 @@
       fill: currentColor;
     }
 
-    /* Throughput badge sits to the right of the copy/feedback buttons,
-       beside them rather than beneath the message. */
-    [data-slot="assistant-throughput-inline"] {
-      margin-left: 6px;
+    [data-slot="assistant-turn-metadata"] {
+      flex: 1 0 100%;
+      min-width: 0;
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
+      column-gap: 6px;
+      row-gap: 2px;
+      color: var(--text-weak);
+      container-type: inline-size;
     }
 
-    [data-slot="assistant-completion-inline"] {
+    [data-slot="assistant-completion-inline"],
+    [data-slot="assistant-performance-metadata"],
+    [data-slot="assistant-throughput-inline"],
+    [data-slot="assistant-throughput-ttft-group"],
+    [data-component="assistant-throughput"] {
       display: inline-flex;
       align-items: center;
       min-width: 0;
-      margin-left: 8px;
-      padding-left: 8px;
-      border-left: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border));
     }
+
+    [data-slot="assistant-performance-metadata"],
+    [data-component="assistant-throughput"] {
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    [data-slot="assistant-throughput-ttft-group"] {
+      gap: 6px;
+      white-space: nowrap;
+    }
+  }
+}
+
+@container (max-width: 220px) {
+  [data-slot="assistant-turn-metadata-separator"] {
+    display: none;
   }
 }
 

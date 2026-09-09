@@ -260,7 +260,14 @@ export function profile(
       allowedHosts,
     },
     environment: {
-      deny: ["CHIPMATE_CONFIG", "CHIPMATE_CONFIG_CONTENT", "CHIPMATE_CONFIG_DIR", "CHIPMATE_SERVER_PASSWORD", "CHIPMATE_SERVER_USERNAME"],
+      deny: [
+        "CHIPMATE_CONFIG",
+        "CHIPMATE_CONFIG_CONTENT",
+        "CHIPMATE_CONFIG_DIR",
+        "CHIPMATE_INTERNAL_PROVIDER_DEFAULTS",
+        "CHIPMATE_SERVER_PASSWORD",
+        "CHIPMATE_SERVER_USERNAME",
+      ],
       set: {
         TMPDIR: Global.Path.tmp,
         TMP: Global.Path.tmp,

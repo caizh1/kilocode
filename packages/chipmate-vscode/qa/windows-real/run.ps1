@@ -7,7 +7,7 @@ param(
   [string] $FixtureRoot,
   [string] $Output,
   [string] $ExpectedVersion,
-  [ValidateSet("full", "core", "smoke", "settings", "agent-console", "package", "update")] [string] $Lane = "smoke",
+  [ValidateSet("full", "core", "smoke", "settings", "package", "update")] [string] $Lane = "smoke",
   [Parameter(Mandatory = $true)] [ValidateSet("arm64-vm", "native-x64")] [string] $Gate,
   [ValidateSet("default", "disabled")] [string] $Gpu = "default",
   [switch] $NoGui,
@@ -230,7 +230,7 @@ function Initialize-MockProviderConfig {
     }
   }
   $models = [ordered]@{
-    model = @{ "agent-console" = @{ providerID = "qa-local"; modelID = "qa-chat-model" } }
+    model = @{ code = @{ providerID = "qa-local"; modelID = "qa-chat-model" } }
     recent = @(@{ providerID = "qa-local"; modelID = "qa-chat-model" })
     favorite = @()
     variant = @{}
@@ -309,7 +309,6 @@ function Test-FrozenVsix {
     "extension\dist\extension.js",
     "extension\dist\webview.js",
     "extension\dist\agent-manager.js",
-    "extension\dist\agent-console.js",
     "extension\dist\diff-viewer.js",
     "extension\dist\diff-virtual.js"
   )
@@ -1199,117 +1198,6 @@ function Wait-ChipMateExtensionReady {
   throw "ChipMate extension did not report ready within 90 seconds."
 }
 
-function Invoke-AgentConsoleCdp {
-  param(
-    [Parameter(Mandatory = $true)] [string] $Action,
-    [string] $Value = "",
-    [string] $Path = "",
-    [string] $ImagePath = ""
-  )
-  $temporary = [string]::IsNullOrWhiteSpace($Path)
-  $file = if ($temporary) {
-    Join-Path $Runtime "cdp-$Action-$([Guid]::NewGuid().ToString('N')).json"
-  } else {
-    $Path
-  }
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
-  $params = @(
-    (Join-Path $QaRoot "cdp-agent-console.mjs"),
-    "--port=$script:CdpPort",
-    "--output=$file",
-    "--action=$Action"
-  )
-  if ($Value) { $params += "--value=$Value" }
-  if ($ImagePath) {
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ImagePath) | Out-Null
-    $params += "--image=$ImagePath"
-  }
-  if ($script:CdpTarget) { $params += "--target=$script:CdpTarget" }
-  if ($script:CdpExcluded.Count) { $params += "--exclude=$($script:CdpExcluded -join '|')" }
-  $log = "$file.log"
-  Invoke-Node -Arguments $params *> $log
-  $code = $LASTEXITCODE
-  if ($code -ne 0 -or -not (Test-Path -LiteralPath $file)) {
-    $tail = if (Test-Path -LiteralPath $log) { Get-Content -Tail 40 -LiteralPath $log | Out-String } else { "" }
-    throw "Agent Console CDP action failed: $Action (exit=$code).`n$tail"
-  }
-  $result = Get-Content -Raw -Encoding UTF8 -LiteralPath $file | ConvertFrom-Json
-  if ($result.target.id) { $script:CdpTarget = [string]$result.target.id }
-  if ($temporary) {
-    Remove-Item -LiteralPath $file, $log -Force -ErrorAction SilentlyContinue
-  }
-  return $result
-}
-
-function Reset-AgentConsoleCdpTarget {
-  if ($script:CdpTarget -and -not $script:CdpExcluded.Contains($script:CdpTarget)) {
-    $script:CdpExcluded.Add($script:CdpTarget)
-  }
-  $script:CdpTarget = ""
-}
-
-function Wait-AgentConsoleReady {
-  param([Parameter(Mandatory = $true)] [string] $Path)
-  return Invoke-AgentConsoleCdp -Action "wait" -Path $Path
-}
-
-function Wait-AgentConsoleInputReady {
-  param([int] $Seconds = 10)
-  $limit = (Get-Date).AddSeconds($Seconds)
-  do {
-    $state = Invoke-AgentConsoleCdp -Action "ready"
-    if ($state.result.ready) { return $state }
-    Start-Sleep -Milliseconds 50
-  } while ((Get-Date) -lt $limit)
-  $detail = if ($null -ne $state) {
-    "status=$($state.result.statusState) mode=$($state.result.mode) route=$($state.result.routeStatus)"
-  } else {
-    "no CDP state"
-  }
-  throw "Agent Console did not become input-ready within $Seconds seconds: $detail"
-}
-
-function Clear-AgentConsoleEditingLine {
-  param([Parameter(Mandatory = $true)] $Process)
-  Set-ChipMateForeground -Process $Process
-  $focus = Invoke-AgentConsoleCdp -Action "focus"
-  if (-not $focus.result.focused) { return $false }
-  [System.Windows.Forms.SendKeys]::SendWait("^a")
-  Start-Sleep -Milliseconds 100
-  [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
-  Start-Sleep -Milliseconds 250
-  return $true
-}
-
-function Invoke-AgentConsoleSidebar {
-  $file = Join-Path $Evidence "WIN-AGENT-CONSOLE\cdp-workbench.json"
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
-  $log = "$file.log"
-  Invoke-Node -Arguments @((Join-Path $QaRoot "cdp-workbench.mjs"), "--port=$script:CdpPort", "--output=$file") *> $log
-  $code = $LASTEXITCODE
-  if ($code -ne 0 -or -not (Test-Path -LiteralPath $file)) {
-    $tail = if (Test-Path -LiteralPath $log) { Get-Content -Tail 40 -LiteralPath $log | Out-String } else { "" }
-    throw "Agent Console workbench CDP action failed (exit=$code).`n$tail"
-  }
-  return Get-Content -Raw -Encoding UTF8 -LiteralPath $file | ConvertFrom-Json
-}
-
-function Send-AgentConsoleLine {
-  param(
-    [Parameter(Mandatory = $true)] $Process,
-    [Parameter(Mandatory = $true)] [string] $Text,
-    [int] $DelayMilliseconds = 250,
-    [switch] $Refocus
-  )
-  [void](Wait-AgentConsoleInputReady)
-  Set-ChipMateForeground -Process $Process
-  $submit = Invoke-AgentConsoleCdp -Action "submit" -Value $Text
-  if (-not $submit.result.submitted) {
-    throw "CDP could not submit input through the xterm helper textarea (mode=$($submit.result.mode), focused=$($submit.result.focused))."
-  }
-  Start-Sleep -Milliseconds $DelayMilliseconds
-}
-
 function Invoke-SettingsKeyboardRegression {
   $process = Start-GuiSubject
   try {
@@ -1551,348 +1439,6 @@ function Invoke-IndexingSmoke {
   }
 }
 
-function Invoke-AgentConsoleSmoke {
-  $process = Start-GuiSubject
-  try {
-    Wait-ChipMateExtensionReady -Process $process
-    $workbench = Invoke-AgentConsoleSidebar
-    $sidebar = $workbench.result.clicked
-    if (-not $sidebar) {
-      Invoke-ChipMateCommandPalette -Process $process -Command "ChipMate: Open Agent Console"
-    }
-    $cdpPath = Join-Path $Evidence "WIN-AGENT-CONSOLE\cdp.json"
-    $cdp = Wait-AgentConsoleReady -Path $cdpPath
-    $opened = $cdp.result.rootCount -eq 1 -and $cdp.result.xtermCount -eq 1
-    if (-not $opened) {
-      $shot = Relative-EvidencePath (Join-Path $Evidence "WIN-AGENT-CONSOLE\focus-failed.png")
-      Save-ChipMateScreenshot -Path (Join-Path $Output $shot)
-      Save-ChipMateUiaTree -Process $process -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\focus-failed-uia.json")
-      Add-Result -CaseId "WIN-AGENT-CONSOLE" -Status "FAIL" -Summary "CDP 无法唯一定位 Agent Console 的真实 xterm 输入控件。" -Screenshots @($shot)
-      return
-    }
-
-    $cdpPass = $cdp.result.rootCount -eq 1 -and $cdp.result.xtermCount -eq 1 -and
-      $cdp.result.customTextboxCount -eq 0 -and $cdp.result.sameXterm -and
-      $cdp.result.switchFrames -eq 50 -and $cdp.result.blankFrames -eq 0 -and
-      $cdp.result.terminalTransition -eq "0s" -and $cdp.result.activityTransition -eq "0s" -and
-      $cdp.result.statusState -eq "connected" -and $cdp.result.inputFocused
-
-    if (-not (Set-ChipMateEnglishKeyboard -Process $process)) {
-      throw "Could not establish an English input mode before the keyboard-routing tests."
-    }
-    $requestsBefore = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
-    $chatBefore = @($requestsBefore.requests | Where-Object { $_.path -match "/chat/completions$" }).Count
-    $direct = Join-Path $Workspace ".chipmate-qa-direct.txt"
-    Remove-Item -LiteralPath $direct -Force -ErrorAction SilentlyContinue
-    Send-AgentConsoleLine -Process $process -Text "Set-Content -LiteralPath .chipmate-qa-direct.txt -Value CHIPMATE_QA_OK; Write-Output CHIPMATE_QA_OK" -DelayMilliseconds 800 -Refocus
-    [void](Wait-ChipMateFile -Path $direct)
-
-    $seq = Join-Path $Workspace ".chipmate-qa-seq"
-    Remove-Item -LiteralPath $seq -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $seq | Out-Null
-    $lines = @()
-    $unique = @()
-    $duplicates = @()
-    $sequencePass = $false
-    if (-not $SkipStress) {
-      foreach ($index in 0..99) {
-        $name = "SEQ_$index.txt"
-        $line = "`$p = '.chipmate-qa-seq\$name'; if (Test-Path -LiteralPath `$p) { Add-Content -LiteralPath `$p -Value duplicate } else { Set-Content -LiteralPath `$p -Value once }"
-        Send-AgentConsoleLine -Process $process -Text $line -DelayMilliseconds 0
-        $ready = (Get-Date).AddSeconds(5)
-        do {
-          $file = Join-Path $seq $name
-          if (Test-Path -LiteralPath $file -PathType Leaf) { break }
-          Start-Sleep -Milliseconds 50
-        } while ((Get-Date) -lt $ready)
-        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { break }
-      }
-      $limit = (Get-Date).AddSeconds(45)
-      do {
-        $lines = @(Get-ChildItem -LiteralPath $seq -File -Filter "SEQ_*.txt" -ErrorAction SilentlyContinue)
-        if ($lines.Count -ge 100) { break }
-        Start-Sleep -Milliseconds 250
-      } while ((Get-Date) -lt $limit)
-      $unique = @($lines.Name | Sort-Object -Unique)
-      $duplicates = @($lines | Where-Object { (Get-Content -Raw -LiteralPath $_.FullName).Trim() -ne "once" })
-      $sequencePass = $lines.Count -eq 100 -and $unique.Count -eq 100 -and $duplicates.Count -eq 0
-    }
-
-    $requestsAfterDirect = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
-    $chatAfterDirect = @($requestsAfterDirect.requests | Where-Object { $_.path -match "/chat/completions$" }).Count
-    $directPass = $chatAfterDirect -eq $chatBefore
-
-    $functionFile = Join-Path $Workspace ".chipmate-qa-function.txt"
-    $aliasFile = Join-Path $Workspace ".chipmate-qa-alias.txt"
-    $pathFile = Join-Path $Workspace ".chipmate-qa-path.txt"
-    Remove-Item -LiteralPath $functionFile, $aliasFile, $pathFile -Force -ErrorAction SilentlyContinue
-    Send-AgentConsoleLine -Process $process -Text "function Invoke-ChipMateQaFunction { Set-Content -LiteralPath .chipmate-qa-function.txt -Value function-ok }; Invoke-ChipMateQaFunction" -DelayMilliseconds 800
-    [void](Wait-ChipMateFile -Path $functionFile)
-    Send-AgentConsoleLine -Process $process -Text "Set-Alias chipmate_qa_alias Write-Output; chipmate_qa_alias alias-ok | Set-Content -LiteralPath .chipmate-qa-alias.txt" -DelayMilliseconds 800
-    [void](Wait-ChipMateFile -Path $aliasFile)
-    Send-AgentConsoleLine -Process $process -Text 'Set-Content -LiteralPath chipmate-qa-path.cmd -Value ''@echo off'',''@echo path-ok>.chipmate-qa-path.txt''; $env:PATH="$PWD;$env:PATH"; chipmate-qa-path' -DelayMilliseconds 1200
-    [void](Wait-ChipMateFile -Path $pathFile)
-    $routingPass = (Test-Path -LiteralPath $functionFile) -and (Test-Path -LiteralPath $aliasFile) -and (Test-Path -LiteralPath $pathFile) -and
-      (Get-Content -Raw -LiteralPath $functionFile) -match "function-ok" -and
-      (Get-Content -Raw -LiteralPath $aliasFile) -match "alias-ok" -and
-      (Get-Content -Raw -LiteralPath $pathFile) -match "path-ok"
-
-    $candidatePath = Join-Path $Evidence "WIN-AGENT-CONSOLE\ime-candidate.png"
-    $candidate = Relative-EvidencePath $candidatePath
-    $imeLog = Join-Path $Evidence "WIN-AGENT-CONSOLE\ime-events.json"
-    $focus = Invoke-AgentConsoleCdp -Action "focus"
-    $imeStarted = $false
-    $imeCommitted = $false
-    $imeState = $null
-    $imeEnd = $null
-    if ($focus.result.focused -and (Set-ChipMateChineseIme -Process $process)) {
-      foreach ($attempt in 1..2) {
-        $armed = Invoke-AgentConsoleCdp -Action "ime-arm"
-        if (-not $armed.result.armed -or -not $armed.result.focused) { break }
-        [System.Windows.Forms.SendKeys]::SendWait("nizaiganshenme")
-        $limit = (Get-Date).AddSeconds(5)
-        do {
-          $imeState = Invoke-AgentConsoleCdp -Action "ime-state"
-          if ($imeState.result.starts -gt 0 -and $imeState.result.active) { break }
-          Start-Sleep -Milliseconds 100
-        } while ((Get-Date) -lt $limit)
-        $imeStarted = $imeState.result.starts -gt 0 -and $imeState.result.active
-        if ($imeStarted) { break }
-        [void](Clear-AgentConsoleEditingLine -Process $process)
-        if ($attempt -eq 1) {
-          [ChipMateQaInput]::PressKey(0x10)
-          Start-Sleep -Milliseconds 500
-        }
-      }
-    }
-    if ($imeStarted) {
-      Save-ChipMateScreenshot -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\ime-candidate-desktop.png")
-      [void](Invoke-AgentConsoleCdp -Action "screenshot" -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\ime-candidate-capture.json") -ImagePath $candidatePath)
-      [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-      $limit = (Get-Date).AddSeconds(5)
-      do {
-        $imeEnd = Invoke-AgentConsoleCdp -Action "ime-state"
-        if ($imeEnd.result.ends -gt 0 -and -not $imeEnd.result.active) { break }
-        Start-Sleep -Milliseconds 100
-      } while ((Get-Date) -lt $limit)
-      $imeCommitted = $imeEnd.result.ends -gt 0 -and -not $imeEnd.result.active
-    }
-    if (-not (Test-Path -LiteralPath $candidatePath -PathType Leaf)) {
-      [void](Invoke-AgentConsoleCdp -Action "screenshot" -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\ime-failure-capture.json") -ImagePath $candidatePath)
-    }
-    [ordered]@{
-      started = $imeStarted
-      committed = $imeCommitted
-      candidate = $imeState
-      afterFirstEnter = $imeEnd
-    } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $imeLog -Encoding UTF8
-    $requestsAfterFirstImeEnter = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
-    $chatAfterFirstImeEnter = @($requestsAfterFirstImeEnter.requests | Where-Object { $_.path -match "/chat/completions$" }).Count
-    if ($imeStarted -and $imeCommitted -and $chatAfterFirstImeEnter -eq $chatAfterDirect) {
-      [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-    }
-    $limit = (Get-Date).AddSeconds(30)
-    $chatAfterIme = $chatAfterFirstImeEnter
-    do {
-      $requestsAfterIme = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
-      $chatAfterIme = @($requestsAfterIme.requests | Where-Object { $_.path -match "/chat/completions$" }).Count
-      if ($chatAfterIme -gt $chatAfterDirect) { break }
-      Start-Sleep -Milliseconds 300
-    } while ((Get-Date) -lt $limit)
-    # A first session message can legitimately issue a second provider request
-    # for automatic title generation. The interaction invariant is that the
-    # candidate-confirming Enter issues none, while the following Enter issues
-    # at least one.
-    $imePass = $imeStarted -and $imeCommitted -and $chatAfterFirstImeEnter -eq $chatAfterDirect -and $chatAfterIme -gt $chatAfterDirect
-    if (-not (Set-ChipMateEnglishKeyboard -Process $process)) {
-      throw "Could not restore an English keyboard layout after the IME test."
-    }
-    try {
-      [void](Wait-AgentConsoleInputReady -Seconds 10)
-    } catch {
-      $_ | Out-String | Set-Content -LiteralPath (Join-Path $Evidence "WIN-AGENT-CONSOLE\ime-ready-error.log") -Encoding UTF8
-    }
-    if (-not $imePass) {
-      Start-Sleep -Seconds 3
-      [void](Clear-AgentConsoleEditingLine -Process $process)
-    }
-
-    $agentFile = Join-Path $Workspace ".chipmate-qa-agent.txt"
-    Remove-Item -LiteralPath $agentFile -Force -ErrorAction SilentlyContinue
-    Invoke-RestMethod -Method Post -Uri "$script:MockOrigin/__qa/scenario" -ContentType "application/json" -Body '{"scenario":"tool-call"}' -TimeoutSec 2 | Out-Null
-    Send-AgentConsoleLine -Process $process -Text "[QA:TOOL-CALL] 请提出一个安全命令并等待我批准" -DelayMilliseconds 1500 -Refocus
-    $reject = $false
-    $limit = (Get-Date).AddSeconds(30)
-    do {
-      $action = Invoke-AgentConsoleCdp -Action "click" -Value "拒绝|Reject"
-      $reject = $action.result.clicked
-      if ($reject) { break }
-      Start-Sleep -Milliseconds 250
-    } while ((Get-Date) -lt $limit)
-    Start-Sleep -Seconds 4
-    $rejected = $reject -and -not (Test-Path -LiteralPath $agentFile)
-
-    Send-AgentConsoleLine -Process $process -Text "[QA:TOOL-CALL] 再次提出同一个安全命令" -DelayMilliseconds 1500 -Refocus
-    $approve = $false
-    $limit = (Get-Date).AddSeconds(30)
-    do {
-      $action = Invoke-AgentConsoleCdp -Action "click" -Value "执行|Execute"
-      $approve = $action.result.clicked
-      if ($approve) { break }
-      Start-Sleep -Milliseconds 250
-    } while ((Get-Date) -lt $limit)
-    $limit = (Get-Date).AddSeconds(30)
-    do {
-      if (Test-Path -LiteralPath $agentFile) { break }
-      Start-Sleep -Milliseconds 300
-    } while ((Get-Date) -lt $limit)
-    $approved = $approve -and (Test-Path -LiteralPath $agentFile) -and
-      @((Get-Content -LiteralPath $agentFile) | Where-Object { $_ -eq "approved" }).Count -eq 1
-    Invoke-RestMethod -Method Post -Uri "$script:MockOrigin/__qa/scenario" -ContentType "application/json" -Body '{"scenario":"success"}' -TimeoutSec 2 | Out-Null
-
-    $switchDir = Join-Path $Evidence "WIN-AGENT-CONSOLE\switch-frames"
-    New-Item -ItemType Directory -Force -Path $switchDir | Out-Null
-    $frames = @($cdp.result.frames)
-    $blankFrames = @($frames | Where-Object { $_.width -le 1 -or $_.height -le 1 })
-    $editAfterSwitch = $cdp.result.inputFocused
-    $switchPass = $editAfterSwitch -and $frames.Count -eq 50 -and $blankFrames.Count -eq 0
-    Save-ChipMateScreenshot -Path (Join-Path $switchDir "050-agent.png")
-
-    $tailTarget = if ($SkipStress) { "QA-LINE-120" } else { "QA-LINE-5000" }
-    if ($switchPass) {
-      $tailCommand = if ($SkipStress) {
-        '1..120 | ForEach-Object { Write-Output ("QA-LINE-{0}" -f $_) }'
-      } else {
-        '1..5000 | ForEach-Object { Write-Output ("QA-LINE-{0}" -f $_) }'
-      }
-      Send-AgentConsoleLine -Process $process -Text $tailCommand -DelayMilliseconds 1000 -Refocus
-      Start-Sleep -Seconds $(if ($SkipStress) { 2 } else { 8 })
-    }
-    $tailTree = Join-Path $Evidence "WIN-AGENT-CONSOLE\tail-state.json"
-    $tailState = Invoke-AgentConsoleCdp -Action "state" -Path $tailTree
-    $tailText = @($tailState.result.text, ($tailState.result.rows -join [Environment]::NewLine)) -join [Environment]::NewLine
-    $tail = $tailText -match [regex]::Escape($tailTarget)
-
-    $scrollPass = $false
-    if ($switchPass) {
-      Send-AgentConsoleLine -Process $process -Text '1..240 | ForEach-Object { Write-Output ("QA-SCROLL-{0}" -f $_); Start-Sleep -Milliseconds 25 }' -DelayMilliseconds 800 -Refocus
-      $scrollBefore = Join-Path $Evidence "WIN-AGENT-CONSOLE\scroll-before-state.json"
-      $beforeState = Invoke-AgentConsoleCdp -Action "scroll" -Value "up" -Path $scrollBefore
-      $beforeText = @($beforeState.result.text, ($beforeState.result.rows -join [Environment]::NewLine)) -join [Environment]::NewLine
-      $beforeLine = [regex]::Match($beforeText, "QA-SCROLL-\d+").Value
-      Start-Sleep -Seconds 5
-      $scrollAfter = Join-Path $Evidence "WIN-AGENT-CONSOLE\scroll-after-state.json"
-      $afterState = Invoke-AgentConsoleCdp -Action "state" -Path $scrollAfter
-      $afterText = @($afterState.result.text, ($afterState.result.rows -join [Environment]::NewLine)) -join [Environment]::NewLine
-      $afterLine = [regex]::Match($afterText, "QA-SCROLL-\d+").Value
-      $scrollPass = $beforeLine -ne "" -and $beforeLine -eq $afterLine
-    }
-
-    Reset-AgentConsoleCdpTarget
-    Invoke-ChipMateCommandPalette -Process $process -Command "Developer: Reload Window"
-    Start-Sleep -Seconds 12
-    Invoke-ChipMateCommandPalette -Process $process -Command "ChipMate: Open Agent Console"
-    Start-Sleep -Seconds 8
-    [void](Wait-AgentConsoleReady -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\reload-cdp.json"))
-    $reloadFocus = Invoke-AgentConsoleCdp -Action "focus"
-    $reloadEdit = $reloadFocus.result.focused
-    $reloadFile = Join-Path $Workspace ".chipmate-qa-reload.txt"
-    Remove-Item -LiteralPath $reloadFile -Force -ErrorAction SilentlyContinue
-    if ($reloadEdit) {
-      Send-AgentConsoleLine -Process $process -Text "Set-Content -LiteralPath .chipmate-qa-reload.txt -Value reload-ok" -DelayMilliseconds 1200
-    }
-    $script:ReloadPass = $reloadEdit -and (Test-Path -LiteralPath $reloadFile)
-
-    Reset-AgentConsoleCdpTarget
-    Invoke-ChipMateCommandPalette -Process $process -Command "Developer: Restart Extension Host"
-    Start-Sleep -Seconds 15
-    Invoke-ChipMateCommandPalette -Process $process -Command "ChipMate: Open Agent Console"
-    Start-Sleep -Seconds 8
-    [void](Wait-AgentConsoleReady -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\extension-host-cdp.json"))
-    $hostFocus = Invoke-AgentConsoleCdp -Action "focus"
-    $hostEdit = $hostFocus.result.focused
-    $hostFile = Join-Path $Workspace ".chipmate-qa-extension-host.txt"
-    Remove-Item -LiteralPath $hostFile -Force -ErrorAction SilentlyContinue
-    if ($hostEdit) {
-      Send-AgentConsoleLine -Process $process -Text "Set-Content -LiteralPath .chipmate-qa-extension-host.txt -Value extension-host-ok" -DelayMilliseconds 1200
-    }
-    $script:HostPass = $hostEdit -and (Test-Path -LiteralPath $hostFile)
-
-    $timeoutArmed = Join-Path $Workspace ".chipmate-qa-timeout-armed.txt"
-    $timeoutBuffer = Join-Path $Workspace ".chipmate-qa-timeout-buffer.txt"
-    Remove-Item -LiteralPath $timeoutArmed, $timeoutBuffer -Force -ErrorAction SilentlyContinue
-    $timeoutArm = "Set-PSReadLineKeyHandler -Chord 'Ctrl+x,Ctrl+p' -ScriptBlock { }; Set-PSReadLineKeyHandler -Chord 'Ctrl+x,Ctrl+q' -ScriptBlock { `$Line = ''; `$Cursor = 0; [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref] `$Line, [ref] `$Cursor); Set-Content -LiteralPath .chipmate-qa-timeout-buffer.txt -Value `$Line -NoNewline }; Set-Content -LiteralPath .chipmate-qa-timeout-armed.txt -Value armed"
-    Send-AgentConsoleLine -Process $process -Text $timeoutArm -DelayMilliseconds 1000 -Refocus
-    if (-not (Wait-ChipMateFile -Path $timeoutArmed)) { throw "Capture-timeout probe did not arm PSReadLine." }
-    $timeoutInput = "capture timeout must retain this line"
-    $timeoutSubmit = Invoke-AgentConsoleCdp -Action "submit" -Value $timeoutInput
-    if (-not $timeoutSubmit.result.submitted) { throw "CDP could not submit the capture-timeout probe." }
-    Start-Sleep -Seconds 3
-    $timeoutProbe = Invoke-AgentConsoleCdp -Action "buffer"
-    if (-not $timeoutProbe.result.probed) { throw "CDP could not query the capture-timeout PSReadLine buffer." }
-    [void](Wait-ChipMateFile -Path $timeoutBuffer)
-    $timeoutTree = Join-Path $Evidence "WIN-AGENT-CONSOLE\capture-timeout-state.json"
-    $timeout = Invoke-AgentConsoleCdp -Action "state" -Path $timeoutTree
-    $timeoutText = @($timeout.result.inputValue, $timeout.result.text, ($timeout.result.rows -join [Environment]::NewLine)) -join [Environment]::NewLine
-    $timeoutPass = (Test-Path -LiteralPath $timeoutBuffer) -and
-      ([IO.File]::ReadAllText($timeoutBuffer) -ceq $timeoutInput) -and
-      $timeoutText -match "输入分流超时"
-
-    $shotPath = Join-Path $Evidence "WIN-AGENT-CONSOLE\console.png"
-    $shot = Relative-EvidencePath $shotPath
-    $tree = Join-Path $Evidence "WIN-AGENT-CONSOLE\console-state.json"
-    [void](Invoke-AgentConsoleCdp -Action "screenshot" -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\console-capture.json") -ImagePath $shotPath)
-    Save-ChipMateScreenshot -Path (Join-Path $Evidence "WIN-AGENT-CONSOLE\console-desktop.png")
-    $finalState = Invoke-AgentConsoleCdp -Action "state" -Path $tree
-    $treeText = @($finalState.result.text, ($finalState.result.rows -join [Environment]::NewLine)) -join [Environment]::NewLine
-    $outputSeen = (Test-Path -LiteralPath $direct) -and (Get-Content -Raw -LiteralPath $direct) -match "CHIPMATE_QA_OK"
-    $detached = $treeText -match "Agent Console 输入|输入自然语言或系统命令"
-    $noise = $treeText -match '(?m)^\s*(?:完成|退出码\s+\d+)\s*$'
-    $requestsAfterAgent = Invoke-RestMethod -Uri "$script:MockOrigin/__qa/requests" -TimeoutSec 2
-    $chatAfterAgent = @($requestsAfterAgent.requests | Where-Object { $_.path -match "/chat/completions$" }).Count
-    $agentPass = $chatAfterAgent -gt $chatAfterIme
-    $assertions = @(
-      @{ id = "console-open"; status = if ($opened) { "PASS" } else { "FAIL" }; detail = "Agent Console Agent control observed=$opened" },
-      @{ id = "single-real-input"; status = if (-not $detached) { "PASS" } else { "FAIL" }; detail = "Detached Agent textarea observed=$detached" },
-      @{ id = "cdp-single-xterm"; status = if ($cdpPass) { "PASS" } else { "FAIL" }; detail = "CDP root=$($cdp.result.rootCount) xterm=$($cdp.result.xtermCount) textbox=$($cdp.result.customTextboxCount) same=$($cdp.result.sameXterm) blank=$($cdp.result.blankFrames)" },
-      @{ id = "fixed-command-output"; status = if ($outputSeen) { "PASS" } else { "FAIL" }; detail = "CHIPMATE_QA_OK observed=$outputSeen" },
-      @{ id = "direct-command-routing"; status = if ($directPass) { "PASS" } else { "FAIL" }; detail = "Direct commands changed chat request count: before=$chatBefore after=$chatAfterDirect" },
-      @{ id = "powershell-dynamic-routing"; status = if ($routingPass) { "PASS" } else { "FAIL" }; detail = "Function, alias and PATH command executed through PSReadLine=$routingPass" },
-      @{ id = "natural-language-routing"; status = if ($agentPass) { "PASS" } else { "FAIL" }; detail = "Agent chat requests after explicit prompt=$($chatAfterAgent - $chatAfterIme)" },
-      @{ id = "ime-two-enter"; status = if ($imePass) { "PASS" } else { "FAIL" }; detail = "IME composition started=$imeStarted committed=$imeCommitted firstEnter=$chatAfterFirstImeEnter before=$chatAfterDirect secondEnter=$chatAfterIme" },
-      @{ id = "capture-timeout-retains-line"; status = if ($timeoutPass) { "PASS" } else { "FAIL" }; detail = "Timed-out capture retained the exact PSReadLine buffer=$timeoutPass" },
-      @{ id = "exactly-once-100"; status = if ($SkipStress) { "SKIP" } elseif ($sequencePass) { "PASS" } else { "FAIL" }; detail = if ($SkipStress) { "按用户要求，本轮正常使用验收跳过压力提交。" } else { "files=$($lines.Count) unique=$($unique.Count) duplicates=$($duplicates.Count)" } },
-      @{ id = "approval-reject"; status = if ($rejected) { "PASS" } else { "FAIL" }; detail = "Rejected tool command left no marker=$rejected" },
-      @{ id = "approval-execute"; status = if ($approved) { "PASS" } else { "FAIL" }; detail = "Approved tool command executed once=$approved" },
-      @{ id = "mode-switch-50"; status = if ($switchPass) { "PASS" } else { "FAIL" }; detail = "frames=$($frames.Count) blank=$($blankFrames.Count) xterm focusable=$editAfterSwitch" },
-      @{ id = "output-tail"; status = if ($tail) { "PASS" } else { "FAIL" }; detail = "$tailTarget visible=$tail" },
-      @{ id = "scroll-pin"; status = if ($scrollPass) { "PASS" } else { "FAIL" }; detail = "Visible line remained stable while output continued=$scrollPass" },
-      @{ id = "reload-reconnect"; status = if ($script:ReloadPass) { "PASS" } else { "FAIL" }; detail = "Reload Window returned an executable Agent Console=$script:ReloadPass" },
-      @{ id = "extension-host-restart"; status = if ($script:HostPass) { "PASS" } else { "FAIL" }; detail = "Restart Extension Host returned an executable Agent Console=$script:HostPass" },
-      @{ id = "no-direct-status-noise"; status = if (-not $noise) { "PASS" } else { "FAIL" }; detail = "Standalone completion/exit-code label observed=$noise" }
-    )
-    $pass = @($assertions | Where-Object { $_.status -notin @("PASS", "SKIP") }).Count -eq 0
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-SINGLE-SHELL-01" -Status $(if ($opened -and -not $detached -and $cdpPass) { "PASS" } else { "FAIL" }) -Summary "Agent 模式真实输入面与单 xterm CDP 结构检查。" -Evidence @($shot, $cdpPath)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-SINGLE-SHELL-02" -Status $(if ($outputSeen -and $directPass -and $agentPass) { "PASS" } else { "FAIL" }) -Summary "已知命令直接执行且自然语言进入 Agent。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-SINGLE-SHELL-03" -Status $(if ($SkipStress) { "SKIP" } elseif ($sequencePass) { "PASS" } else { "FAIL" }) -Summary $(if ($SkipStress) { "按用户要求，本轮正常使用验收跳过 100 次压力提交。" } else { "100 次提交 files=$($lines.Count) unique=$($unique.Count) duplicates=$($duplicates.Count)。" }) -Evidence @($seq)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-SINGLE-SHELL-04" -Status $(if ($switchPass -and $tail) { "PASS" } else { "FAIL" }) -Summary "切换后 xterm 可输入且正常输出到达 $tailTarget。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-SINGLE-SHELL-05" -Status $(if ($scrollPass) { "PASS" } else { "FAIL" }) -Summary "用户上滚后输出期间可见首行保持不变。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-SINGLE-SHELL-06" -Status "PASS" -Summary "结果明确记录 gate=$Gate，ARM 与 native-x64 不互相替代。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-WEBVIEW-01" -Status $(if ($opened -and $cdpPass) { "PASS" } else { "FAIL" }) -Summary "安装态真实 xterm 与 CDP 结构检查。" -Evidence @($shot, $cdpPath)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-WEBVIEW-02" -Status $(if ($approved) { "PASS" } else { "FAIL" }) -Summary "Agent 审批命令执行并写入唯一 marker。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-WEBVIEW-03" -Status $(if ($reject -and $approve) { "PASS" } else { "FAIL" }) -Summary "危险命令审批卡提供拒绝与执行动作。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-WEBVIEW-04" -Status $(if ($rejected) { "PASS" } else { "FAIL" }) -Summary "拒绝后命令没有执行。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-AGENT-CONSOLE-WEBVIEW-05" -Status $(if ($sidebar) { "PASS" } else { "FAIL" }) -Summary "侧边栏 Agent Console 动作打开同一控制台。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-01" -Status $(if ($outputSeen) { "PASS" } else { "FAIL" }) -Summary "安装态 PowerShell Write-Output 检查。" -Evidence @($shot)
-    Add-AtomicResult -AssertionId "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-02" -Status $(if ($routingPass) { "PASS" } else { "FAIL" }) -Summary "PSReadLine 动态识别函数、别名和 PATH 命令。" -Evidence @($functionFile, $aliasFile, $pathFile)
-    Add-AtomicResult -AssertionId "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-03" -Status $(if ($imePass) { "PASS" } else { "FAIL" }) -Summary "真实中文 IME 两次 Enter 路由检查。" -Evidence @($candidate)
-    Add-AtomicResult -AssertionId "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-04" -Status $(if ($timeoutPass) { "PASS" } else { "FAIL" }) -Summary "捕获超时保留当前 PSReadLine 编辑行。" -Evidence @($timeoutTree)
-    Add-Result -CaseId "WIN-AGENT-CONSOLE" -Status $(if ($pass) { "PASS" } else { "FAIL" }) -Summary "Agent Console 单一真实 Shell、路由、审批、IME、CDP 切换和正常输出回归。" -Screenshots @($shot, $candidate) -Assertions $assertions
-  } finally {
-    Stop-GuiSubject -Process $process
-  }
-}
-
 function Add-Result {
   param(
     [Parameter(Mandatory = $true)] [string] $CaseId,
@@ -1938,7 +1484,6 @@ function Add-AtomicResult {
 }
 
 function Complete-AtomicResults {
-  $focused = $Lane -in @("agent-console", "settings", "package", "update")
   foreach ($problem in $Atomic.problems) {
     foreach ($check in $problem.assertions) {
       if (@($AtomicResults | ForEach-Object { $_.id }) -contains $check.id) { continue }
@@ -1954,8 +1499,8 @@ function Complete-AtomicResults {
         Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "自动更新聚焦通道仅裁决 WIN-UPDATE，不从该结果推断其他功能矩阵。"
         continue
       }
-      if ($focused -and $problem.parent -ne "WIN-AGENT-CONSOLE") {
-        Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "Agent Console 聚焦通道不裁决其他功能矩阵。"
+      if ($Lane -eq "settings") {
+        Add-AtomicResult -AssertionId $check.id -Status "SKIP" -Summary "设置页聚焦通道不裁决其他功能矩阵。"
         continue
       }
       if (-not $check.windows.required) {
@@ -2074,7 +1619,7 @@ function Complete-Run {
 try {
   Initialize-Fixture
   $Artifact = Test-FrozenVsix
-  if ($Lane -in @("agent-console", "settings", "package", "update")) {
+  if ($Lane -in @("settings", "package", "update")) {
     [ordered]@{
       status = "SCOPED"
       lane = $Lane
@@ -2084,17 +1629,13 @@ try {
         "WIN-PACKAGE-INSTALL"
       } elseif ($Lane -eq "update") {
         "WIN-UPDATE"
-      } else {
-        "WIN-AGENT-CONSOLE"
       }
       note = if ($Lane -eq "settings") {
-        "全仓 coverage ledger 不属于设置页重构聚焦通道；QA、Agent Console 与其他功能不据此判定。"
+        "全仓 coverage ledger 不属于设置页重构聚焦通道；QA 与其他功能不据此判定。"
       } elseif ($Lane -eq "package") {
         "全仓 coverage ledger 不属于冻结 VSIX 包审计通道；运行态功能不据此判定。"
       } elseif ($Lane -eq "update") {
         "全仓 coverage ledger 不属于自动更新聚焦通道；仅裁决离线 Windows 更新真实链路。"
-      } else {
-        "全仓 coverage ledger 不属于 Agent Console 聚焦通道；其他功能不据此判定。"
       }
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Evidence "coverage-ledger.json") -Encoding UTF8
   } else {
@@ -2133,7 +1674,7 @@ try {
   Initialize-MockProviderConfig
   Install-Subject
   Invoke-InstalledProbe
-  if ($Lane -in @("smoke", "settings", "agent-console")) {
+  if ($Lane -in @("smoke", "settings")) {
     Add-Result -CaseId "WIN-SMOKE-INSTALL" -Status "PASS" -Summary "正式安装、版本列表与 installed-host 激活 probe 通过。"
   } elseif ($PreviousVsix -and $ChipMateVsix) {
     Add-Result -CaseId "WIN-IDENTITY-UPGRADE" -Status "PASS" -Summary "正式安装的 ChipMate 已激活，覆盖升级与 ChipMate 同 Profile 前置条件均已执行。"
@@ -2145,15 +1686,12 @@ try {
     if ($Lane -eq "settings") {
       Invoke-SettingsCdpRegression
     } else {
-      if ($Lane -ne "agent-console") {
-        Invoke-SettingsKeyboardRegression
-      }
+      Invoke-SettingsKeyboardRegression
       if ($Lane -eq "smoke") {
         Invoke-IndexingSmoke
-      } elseif ($Lane -ne "agent-console") {
+      } else {
         Invoke-VisualCapture
       }
-      Invoke-AgentConsoleSmoke
       Invoke-CliLifecycleAudit
     }
   } else {
@@ -2166,16 +1704,14 @@ try {
       } else {
         Add-Result -CaseId "WIN-BRANDING-FIRST-RUN" -Status "BLOCKED" -Summary "NoGui 禁止首次启动视觉采证。"
       }
-      Add-Result -CaseId "WIN-AGENT-CONSOLE" -Status "BLOCKED" -Summary "NoGui 禁止 Agent Console 交互采证。"
       Add-Result -CaseId "WIN-CLI-LIFECYCLE" -Status "BLOCKED" -Summary "NoGui 禁止 Reload、Extension Host 和孤儿进程交互审计。"
     }
   }
 
   foreach ($case in $Matrix.cases) {
     if (@($Results | ForEach-Object { $_.id }) -contains $case.id) { continue }
-    if ($Lane -in @("agent-console", "settings")) {
-      $focus = if ($Lane -eq "settings") { "设置页重构" } else { "Agent Console" }
-      Add-Result -CaseId $case.id -Status "SKIP" -Summary "$focus 聚焦通道不裁决此功能。"
+    if ($Lane -eq "settings") {
+      Add-Result -CaseId $case.id -Status "SKIP" -Summary "设置页重构聚焦通道不裁决此功能。"
       continue
     }
     if ($Lane -eq "smoke") {

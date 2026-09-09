@@ -8,7 +8,6 @@
 
 - 从“聊天助手”升级为完整工程 Agent：支持规划、编码、调试、审查等工作模式，可连续读取、修改和验证代码，并在关键操作前执行权限确认。
 - 新增 Agent Manager：可同时管理多个任务和会话，并通过 Git worktree 隔离开发分支；内置终端、变更对比、脚本运行、PR 状态和快捷键导航。
-- 新增 Agent Console：在独立混合终端中直接执行 Shell 命令，将自然语言请求交给 Agent，并在同一时间线中查看输出、回复和审批。
 - 新增完整的 Skill Market：支持搜索、收藏、安装、版本查看、发布、下架和诊断；可从目录、`SKILL.md`、ZIP 或 TAR.GZ 导入本地 Skill，并通过原子事务保证安装与发布可恢复。
 - 新增项目记忆、会话内搜索、任务时间线、多会话标签页、聊天独立编辑器、图片预览、浏览器自动化、Notebook 操作和可选图像生成等能力。
 - 新增插件内更新：可从统一 ChipMate Server 自动检查、下载并安装匹配当前平台的 VSIX，安装前校验目标平台、文件大小和 SHA-256。
@@ -104,7 +103,3 @@
 - 旧版“AI 注释候选”专用命令与 CodeLens 审批面板未原样保留；通用注释、解释、修复和代码修改由 Agent、编辑器上下文命令及 diff review 流程完成。
 - 旧版“生成模块详细设计文档”单独命令改为调用内置 `source-backed-detail-design` Skill 和文档工具，不再维护一条独立业务运行时。
 - 内部 Windows baseline 包默认不包含 FFmpeg，因此语音/音频功能需要系统 FFmpeg 或单独的 audio-enabled 包；聊天、Agent、RAG、CodeGraph、文档和 diff 不受影响。
-
-## 一句话总结
-
-ChipMate v2 将上一代的本地问答、C/C++ 检索、Document RAG、Qwen 补全和文档生成能力，整合进更成熟的 ChipMate Agent Runtime，并新增多会话并行、worktree 隔离、Agent Console、Skill/扩展市场、项目记忆、沙箱权限和可靠离线更新，面向真实大型工程形成了更完整的开发闭环。

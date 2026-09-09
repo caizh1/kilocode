@@ -41,6 +41,11 @@ export const SessionTab: Component<{
         openDelay={0}
       >
         <span class="am-tab-title">
+          <Show when={!props.busy}>
+            <span class="am-tab-icon night-city-tab-icon">
+              <span class="codicon codicon-comment" aria-hidden="true" />
+            </span>
+          </Show>
           <Show when={props.busy}>
             <span class="am-tab-icon">
               <Spinner class="am-worktree-spinner" />

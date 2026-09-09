@@ -67,6 +67,8 @@ export type Progress = {
 
 type Options = {
   progress?: (event: Progress) => void
+  storageDir?: string
+  includeSensitive?: boolean
 }
 
 export async function bootstrap() {
@@ -85,7 +87,9 @@ export async function bootstrap() {
   let last = -1
   if (tty) process.stderr.write("\x1b[?25l")
   try {
-    await Effect.runPromise(Database.Service.use(() => Effect.void).pipe(Effect.provide(AppNodeBuilder.build(Database.node))))
+    await Effect.runPromise(
+      Database.Service.use(() => Effect.void).pipe(Effect.provide(AppNodeBuilder.build(Database.node))),
+    )
     const sqlite = new BunDatabase(marker)
     try {
       const stats = await run(drizzle({ client: sqlite }), {
@@ -121,7 +125,7 @@ export async function bootstrap() {
 }
 
 export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: Options) {
-  const storageDir = path.join(Global.Path.data, "storage")
+  const storageDir = options?.storageDir ?? path.join(Global.Path.data, "storage")
 
   if (!existsSync(storageDir)) {
     log.info("storage directory does not exist, skipping migration")
@@ -134,6 +138,7 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
       permissions: 0,
       shares: 0,
       errors: [] as string[],
+      skipped: { sessions: 0, todos: 0, shares: 0 },
     }
   }
 
@@ -148,6 +153,11 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
   db.run("PRAGMA cache_size = 10000")
   db.run("PRAGMA temp_store = MEMORY")
   db.run("PRAGMA foreign_keys = ON")
+  const orphans = {
+    sessions: 0,
+    todos: 0,
+    shares: 0,
+  }
   const stats = {
     projects: 0,
     sessions: 0,
@@ -157,11 +167,7 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
     permissions: 0,
     shares: 0,
     errors: [] as string[],
-  }
-  const orphans = {
-    sessions: 0,
-    todos: 0,
-    shares: 0,
+    skipped: orphans,
   }
   const errs = stats.errors
 
@@ -206,14 +212,15 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
 
   // Pre-scan all files upfront to avoid repeated glob operations
   log.info("scanning files...")
+  const includeSensitive = options?.includeSensitive ?? true
   const [projectFiles, sessionFiles, messageFiles, partFiles, todoFiles, permFiles, shareFiles] = await Promise.all([
     list("project/*.json"),
     list("session/*/*.json"),
     list("message/*/*.json"),
     list("part/*/*.json"),
     list("todo/*.json"),
-    list("permission/*.json"),
-    list("session_share/*.json"),
+    includeSensitive ? list("permission/*.json") : Promise.resolve([]),
+    includeSensitive ? list("session_share/*.json") : Promise.resolve([]),
   ])
 
   log.info("file scan complete", {

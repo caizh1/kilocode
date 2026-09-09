@@ -4,7 +4,11 @@ import { Tooltip } from "@chipmate/chipmate-ui/tooltip"
 import { useTranscriptSearch } from "../../context/transcript-search"
 import { useLanguage } from "../../context/language"
 
-export const TranscriptSearch: Component = () => {
+interface TranscriptSearchProps {
+  onClose?: () => void
+}
+
+export const TranscriptSearch: Component<TranscriptSearchProps> = (props) => {
   const search = useTranscriptSearch()
   const language = useLanguage()
   let inputRef: HTMLInputElement | undefined
@@ -24,6 +28,10 @@ export const TranscriptSearch: Component = () => {
   }
 
   const close = () => {
+    if (props.onClose) {
+      props.onClose()
+      return
+    }
     search.closeSearch()
     search.setQuery("")
     search.setCount(0)
@@ -39,6 +47,7 @@ export const TranscriptSearch: Component = () => {
     }
     if (e.key === "Escape") {
       e.preventDefault()
+      e.stopPropagation()
       close()
       return
     }

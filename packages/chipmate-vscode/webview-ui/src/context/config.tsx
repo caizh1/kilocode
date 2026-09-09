@@ -14,6 +14,7 @@ import { useVSCode } from "./vscode"
 import type { Config, ExtensionMessage, FeatureFlags } from "../types/messages"
 import {
   configUnsetPaths,
+  ConfigSaveWatchdog,
   deepEqual,
   deepMerge,
   mergeScopedConfig,
@@ -24,6 +25,9 @@ import {
 import { splitConfigByScope } from "../utils/config-scope"
 import { CHIPMATE_SERVER_KEY, normalizeChipmateServerBaseUrl } from "../../../src/shared/chipmate-server"
 import { buildAutocompleteSettingMessages } from "./autocomplete-settings"
+import { useLanguage } from "./language"
+
+const CONFIG_SAVE_WATCHDOG_MS = 35_000
 
 function has(value: Record<string, unknown>) {
   return Object.keys(value).length > 0
@@ -48,6 +52,7 @@ interface ConfigContextValue {
   features: Accessor<FeatureFlags>
   loading: Accessor<boolean>
   isDirty: Accessor<boolean>
+  appearanceOnly: Accessor<boolean>
   saving: Accessor<boolean>
   canSave: Accessor<boolean>
   saveError: Accessor<SaveError | null>
@@ -63,6 +68,7 @@ export const ConfigContext = createContext<ConfigContextValue>()
 
 export const ConfigProvider: ParentComponent = (props) => {
   const vscode = useVSCode()
+  const language = useLanguage()
 
   const [config, setConfig] = createSignal<Config>({})
   const [globalConfig, setGlobalConfig] = createSignal<Config>({})
@@ -93,6 +99,11 @@ export const ConfigProvider: ParentComponent = (props) => {
       throw err
     }
   })
+  const appearanceOnly = createMemo(() => {
+    if (has(draft()) || has(globalDraft()) || has(projectDraft())) return false
+    const keys = Object.keys(settingsDraft())
+    return keys.length > 0 && keys.every((key) => key === "appearance.skin" || key === "appearance.motion")
+  })
   // Last config received from the server — used to revert on discard
   const [saved, setSaved] = createSignal<Config>({})
   const [savedGlobal, setSavedGlobal] = createSignal<Config>({})
@@ -107,8 +118,41 @@ export const ConfigProvider: ParentComponent = (props) => {
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
   const [saveError, setSaveError] = createSignal<SaveError | null>(null)
+  const saveWatchdog = new ConfigSaveWatchdog(CONFIG_SAVE_WATCHDOG_MS)
+
+  function clearSaveWatchdog() {
+    saveWatchdog.clear()
+  }
+
+  function stopSaving(error: SaveError) {
+    clearSaveWatchdog()
+    setSaving(false)
+    setRequest(undefined)
+    setPendingConfig(false)
+    setPendingSettings(new Set<string>())
+    setSaveError(error)
+  }
+
+  function startSaveWatchdog(id: string) {
+    saveWatchdog.start(id, (expired) => {
+      if (!saving() || request() !== expired) return
+      vscode.postMessage({ type: "memoryDebug", event: "settings.save.watchdog", requestId: id })
+      setSaving(false)
+      setRequest(undefined)
+      setPendingConfig(false)
+      setPendingSettings(new Set<string>())
+      setSaveError({
+        message: language.t("settings.saveBar.saveTimedOut"),
+        details: language.t("settings.saveBar.saveTimedOutDetails"),
+      })
+    })
+  }
 
   function handleSettingMessage(message: ExtensionMessage) {
+    if (message.type === "appearanceChanged") {
+      mergeSettings({ "appearance.skin": message.appearance.skin, "appearance.motion": message.appearance.motion })
+      return true
+    }
     if (message.type === "chipmateServerSettingsLoaded") {
       mergeSettings({ [CHIPMATE_SERVER_KEY]: message.state.baseUrl, "updateCheck.autoDownload": message.autoDownload })
       return true
@@ -159,11 +203,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     }
     if (message.type !== "settingUpdateFailed") return false
     if (!saving() || message.requestId !== request()) return true
-    setSaving(false)
-    setRequest(undefined)
-    setPendingConfig(false)
-    setPendingSettings(new Set<string>())
-    setSaveError({ message: message.message })
+    stopSaving({ message: message.message })
     return true
   }
 
@@ -250,11 +290,19 @@ export const ConfigProvider: ParentComponent = (props) => {
       if (saving() && message.requestId !== request()) return
       // The write was rejected (e.g. schema validation) — surface the error
       // and keep the draft + isDirty so the user can correct and retry.
-      setSaving(false)
-      setRequest(undefined)
-      setPendingConfig(false)
-      setPendingSettings(new Set<string>())
-      setSaveError({ message: message.message, details: message.details })
+      stopSaving(
+        message.reason === "timeout"
+          ? {
+              message: language.t("settings.saveBar.saveTimedOut"),
+              details: language.t("settings.saveBar.saveTimedOutDetails"),
+            }
+          : message.reason === "protocol-mismatch"
+            ? {
+                message: language.t("settings.saveBar.protocolMismatch"),
+                details: language.t("settings.saveBar.protocolMismatchDetails"),
+              }
+          : { message: message.message, details: message.details },
+      )
       return
     }
   })
@@ -268,12 +316,14 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   function finish(keys: Set<string>, configPending: boolean) {
     if (configPending || keys.size > 0) return
+    clearSaveWatchdog()
     setSaving(false)
     setRequest(undefined)
     setSaveError(null)
   }
 
   const requestInitialData = () => {
+    vscode.postMessage({ type: "requestAppearance" })
     vscode.postMessage({ type: "requestConfig" })
     vscode.postMessage({ type: "requestAutocompleteSettings" })
     vscode.postMessage({ type: "requestIndexingSettings" })
@@ -303,6 +353,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   onCleanup(() => {
     unsubReady()
     clearTimeout(fallback)
+    clearSaveWatchdog()
   })
 
   function updateConfig(partial: Partial<Config>) {
@@ -381,6 +432,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     // If the write fails, the save bar stays visible so the user can retry.
     setSaving(true)
     setRequest(id)
+    startSaveWatchdog(id)
     setPendingSettings(new Set(Object.keys(pending)))
     setPendingConfig(configDirty || globalDirty || projectDirty)
     setSaveError(null)
@@ -403,6 +455,8 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function discardConfig() {
+    clearSaveWatchdog()
+    setSaving(false)
     setConfig(saved())
     setGlobalConfig(savedGlobal())
     setProjectConfig(savedProject())
@@ -425,6 +479,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     features,
     loading,
     isDirty,
+    appearanceOnly,
     saving,
     canSave,
     saveError,

@@ -811,3 +811,43 @@ final result: passed
 - TypeScript、ESLint、完整扩展编译、Knip 与 `check-chipmate-change` 通过；未发现 P0、P1 或 P2 视觉与交互问题。
 
 final result: passed
+
+---
+
+# QA“我的输入”对话导航 Design QA
+
+## 视觉真源与对照证据
+
+- 用户选定的设计稿 2：`/Users/archer/Work/kilocode/packages/chipmate-vscode/qa/artifacts/qa-conversation-navigator-selected.png`。
+- 统一为 `420 × 720` 的设计真源：`/Users/archer/Work/kilocode/packages/chipmate-vscode/qa/artifacts/selected-420-dark.png`。
+- Extension Development Host 最终实装截图：`/Users/archer/Work/kilocode/packages/chipmate-vscode/qa/artifacts/extension-host-420-dark.png`，视口内容宽度为 `420px`，高度归一化为 `720px`。
+- 同尺度双联比较：`/Users/archer/Work/kilocode/packages/chipmate-vscode/qa/artifacts/comparison-selected-vs-extension-host.png`。
+- `200px` 极窄实现：`/Users/archer/Work/kilocode/packages/chipmate-vscode/qa/artifacts/implementation-200-dark-r2.png`。
+- 状态：简体中文、深色 VS Code 主题、普通 QA、对话导航展开且“我的输入”激活；真实宿主使用不写入存储的 160 轮固定验收样本。
+
+## 逐轮差异与修正
+
+- 第一轮 P2：`200px` 下任务头统计区域不换行，焦点移动后会让头部产生水平偏移，连带裁切导航面板。修正为单列任务头和正常 flex 换行；面板、页签、筛选、条目与时间均留在正常文档流中。
+- 第二轮 P2：实现已有时间点，但设计稿中的纵向时间线权重不足。修正为基于 VS Code 前景主题令牌的低对比连续线，不增加绝对定位图标或硬编码颜色。
+- 最终对比：单一“对话导航”入口、双页签、数量、筛选、两行摘录、时间、最新项高亮、玻璃边界和分层关系与设计稿一致；真实产品头部、任务标题、输入区和 VS Code 字体按当前运行时保留，不复制生成图中的虚构数据或浏览器装饰。
+- 最终没有未解决的 P0、P1 或 P2 视觉差异。
+
+## 功能、响应式与可访问性
+
+- “我的输入”自动沿用会话分页加载到完整历史，列表最新在前并由虚拟列表承载；全文筛选覆盖完整原文和附件名，摘录只显示首个真实正文段落。
+- 仅收录普通 QA 的真实用户输入；助手、系统合成文本和压缩消息不进入目录。纯附件输入依次回退为文件名和附件类型；DSH 上下文保持关闭，不改变官方 DSH 产品流程。
+- 点击目录项通过稳定消息 ID 定位虚拟消息列表，关闭面板、暂停自动滚底、居中目标、转移键盘焦点并短暂高亮；Escape 恢复输入框焦点。
+- 既有 `chipmate.v2.toggleChatSearch` 入口直接打开“全文搜索”，大小写、全词、正则、前后匹配和计数行为继续复用原实现。
+- `420px`、`200px`、浅色、高对比和减少动效场景均无页面横向溢出；高对比使用系统 Canvas/Highlight 语义，减少动效关闭跳转高亮动画。
+
+## 固定基准与验证结果
+
+- 单元测试 `5/5` 通过，覆盖全部用户输入、合成与压缩排除、附件回退、长文本、中文全文筛选、最新排序和 160 轮基准。
+- Playwright `3/3` 通过，覆盖完整历史加载、双页签、全文搜索回归、命令入口、Escape/焦点、流式状态下不自动回底，以及 `420px`、`200px`、浅色、高对比和减少动效。
+- 160 轮固定长会话目录为 160 条，消息 ID 零漏项、零多项；20 个分散目标逐一执行目录筛选、点击、居中、焦点与高亮断言，结果为 `20/20`。
+- 人工基线按从最新消息逐项向上浏览计算；导航流程固定为“筛选 + 点击”两次操作。20 个目标的累计操作减少超过 `80%`，由确定性基准测试门禁。
+- Extension Development Host 使用最终 Webview 构建验证：目录显示 160 条，真实点击最早目标后面板关闭、目标获得焦点与高亮且没有自动回到底部。
+- 本功能完成时包级 TypeScript、Webview TypeScript、ESLint、Storybook 构建和 Webview 生产构建通过；最终复跑时，当前脏工作区中并行变化的 DSH downlink 类型已从 `frame` 改为 `data`，其调用点尚未同步，因而产生两条与导航无关的 TypeScript 错误。完整 `bun run compile` 的自动依赖安装步骤另受当前仓库 Storybook 依赖解析失败阻断；随后以同一新构建 CLI 完成 SDK 重建、ESLint 与 esbuild。
+- 根 `bun run typecheck` 受本机缺少 JetBrains 所需 Java Runtime 阻断；根 `bun run lint` 受仓库现有 `.qa-low-spec-qemu-index/source/.oxlintrc.json` 非根 `options.typeAware` 配置阻断，均与本次 QA 导航改动无关。
+
+final result: passed

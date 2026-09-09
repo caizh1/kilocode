@@ -11,6 +11,7 @@ export interface SkillInfo {
 
 // Slash command info from CLI backend
 export interface SlashCommandInfo {
+  introduction?: "spec"
   name: string
   description?: string
   source?: "command" | "mcp" | "skill"

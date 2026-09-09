@@ -24,6 +24,7 @@ import type {
 } from "./types"
 import { chipmateServerEndpoints } from "../chipmate-server"
 import { safeMarketplaceErrorText } from "./errors"
+import type { MarketplaceAuthorize } from "./api"
 
 async function fetchStatus(api: MarketplaceApiClient): Promise<{ value?: MarketStatus; error?: string }> {
   return api
@@ -59,6 +60,13 @@ export class MarketplaceService {
     this.api = new MarketplaceApiClient(marketplaceApiOptions())
     this.detector = new InstallationDetector(this.paths)
     this.installer = new MarketplaceInstaller(this.paths)
+  }
+
+  async recoverSkillTransactions(workspaces: readonly string[]): Promise<void> {
+    await this.installer.recoverSkillTransactions("global")
+    for (const workspace of new Set(workspaces)) {
+      await this.installer.recoverSkillTransactions("project", workspace)
+    }
   }
 
   async fetchData(
@@ -131,6 +139,10 @@ export class MarketplaceService {
     return this.api.serverBaseUrl()
   }
 
+  setAuthorization(authorization: MarketplaceAuthorize) {
+    this.api.setAuthorization(authorization)
+  }
+
   resolveUser(apiKey: string): Promise<MarketplaceUser> {
     return this.api.resolveUser(apiKey)
   }
@@ -193,7 +205,7 @@ export class MarketplaceService {
         )
       : await this.installer.install(item, options, workspace)
 
-    if (result.success) {
+    if (result.success && item.type !== "skill") {
       vscode.window.showInformationMessage(`Successfully installed ${item.name}`)
     }
 

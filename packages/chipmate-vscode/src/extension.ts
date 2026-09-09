@@ -1,4 +1,10 @@
+import { initializeDiagnostics } from "./services/diagnostics/record"
+import { initializeDiagnosticService } from "./services/diagnostics/service"
+import { disposeAppearance } from "./appearance"
+import { openAppearanceSidebar } from "./appearance-navigation"
+import { registerTurnChangesEdits } from "./chipmate-provider/turn-changes"
 import * as vscode from "vscode"
+import { randomUUID } from "node:crypto"
 import { ChipMateProvider } from "./ChipMateProvider"
 import { AgentManagerProvider } from "./agent-manager/AgentManagerProvider"
 import { VscodeHost } from "./agent-manager/vscode-host"
@@ -7,8 +13,8 @@ import { DiffViewerProvider } from "./diff/DiffViewerProvider"
 import { DiffSourceCatalog } from "./diff/sources/catalog"
 import { DiffVirtualProvider } from "./DiffVirtualProvider"
 import { SettingsEditorProvider } from "./SettingsEditorProvider"
+import { restoreMainEditorAfterSettings, type SettingsReturnTarget } from "./settings-panel-return"
 import { MarketplacePanelProvider } from "./MarketplacePanelProvider"
-import { AgentConsoleProvider } from "./agent-console/AgentConsoleProvider"
 import { DesignDocPanelProvider } from "./design-doc/DesignDocPanelProvider"
 import { MarketplaceNotifier } from "./services/marketplace/notifier"
 import { SubAgentViewerProvider } from "./SubAgentViewerProvider"
@@ -31,31 +37,41 @@ import { markWorkspace } from "./util/spotlight"
 import { createUpdateLog, registerUpdateCheck } from "./services/update-check"
 import {
   confirmPendingUpdateActivation,
-  markPendingUpdateReloadRequested,
-  shouldRetryFirstReload,
 } from "./services/update-check/activation"
 import { registerDocumentArtifactCommands } from "./services/document-artifacts"
-import { registerAgentTerminal } from "./services/agent-terminal"
 import { createNotebookBridge } from "./services/notebook"
 import { createSkillMarketBridge } from "./services/skill-market"
 import { registerCoexistence } from "./chipmate/coexistence"
 import { isolate } from "./chipmate/storage"
 import { INTERNAL_OFFLINE_CONTEXT, isInternalOfflineBuild } from "./shared/internal-offline"
 import { migrateLegacyProductState } from "./migration/legacy-product-state"
+import { disposeDeepSeekHarnessService, getDeepSeekHarnessService } from "./services/deepseek-harness/service"
+import { registerChatHistoryMigration } from "./commands/chat-history-migration"
+import { SessionSurfaceCoordinator } from "./services/session-surface/coordinator"
+import { SessionForkCoordinator } from "./services/session-fork/coordinator"
+import {
+  sameSessionSurfaceKey,
+  sessionSurfaceKey,
+  type MainEditorPanelStateV1,
+  type SessionSurfaceKey,
+} from "./shared/session-surface"
+import { registerPatentRadar } from "./patent-radar/register"
 
 let agentManager: AgentManagerProvider | undefined
 let shuttingDown = false
 
 const RESTORE_KEY = "chipmate.v2.workbench.restore"
-const RELOAD_WINDOW = "Reload Window"
+const UPDATE_LOG = "View Update Log"
 
 type RestoreState = {
   agentManager?: boolean
 }
 
-const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
-  panel.title = title || EXTENSION_DISPLAY_NAME
-}
+const panelTitleHandler =
+  (panel: vscode.WebviewPanel, prefix = "") =>
+  (title: string) => {
+    panel.title = title ? `${prefix}${title}` : EXTENSION_DISPLAY_NAME
+  }
 
 // Activated via "onStartupFinished" (package.json) so that commands, code actions, keybindings,
 // autocomplete, commit-message generation, and URI deep links all work immediately — without
@@ -67,6 +83,8 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 // it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
 export async function activate(source: vscode.ExtensionContext) {
   const context = isolate(source)
+  initializeDiagnostics(context)
+  context.subscriptions.push({ dispose: disposeAppearance })
   const updateLog = createUpdateLog()
   context.subscriptions.push({ dispose: () => updateLog.dispose?.() })
   await migrateLegacyProductState(context)
@@ -83,6 +101,10 @@ export async function activate(source: vscode.ExtensionContext) {
         )
         return
       }
+      if (result.status === "superseded") {
+        updateLog.log(`[ChipMate New] 旧更新事务已被新版替代：目标 ${result.pending.expectedVersion}，当前 ${result.actual.version}。`)
+        return
+      }
       if (!result.pending.reloadRequestedAt) {
         updateLog.log(
           `[ChipMate New] 更新已安装但尚未请求重载：${result.pending.expectedVersion}/${result.pending.target}。`,
@@ -92,28 +114,11 @@ export async function activate(source: vscode.ExtensionContext) {
       updateLog.warn(
         `[ChipMate New] 更新首次重载未切换目标版本：期望 ${result.pending.expectedVersion}/${result.pending.target}，实际 ${result.actual.version}/${result.actual.target ?? "unknown"}。`,
       )
-      if (shouldRetryFirstReload(result)) {
-        const retry = await markPendingUpdateReloadRequested(context)
-        if (!retry) {
-          updateLog.warn("[ChipMate New] 更新首次重载回执在自动重试前丢失。")
-          return
-        }
-        updateLog.warn(`[ChipMate New] 目标扩展仍在注册，自动执行一次受限的第二次重载（尝试 ${retry.reloadAttempts}）。`)
-        await vscode.commands.executeCommand("workbench.action.reloadWindow")
-        return
-      }
       const choice = await vscode.window.showWarningMessage(
-        `ChipMate ${result.pending.expectedVersion} was installed, but this window is still running ${result.actual.version || "an unknown version"}. Reload Window again to activate the installed version.`,
-        RELOAD_WINDOW,
+        `ChipMate 更新尚未在当前窗口激活：期望 ${result.pending.expectedVersion}/${result.pending.target}，实际 ${result.actual.version || "未知版本"}/${result.actual.target ?? "未知平台"}。请查看更新日志，确认当前配置文件的安装结果。`,
+        UPDATE_LOG,
       )
-      if (choice === RELOAD_WINDOW) {
-        try {
-          await markPendingUpdateReloadRequested(context)
-        } catch (err) {
-          updateLog.warn(`[ChipMate New] 未能记录手动更新重载请求：${err instanceof Error ? err.message : String(err)}`)
-        }
-        await vscode.commands.executeCommand("workbench.action.reloadWindow")
-      }
+      if (choice === UPDATE_LOG) updateLog.show?.()
     })
     .catch((err) =>
       updateLog.warn(`[ChipMate New] 更新激活收据确认失败：${err instanceof Error ? err.message : String(err)}`),
@@ -130,6 +135,11 @@ export async function activate(source: vscode.ExtensionContext) {
 
   // Create shared connection service (one server for all webviews)
   const connectionService = new ChipMateConnectionService(context)
+  initializeDiagnosticService(context, connectionService)
+  context.subscriptions.push(registerTurnChangesEdits(connectionService))
+  const sessionSurfaces = new SessionSurfaceCoordinator(context)
+  const sessionForks = new SessionForkCoordinator(context, connectionService)
+  context.subscriptions.push(sessionSurfaces, sessionForks)
   const notebookBridge = createNotebookBridge(connectionService)
   const skillMarketBridge = createSkillMarketBridge(connectionService, context)
   let restore = context.workspaceState.get<RestoreState>(RESTORE_KEY) ?? {}
@@ -153,6 +163,7 @@ export async function activate(source: vscode.ExtensionContext) {
   // and set remote service client.
   const unsubscribeStateChange = connectionService.onStateChange((state) => {
     if (state === "connected") {
+      void sessionForks.recover()
       browserAutomationService.reregisterIfEnabled()
       const config = connectionService.getServerConfig()
       if (config) {
@@ -201,7 +212,15 @@ export async function activate(source: vscode.ExtensionContext) {
   }
 
   // Create the provider with shared service
-  const provider = new ChipMateProvider(context.extensionUri, connectionService, context)
+  const provider = new ChipMateProvider(context.extensionUri, connectionService, context, {
+    surface: {
+      id: "sidebar",
+      kind: "sidebar",
+      coordinator: sessionSurfaces,
+    },
+    sessionForks,
+    forkOwnerID: "sidebar",
+  })
   provider.setRemoteService(remoteService)
 
   // Register the webview view provider for the sidebar.
@@ -228,8 +247,14 @@ export async function activate(source: vscode.ExtensionContext) {
   context.subscriptions.push(designDocProvider)
 
   // Create Agent Manager provider for editor panel
-  const agentManagerHost = new VscodeHost(context.extensionUri, connectionService, context, remoteService)
-  const agentManagerProvider = new AgentManagerProvider(agentManagerHost, connectionService)
+  const agentManagerHost = new VscodeHost(
+    context.extensionUri,
+    connectionService,
+    context,
+    remoteService,
+    sessionForks,
+  )
+  const agentManagerProvider = new AgentManagerProvider(agentManagerHost, connectionService, sessionForks)
   agentManagerProvider.onPanelVisibilityChange((visible) => remember({ agentManager: visible }))
   agentManager = agentManagerProvider
   context.subscriptions.push(agentManagerProvider)
@@ -318,38 +343,6 @@ export async function activate(source: vscode.ExtensionContext) {
     }),
   )
 
-  // Register serializer so "Open in Tab" restores when VS Code restarts
-  context.subscriptions.push(
-    vscode.window.registerWebviewPanelSerializer("chipmate.v2.TabPanel", {
-      deserializeWebviewPanel(panel: vscode.WebviewPanel) {
-        const tabProvider = new ChipMateProvider(context.extensionUri, connectionService, context, {
-          tabTitle: panelTitleHandler(panel),
-        })
-        tabProvider.setRemoteService(remoteService)
-        tabProvider.setAutoApproveController(autoApprove)
-        tabProvider.setContinueInWorktreeHandler((sessionId, progress) =>
-          agentManagerProvider.continueFromSidebar(sessionId, progress),
-        )
-        tabProvider.setCreateWorktreeHandler((baseBranch, branchName) =>
-          agentManagerProvider.createFromSidebar(baseBranch, branchName),
-        )
-        tabProvider.setDiffVirtualProvider(diffVirtualProvider)
-        tabProvider.resolveWebviewPanel(panel)
-        tabPanels.set(panel, tabProvider)
-        panel.onDidDispose(
-          () => {
-            console.log("[ChipMate New] Tab panel restored from restart disposed")
-            tabPanels.delete(panel)
-            tabProvider.dispose()
-          },
-          null,
-          context.subscriptions,
-        )
-        return Promise.resolve()
-      },
-    }),
-  )
-
   const diffSourceCatalog = new DiffSourceCatalog(connectionService)
   context.subscriptions.push(diffSourceCatalog)
   const diffViewerProvider = new DiffViewerProvider(context.extensionUri, connectionService, diffSourceCatalog, {
@@ -366,31 +359,90 @@ export async function activate(source: vscode.ExtensionContext) {
   agentManagerHost.setDiffVirtualProvider(diffVirtualProvider)
   context.subscriptions.push(diffVirtualProvider)
 
-  const agentConsoleProvider = new AgentConsoleProvider(
-    context.extensionUri,
-    connectionService,
-    context,
-    remoteService,
-    diffVirtualProvider,
-    autoApprove,
-  )
-  context.subscriptions.push(agentConsoleProvider)
-  registerAgentTerminal(context, () => agentConsoleProvider.openPanel())
-
+  // Register after all dependencies exist so serializer restoration cannot observe
+  // a partially initialized extension host.
   context.subscriptions.push(
-    vscode.window.registerWebviewPanelSerializer(AgentConsoleProvider.viewType, {
-      deserializeWebviewPanel(panel: vscode.WebviewPanel) {
-        agentConsoleProvider.deserializePanel(panel)
-        return Promise.resolve()
+    vscode.window.registerWebviewPanelSerializer("chipmate.v2.TabPanel", {
+      deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown) {
+        const saved = resolveMainEditorPanelState(state)
+        return attachMainEditorPanel({
+          panel,
+          key: saved.key,
+          saved,
+          context,
+          connectionService,
+          agentManagerProvider,
+          tabPanels,
+          diffVirtualProvider,
+          remoteService,
+          autoApprove,
+          sessionSurfaces,
+          sessionForks,
+          sourceProvider: provider,
+          restored: true,
+        })
       },
     }),
   )
+
+  const openMainEditor = (key: SessionSurfaceKey) =>
+    openChipMateInMainEditor({
+      key,
+      context,
+      connectionService,
+      agentManagerProvider,
+      tabPanels,
+      diffVirtualProvider,
+      remoteService,
+      autoApprove,
+      sessionSurfaces,
+      sessionForks,
+      sourceProvider: provider,
+    })
+  const returnToSidebar = (key: SessionSurfaceKey) =>
+    returnChipMateToSidebar({ key, provider, sessionSurfaces, tabPanels })
+  sessionSurfaces.setHandlers({
+    openMain: openMainEditor,
+    returnToSidebar,
+    focusOwner: async (key, ownerSurfaceId) => {
+      const panel = sessionSurfaces.panel(key)
+      if (ownerSurfaceId !== "sidebar" && panel) {
+        panel.reveal(panel.viewColumn, false)
+        return
+      }
+      await vscode.commands.executeCommand("chipmate.v2.SidebarProvider.focus")
+      provider.postMessage({ type: "sessionSurface.select", key })
+    },
+  })
 
   // Create standalone editor providers (open in editor area, not sidebar)
   const settingsEditorProvider = new SettingsEditorProvider(context.extensionUri, connectionService, context)
   settingsEditorProvider.setRemoteService(remoteService)
   const marketplacePanelProvider = new MarketplacePanelProvider(context.extensionUri, connectionService, context)
   context.subscriptions.push(settingsEditorProvider, marketplacePanelProvider)
+
+  const settingsReturnTarget = (): SettingsReturnTarget | undefined => {
+    const sidebar = sessionSurfaces.stateForSurface("sidebar")
+    const ownerSurfaceId = sidebar?.ownerSurfaceId
+    if (!sidebar || !ownerSurfaceId || ownerSurfaceId === "sidebar") return
+    for (const [panel, tabProvider] of tabPanels) {
+      if (tabProvider.getSurfaceId() !== ownerSurfaceId) continue
+      const key = tabProvider.getPinnedSurfaceKey()
+      if (!key || !sameSessionSurfaceKey(key, sidebar.key)) return
+      return {
+        id: `${ownerSurfaceId}:${sessionSurfaceKey(key)}`,
+        restore: () =>
+          restoreMainEditorAfterSettings({
+            panel,
+            provider: tabProvider,
+            key,
+            ownerSurfaceId,
+            tabPanels,
+            sessionSurfaces,
+          }),
+      }
+    }
+  }
 
   // Surface a discardable notification when a marketplace item matches the workspace.
   const marketplaceNotifier = new MarketplaceNotifier(connectionService, context, (item) =>
@@ -470,9 +522,6 @@ export async function activate(source: vscode.ExtensionContext) {
     vscode.commands.registerCommand("chipmate.v2.sidebarTitle.agentManagerOpen", () => {
       track("agent_manager", "chipmate.v2.agentManagerOpen")
     }),
-    vscode.commands.registerCommand("chipmate.v2.sidebarTitle.agentTerminalOpen", () => {
-      track("agent_console", "chipmate.v2.agentTerminal.open")
-    }),
     vscode.commands.registerCommand("chipmate.v2.sidebarTitle.chipmateClawOpen", () => {
       track("chipmateclaw", "chipmate.v2.chipmateClawOpen")
     }),
@@ -484,6 +533,26 @@ export async function activate(source: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("chipmate.v2.sidebarTitle.settingsButtonClicked", () => {
       track("settings", "chipmate.v2.settingsButtonClicked")
+    }),
+    vscode.commands.registerCommand("chipmate.v2.appearance.new", async (view?: string) => {
+      if (view === "chipmate.v2.AgentManagerPanel") {
+        await vscode.commands.executeCommand("chipmate.v2.agentManager.newTab")
+        return
+      }
+      const tab = activeTabProvider()
+      if (tab) {
+        tab.postMessage({ type: "action", action: "plusButtonClicked" })
+        return
+      }
+      await openAppearanceSidebar(provider, "plusButtonClicked")
+    }),
+    vscode.commands.registerCommand("chipmate.v2.appearance.history", async () => {
+      const tab = activeTabProvider()
+      if (tab) {
+        tab.postMessage({ type: "action", action: "historyButtonClicked" })
+        return
+      }
+      await openAppearanceSidebar(provider, "historyButtonClicked")
     }),
     vscode.commands.registerCommand("chipmate.v2.plusButtonClicked", () => {
       const tab = activeTabProvider()
@@ -522,16 +591,16 @@ export async function activate(source: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("chipmate.v2.profileButtonClicked", () => {
       if (internal) {
-        settingsEditorProvider.openPanel("settings", "providers")
+        settingsEditorProvider.openPanel("settings", "providers", settingsReturnTarget())
         return
       }
       settingsEditorProvider.openPanel("profile")
     }),
     vscode.commands.registerCommand("chipmate.v2.settingsButtonClicked", (tab?: string) => {
-      settingsEditorProvider.openPanel("settings", tab)
+      settingsEditorProvider.openPanel("settings", tab, settingsReturnTarget())
     }),
     vscode.commands.registerCommand("chipmate.v2.openIndexingSettings", () => {
-      settingsEditorProvider.openPanel("settings", "indexing")
+      settingsEditorProvider.openPanel("settings", "indexing", settingsReturnTarget())
     }),
     vscode.commands.registerCommand("chipmate.v2.showMemory", async () => {
       if (agentManagerProvider.isActive()) {
@@ -566,16 +635,22 @@ export async function activate(source: vscode.ExtensionContext) {
     vscode.commands.registerCommand("chipmate.v2.toggleRemote", () => {
       remoteService.toggle().catch((err) => console.error("[ChipMate New] toggleRemote command failed:", err))
     }),
-    vscode.commands.registerCommand("chipmate.v2.openInTab", () => {
-      return openChipMateInNewTab(
-        context,
-        connectionService,
-        agentManagerProvider,
-        tabPanels,
-        diffVirtualProvider,
-        remoteService,
-        autoApprove,
-      )
+    vscode.commands.registerCommand("chipmate.v2.openInTab", (arg?: { sessionID?: string; draftID?: string }) => {
+      const active = activeTabProvider()?.getPinnedSurfaceKey()
+      const key = arg?.sessionID
+        ? ({ kind: "session", id: arg.sessionID } as const)
+        : arg?.draftID
+          ? ({ kind: "draft", id: arg.draftID } as const)
+          : (active ??
+            sessionSurfaces.keyForSurface("sidebar") ??
+            (provider.getCurrentSessionId()
+              ? ({ kind: "session", id: provider.getCurrentSessionId()! } as const)
+              : ({ kind: "draft", id: `main-pending:${randomUUID()}` } as const)))
+      return openMainEditor(key)
+    }),
+    vscode.commands.registerCommand("chipmate.v2.returnToSidebar", () => {
+      const key = activeTabProvider()?.getPinnedSurfaceKey() ?? sessionSurfaces.keyForSurface("sidebar")
+      return key ? returnToSidebar(key) : undefined
     }),
     vscode.commands.registerCommand(
       "chipmate.v2.showChanges",
@@ -693,6 +768,8 @@ export async function activate(source: vscode.ExtensionContext) {
   registerCommitMessageService(context, connectionService)
 
   registerHeapSnapshot(context, connectionService)
+  registerChatHistoryMigration(context, connectionService)
+  registerPatentRadar(context, connectionService)
 
   context.subscriptions.push(
     vscode.commands.registerCommand("chipmate.v2.reload", () => {
@@ -717,6 +794,20 @@ export async function activate(source: vscode.ExtensionContext) {
   const updateCheckService = registerUpdateCheck(context, updateLog)
   void updateCheckService.checkOnStartup()
 
+  const deepSeekHarness = getDeepSeekHarnessService(context)
+  if (deepSeekHarness.runtimeAvailable()) {
+    void deepSeekHarness
+      .prefetchRuntime()
+      .catch((error) =>
+        updateLog.warn(
+          `[DeepSeek Harness] 后台运行时预取失败：${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+  }
+  context.subscriptions.push(
+    vscode.commands.registerCommand("chipmate.v2.retryDeepSeekHarnessRuntime", () => deepSeekHarness.retryRuntime()),
+  )
+
   // Dispose services when extension deactivates (kills the server)
   context.subscriptions.push({
     dispose: () => {
@@ -730,72 +821,335 @@ export async function activate(source: vscode.ExtensionContext) {
       connectionService.dispose()
     },
   })
+
+  if (context.extensionMode === vscode.ExtensionMode.Test) {
+    return {
+      __sessionSurfaceTest: {
+        connectionService,
+        provider,
+        sessionSurfaces,
+      },
+    }
+  }
 }
 
 export async function deactivate() {
   shuttingDown = true
   await agentManager?.shutdown()
+  await disposeDeepSeekHarnessService()
   TelemetryProxy.getInstance().shutdown()
 }
 
-async function openChipMateInNewTab(
-  context: vscode.ExtensionContext,
-  connectionService: ChipMateConnectionService,
-  agentManagerProvider: AgentManagerProvider,
-  tabPanels: Map<vscode.WebviewPanel, ChipMateProvider>,
-  diffVirtualProvider: DiffVirtualProvider,
-  remoteService: RemoteStatusService,
-  autoApprove: ReturnType<typeof registerToggleAutoApprove>,
-) {
-  const lastCol = Math.max(...vscode.window.visibleTextEditors.map((e) => e.viewColumn || 0), 0)
-  const hasVisibleEditors = vscode.window.visibleTextEditors.length > 0
+type MainEditorDependencies = {
+  key: SessionSurfaceKey
+  context: vscode.ExtensionContext
+  connectionService: ChipMateConnectionService
+  agentManagerProvider: AgentManagerProvider
+  tabPanels: Map<vscode.WebviewPanel, ChipMateProvider>
+  diffVirtualProvider: DiffVirtualProvider
+  remoteService: RemoteStatusService
+  autoApprove: ReturnType<typeof registerToggleAutoApprove>
+  sessionSurfaces: SessionSurfaceCoordinator
+  sessionForks: SessionForkCoordinator
+  sourceProvider: ChipMateProvider
+}
 
-  if (!hasVisibleEditors) {
-    await vscode.commands.executeCommand("workbench.action.newGroupRight")
+type AttachMainEditorDependencies = MainEditorDependencies & {
+  panel: vscode.WebviewPanel
+  saved: MainEditorPanelStateV1
+  restored: boolean
+}
+
+async function openChipMateInMainEditor(input: MainEditorDependencies): Promise<void> {
+  const existing = input.sessionSurfaces.panel(input.key)
+  if (existing) {
+    existing.reveal(existing.viewColumn, false)
+    return
   }
-
-  const targetCol = hasVisibleEditors ? Math.max(lastCol + 1, 1) : vscode.ViewColumn.Two
-
-  const panel = vscode.window.createWebviewPanel("chipmate.v2.TabPanel", EXTENSION_DISPLAY_NAME, targetCol, {
-    enableScripts: true,
-    retainContextWhenHidden: true,
-    localResourceRoots: [context.extensionUri],
+  if (!(await flushSessionSurfaceOwner(input.sessionSurfaces, input.key, "无法在主编辑区打开该会话"))) return
+  const panel = vscode.window.createWebviewPanel(
+    "chipmate.v2.TabPanel",
+    EXTENSION_DISPLAY_NAME,
+    vscode.ViewColumn.Active,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [input.context.extensionUri],
+    },
+  )
+  await attachMainEditorPanel({
+    ...input,
+    panel,
+    saved: input.sessionSurfaces.panelState(input.key),
+    restored: false,
   })
+}
 
+async function attachMainEditorPanel(input: AttachMainEditorDependencies): Promise<void> {
+  const prior = input.sessionSurfaces.panel(input.key)
+  if (prior && prior !== input.panel) {
+    prior.reveal(prior.viewColumn, false)
+    input.panel.dispose()
+    return
+  }
+  if (input.restored) input.sessionSurfaces.prepareRestore(input.key)
+  const panel = input.panel
   panel.iconPath = {
-    light: vscode.Uri.joinPath(context.extensionUri, "assets", "icons", "chipmate-light.svg"),
-    dark: vscode.Uri.joinPath(context.extensionUri, "assets", "icons", "chipmate-dark.svg"),
+    light: vscode.Uri.joinPath(input.context.extensionUri, "assets", "icons", "chipmate-light.svg"),
+    dark: vscode.Uri.joinPath(input.context.extensionUri, "assets", "icons", "chipmate-dark.svg"),
   }
-
-  const tabProvider = new ChipMateProvider(context.extensionUri, connectionService, context, {
-    tabTitle: panelTitleHandler(panel),
+  const surfaceId = `main:${randomUUID()}`
+  const tabProvider = new ChipMateProvider(input.context.extensionUri, input.connectionService, input.context, {
+    tabTitle: panelTitleHandler(panel, "ChipMate · "),
+    projectDirectory: input.saved.directory,
+    surface: {
+      id: surfaceId,
+      kind: "main-editor",
+      coordinator: input.sessionSurfaces,
+      pinnedKey: input.key,
+    },
+    sessionForks: input.sessionForks,
+    forkOwnerID: `main-editor:${sessionSurfaceKey(input.key)}`,
   })
-  tabProvider.setRemoteService(remoteService)
-  tabProvider.setAutoApproveController(autoApprove)
+  tabProvider.setRemoteService(input.remoteService)
+  tabProvider.setAutoApproveController(input.autoApprove)
   tabProvider.setContinueInWorktreeHandler((sessionId, progress) =>
-    agentManagerProvider.continueFromSidebar(sessionId, progress),
+    input.agentManagerProvider.continueFromSidebar(sessionId, progress),
   )
   tabProvider.setCreateWorktreeHandler((baseBranch, branchName) =>
-    agentManagerProvider.createFromSidebar(baseBranch, branchName),
+    input.agentManagerProvider.createFromSidebar(baseBranch, branchName),
   )
-  tabProvider.setDiffVirtualProvider(diffVirtualProvider)
+  tabProvider.setDiffVirtualProvider(input.diffVirtualProvider)
+  const registered = input.sessionSurfaces.registerPanel(input.key, panel, surfaceId, {
+    directory: input.saved.directory,
+    mode: input.saved.mode,
+    taskId: input.saved.taskId,
+    title: input.saved.title,
+  })
+  if (!registered) {
+    tabProvider.dispose()
+    panel.dispose()
+    return
+  }
+  let session: Awaited<ReturnType<ChipMateProvider["getSessionInfo"]>>
+  if (input.key.kind === "session") {
+    const directory = input.saved.directory ?? input.sourceProvider.getSessionDirectories().get(input.key.id)
+    if (directory) tabProvider.setSessionDirectory(input.key.id, directory)
+    session = await input.sourceProvider.getSessionInfo(input.key.id)
+    if (!session) {
+      input.sessionSurfaces.releasePanel(input.key, panel)
+      input.sessionSurfaces.claimSidebar(input.key)
+      tabProvider.dispose()
+      panel.dispose()
+      void vscode.window.showErrorMessage("无法在主编辑区打开该会话：会话不存在或当前不可访问。")
+      return
+    }
+    tabProvider.registerSession(session, true)
+    panel.title = `ChipMate · ${session.title || "新会话"}`
+  }
   tabProvider.resolveWebviewPanel(panel)
-  tabPanels.set(panel, tabProvider)
-
-  // Wait for the new panel to become active before locking the editor group.
-  // This avoids the race where VS Code hasn't switched focus yet.
-  await waitForWebviewPanelToBeActive(panel)
-  await vscode.commands.executeCommand("workbench.action.lockEditorGroup")
-
+  input.tabPanels.set(panel, tabProvider)
   panel.onDidDispose(
     () => {
-      console.log("[ChipMate New] Tab panel disposed")
-      tabPanels.delete(panel)
+      input.sessionSurfaces.releasePanelFor(panel)
+      input.tabPanels.delete(panel)
       tabProvider.dispose()
     },
     null,
-    context.subscriptions,
+    input.context.subscriptions,
   )
+  let key = input.sessionSurfaces.resolveKey(input.key)
+  try {
+    const draftRevision = await input.sessionSurfaces.loadDraftRevision(key)
+    await tabProvider.waitForReady()
+    key = input.sessionSurfaces.resolveKey(key)
+    await input.sessionSurfaces.waitForSurfaceReady(surfaceId, key, draftRevision)
+    if (session) {
+      tabProvider.registerSession(session, true)
+      await tabProvider.loadMessages(session.id)
+    }
+    key = input.sessionSurfaces.resolveKey(key)
+    input.sessionSurfaces.prepareMain(key)
+    await input.sessionSurfaces.flushOwner(key)
+    key = input.sessionSurfaces.resolveKey(key)
+    const latestDraftRevision = await input.sessionSurfaces.loadDraftRevision(key)
+    await input.sessionSurfaces.waitForSurfaceReady(surfaceId, key, latestDraftRevision)
+    if (input.saved.mode === "deepseek-harness") await input.sessionSurfaces.detachDshOwner(key)
+    const projection =
+      input.saved.mode === "deepseek-harness"
+        ? input.sessionSurfaces.waitForDshProjection(surfaceId, key)
+        : undefined
+    const claimed = input.sessionSurfaces.claimMain(key, surfaceId)
+    await Promise.all([
+      projection,
+      input.sessionSurfaces.waitForSurfaceReady(surfaceId, key, latestDraftRevision, claimed.token?.epoch),
+    ])
+    panel.reveal(panel.viewColumn, false)
+  } catch (error) {
+    console.error("[ChipMate New] 会话打开主编辑区失败", error)
+    if (
+      !(await detachDshOwnerSafely(
+        input.sessionSurfaces,
+        key,
+        input.saved.mode === "deepseek-harness" && input.sessionSurfaces.canUseDshTransport(surfaceId),
+        "主编辑区打开失败且官方 DSH 客户端未安全释放",
+      ))
+    )
+      return
+    const projection =
+      input.saved.mode === "deepseek-harness"
+        ? input.sessionSurfaces.waitForDshProjection("sidebar", key)
+        : undefined
+    input.sessionSurfaces.claimSidebar(key)
+    await projection?.catch(() => undefined)
+    input.sessionSurfaces.releasePanelFor(panel)
+    panel.dispose()
+    const detail = error instanceof Error ? error.message : String(error)
+    void vscode.window.showErrorMessage(`无法在主编辑区打开该会话：${detail}`)
+  }
+}
+
+async function returnChipMateToSidebar(input: {
+  key: SessionSurfaceKey
+  provider: ChipMateProvider
+  sessionSurfaces: SessionSurfaceCoordinator
+  tabPanels: Map<vscode.WebviewPanel, ChipMateProvider>
+}): Promise<void> {
+  const panel = input.sessionSurfaces.panel(input.key)
+  if (!panel) {
+    input.sessionSurfaces.claimSidebar(input.key)
+    return
+  }
+  if (!(await flushSessionSurfaceOwner(input.sessionSurfaces, input.key, "收回侧栏失败，主编辑区仍保持打开")))
+    return
+  let key = input.sessionSurfaces.resolveKey(input.key)
+  input.sessionSurfaces.beginReturn(key)
+  try {
+    await vscode.commands.executeCommand("chipmate.v2.SidebarProvider.focus")
+    await input.provider.waitForReady()
+    key = input.sessionSurfaces.resolveKey(key)
+    if (key.kind === "session") {
+      const session = await input.provider.getSessionInfo(key.id)
+      if (!session) throw new Error("会话不存在或当前不可访问")
+      input.provider.registerSession(session, true)
+      await input.provider.loadMessages(session.id)
+    }
+    key = input.sessionSurfaces.resolveKey(key)
+    input.provider.postMessage({ type: "sessionSurface.select", key })
+    input.sessionSurfaces.bindSurface("sidebar", key)
+    const draftRevision = await input.sessionSurfaces.loadDraftRevision(key)
+    await input.sessionSurfaces.waitForSurfaceReady("sidebar", key, draftRevision)
+    const state = input.sessionSurfaces.stateForSurface(input.tabPanels.get(panel)?.getSurfaceId() ?? "")
+    if (state?.mode === "deepseek-harness") await input.sessionSurfaces.detachDshOwner(key)
+    const projection =
+      state?.mode === "deepseek-harness" ? input.sessionSurfaces.waitForDshProjection("sidebar", key) : undefined
+    const claimed = input.sessionSurfaces.claimSidebar(key)
+    await Promise.all([
+      projection,
+      input.sessionSurfaces.waitForSurfaceReady("sidebar", key, draftRevision, claimed.token?.epoch),
+    ])
+    input.sessionSurfaces.releasePanelFor(panel)
+    panel.dispose()
+  } catch (error) {
+    console.error("[ChipMate New] 主编辑区会话收回侧栏失败", error)
+    await restoreMainEditorAfterReturnFailure(input, panel, error)
+  }
+}
+
+async function restoreMainEditorAfterReturnFailure(
+  input: {
+    key: SessionSurfaceKey
+    sessionSurfaces: SessionSurfaceCoordinator
+    tabPanels: Map<vscode.WebviewPanel, ChipMateProvider>
+  },
+  panel: vscode.WebviewPanel,
+  error: unknown,
+): Promise<void> {
+  const detail = error instanceof Error ? error.message : String(error)
+  void vscode.window.showErrorMessage(`收回侧栏失败，主编辑区仍保持打开：${detail}`)
+  const surfaceId = input.tabPanels.get(panel)?.getSurfaceId()
+  if (!surfaceId) return
+  const state = input.sessionSurfaces.stateForSurface("sidebar")
+  if (
+    !(await detachDshOwnerSafely(
+      input.sessionSurfaces,
+      input.key,
+      state?.mode === "deepseek-harness" && !input.sessionSurfaces.canUseDshTransport(surfaceId),
+      "收回失败且官方 DSH 客户端未安全释放",
+    ))
+  )
+    return
+  const projection =
+    state?.mode === "deepseek-harness" ? input.sessionSurfaces.waitForDshProjection(surfaceId, input.key) : undefined
+  input.sessionSurfaces.claimMain(input.key, surfaceId)
+  await projection?.catch(() => undefined)
+}
+
+async function flushSessionSurfaceOwner(
+  sessionSurfaces: SessionSurfaceCoordinator,
+  key: SessionSurfaceKey,
+  errorPrefix: string,
+): Promise<boolean> {
+  try {
+    await sessionSurfaces.flushOwner(key)
+    return true
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    void vscode.window.showErrorMessage(`${errorPrefix}：${detail}`)
+    return false
+  }
+}
+
+async function detachDshOwnerSafely(
+  sessionSurfaces: SessionSurfaceCoordinator,
+  key: SessionSurfaceKey,
+  enabled: boolean,
+  errorPrefix: string,
+): Promise<boolean> {
+  if (!enabled) return true
+  try {
+    await sessionSurfaces.detachDshOwner(key)
+    return true
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    void vscode.window.showErrorMessage(`${errorPrefix}：${detail}`)
+    return false
+  }
+}
+
+function resolveMainEditorPanelState(value: unknown): MainEditorPanelStateV1 {
+  if (value && typeof value === "object") {
+    const state = value as Partial<MainEditorPanelStateV1> & { sidebarActiveSessionTabID?: unknown }
+    if (
+      state.sessionSurfaceVersion === 1 &&
+      state.key?.id &&
+      (state.key.kind === "session" || state.key.kind === "draft")
+    ) {
+      return {
+        sessionSurfaceVersion: 1,
+        key: state.key,
+        directory: typeof state.directory === "string" ? state.directory : undefined,
+        mode: state.mode === "deepseek-harness" ? "deepseek-harness" : "qa",
+        taskId: typeof state.taskId === "string" ? state.taskId : undefined,
+        title: typeof state.title === "string" ? state.title : undefined,
+        draftRevision: typeof state.draftRevision === "number" ? state.draftRevision : 0,
+      }
+    }
+    if (typeof state.sidebarActiveSessionTabID === "string") {
+      return {
+        sessionSurfaceVersion: 1,
+        key: { kind: "session", id: state.sidebarActiveSessionTabID },
+        mode: "qa",
+        draftRevision: 0,
+      }
+    }
+  }
+  return {
+    sessionSurfaceVersion: 1,
+    key: { kind: "draft", id: `main-pending:${randomUUID()}` },
+    mode: "qa",
+    draftRevision: 0,
+  }
 }
 
 /**
@@ -816,20 +1170,4 @@ function ensureCommandsSkipShell(commands: string[]): void {
   const missing = commands.filter((cmd) => !existing.includes(cmd))
   if (missing.length === 0) return
   config.update("commandsToSkipShell", [...existing, ...missing], target)
-}
-
-function waitForWebviewPanelToBeActive(panel: vscode.WebviewPanel): Promise<void> {
-  if (panel.active) {
-    return Promise.resolve()
-  }
-
-  return new Promise((resolve) => {
-    const disposable = panel.onDidChangeViewState((event) => {
-      if (!event.webviewPanel.active) {
-        return
-      }
-      disposable.dispose()
-      resolve()
-    })
-  })
 }

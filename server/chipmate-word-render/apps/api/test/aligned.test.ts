@@ -10,6 +10,7 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 import { MarketDb } from "@chipmate/market-db"
 import { build } from "../src/index.ts"
+import { accessToken, authentication, webLogin } from "./auth-fixture.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, "../../..")
@@ -68,12 +69,13 @@ async function fixture() {
   )
   const db = new MarketDb({ dir: join(dir, "db") })
   await db.importLegacy(source)
-  return { db, dir }
+  const auth = await authentication(db)
+  return { db, dir, auth }
 }
 
 test("aligned-v1 catalog serves capabilities, detail, versions, files, status, and cache validators", async () => {
   const data = await fixture()
-  const app = build(data.db)
+  const app = build(data.db, { auth: data.auth })
   try {
     const capabilities = await app.inject({ method: "GET", url: "/api/v1/capabilities" })
     assert.equal(capabilities.statusCode, 200)
@@ -139,7 +141,20 @@ test("aligned-v1 catalog serves capabilities, detail, versions, files, status, a
       render: "ready",
       market: "ready",
       packages: "ready",
-      warnings: ["当前使用受信内网 HTTP，登录时的 New API key 不受传输加密保护。"],
+      auth: {
+        configured: true,
+        mode: "ldap",
+        enabled: true,
+        revision: 1,
+        name: "测试目录",
+        security: "unencrypted",
+        insecure: true,
+        breakGlassAvailable: true,
+      },
+      warnings: [
+        "当前网页使用 HTTP，LDAP 用户名、密码和会话不受浏览器到 Server 的传输加密保护。",
+        "Server 到 Active Directory 使用未加密 LDAP。",
+      ],
     })
   } finally {
     await app.close()
@@ -179,7 +194,7 @@ test("capability cache validator changes when the extension market is enabled", 
 
 test("market SSE sends an initial catalog invalidation event and closes cleanly", async () => {
   const data = await fixture()
-  const app = build(data.db)
+  const app = build(data.db, { auth: data.auth })
   const origin = await app.listen({ host: "127.0.0.1", port: 0 })
   const abort = new AbortController()
   try {
@@ -215,29 +230,25 @@ test("market SSE sends an initial catalog invalidation event and closes cleanly"
 
 test("web session and ChipMate bearer resolve to one user with protected favorites and installations", async () => {
   const data = await fixture()
-  const resolveUser = async (key: string) =>
-    key === "web-key" || key === "chipmate-key"
-      ? ({ ok: true, user: { name: "Alice", tokenName: "Alice@chipmate" }, status: 200 } as const)
-      : ({ ok: false, code: "token-not-found", status: 404 } as const)
-  const app = build(data.db, { resolveUser })
+  const app = build(data.db, { auth: data.auth })
   try {
-    const login = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: "web-key" } })
-    assert.equal(login.statusCode, 200)
-    assert.match(String(login.headers["set-cookie"] ?? ""), /HttpOnly; SameSite=Strict/)
-    const cookie = String(login.headers["set-cookie"] ?? "").split(";", 1)[0]
-    const csrf = String(login.headers["x-csrf-token"] ?? "")
+    const login = await webLogin(app, "alice")
+    const rawLogin = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { username: "alice", password: "password" } })
+    assert.match(String(rawLogin.headers["set-cookie"] ?? ""), /HttpOnly; SameSite=Strict/)
+    const { cookie, csrf } = login
     assert.ok(cookie)
     assert.ok(csrf)
+    const token = await accessToken(app, "alice")
 
     const me = await app.inject({ method: "GET", url: "/api/v1/auth/me", headers: { cookie } })
     const bearer = await app.inject({
       method: "GET",
       url: "/api/v1/auth/me",
-      headers: { authorization: "Bearer chipmate-key" },
+      headers: { authorization: `Bearer ${token}` },
     })
     assert.equal(me.json().id, bearer.json().id)
     assert.equal(me.json().displayName, "Alice")
-    assert.equal((await readFile(join(data.dir, "db", "market.sqlite"))).includes(Buffer.from("web-key")), false)
+    assert.equal((await readFile(join(data.dir, "db", "market.sqlite"))).includes(Buffer.from("password")), false)
 
     const rejected = await app.inject({
       method: "PUT",
@@ -257,7 +268,7 @@ test("web session and ChipMate bearer resolve to one user with protected favorit
     const favorites = await app.inject({
       method: "GET",
       url: "/api/v1/me/favorites",
-      headers: { authorization: "Bearer chipmate-key" },
+      headers: { authorization: `Bearer ${token}` },
     })
     assert.equal(favorites.json()[0].id, "source-backed-detail-design")
     assert.equal(favorites.json()[0].favorite, true)
@@ -277,7 +288,7 @@ test("web session and ChipMate bearer resolve to one user with protected favorit
     const installed = await app.inject({
       method: "PUT",
       url: `/api/v1/installations/${item.id}`,
-      headers: { authorization: "Bearer chipmate-key" },
+      headers: { authorization: `Bearer ${token}` },
       payload: installation,
     })
     assert.equal(installed.statusCode, 200)
@@ -295,47 +306,35 @@ test("web session and ChipMate bearer resolve to one user with protected favorit
   }
 })
 
-test("identity rate limits preserve Retry-After and use the public rate-limit code", async () => {
+test("LDAP password failures are rate limited without exposing credentials", async () => {
   const data = await fixture()
-  const resolveUser = async (key: string) => {
-    if (key === "limited")
-      return { ok: false, code: "new-api-rate-limited", status: 429, retryAfter: "3" } as const
-    if (key === "unsafe")
-      return { ok: false, code: "new-api-rate-limited", status: 429, retryAfter: "invalid\nvalue" } as const
-    return { ok: false, code: "token-not-found", status: 404 } as const
-  }
-  const app = build(data.db, { resolveUser })
+  const app = build(data.db, { auth: data.auth })
   try {
-    const login = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: "limited" } })
-    assert.equal(login.statusCode, 429)
-    assert.equal(login.json().code, "RATE_LIMITED")
-    assert.equal(login.headers["retry-after"], "3")
-
-    const bearer = await app.inject({
-      method: "GET",
-      url: "/api/v1/auth/me",
-      headers: { authorization: "Bearer limited" },
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/session",
+        payload: { username: "limited", password: "wrong-password" },
+      })
+      assert.equal(rejected.statusCode, 401)
+      assert.equal(rejected.json().code, "AUTH_INVALID")
+    }
+    const limited = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/session",
+      payload: { username: "limited", password: "password" },
     })
-    assert.equal(bearer.statusCode, 429)
-    assert.equal(bearer.json().code, "RATE_LIMITED")
-    assert.equal(bearer.headers["retry-after"], "3")
-
-    const unsafe = await app.inject({
-      method: "GET",
-      url: "/api/v1/auth/me",
-      headers: { authorization: "Bearer unsafe" },
-    })
-    assert.equal(unsafe.statusCode, 429)
-    assert.equal(unsafe.json().code, "RATE_LIMITED")
-    assert.equal(unsafe.headers["retry-after"], undefined)
+    assert.equal(limited.statusCode, 429)
+    assert.equal(limited.json().code, "RATE_LIMITED")
+    assert.ok(Number(limited.headers["retry-after"]) > 0)
 
     const invalid = await app.inject({
       method: "GET",
       url: "/api/v1/auth/me",
       headers: { authorization: "Bearer invalid" },
     })
-    assert.equal(invalid.statusCode, 404)
-    assert.equal(invalid.json().code, "AUTH_INVALID")
+    assert.equal(invalid.statusCode, 401)
+    assert.equal(invalid.json().code, "SESSION_EXPIRED")
   } finally {
     await app.close()
     await data.db.close()
@@ -346,16 +345,13 @@ test("identity rate limits preserve Retry-After and use the public rate-limit co
 test("event batches derive identity, hash clients, reject sensitive context, and refresh analytics", async () => {
   const data = await fixture()
   const now = Date.parse("2026-07-12T12:00:00.000Z")
-  const resolveUser = async (key: string) =>
-    key === "chipmate-key"
-      ? ({ ok: true, user: { name: "Alice", tokenName: "Alice@chipmate" }, status: 200 } as const)
-      : ({ ok: false, code: "token-not-found", status: 404 } as const)
-  const app = build(data.db, { resolveUser, now: () => now })
+  const app = build(data.db, { auth: data.auth, now: () => now })
   try {
+    const token = await accessToken(app, "alice")
     const invalid = await app.inject({
       method: "POST",
       url: "/api/v1/events/batch",
-      headers: { authorization: "Bearer chipmate-key" },
+      headers: { authorization: `Bearer ${token}` },
       payload: [
         {
           name: "skill_open",
@@ -372,7 +368,7 @@ test("event batches derive identity, hash clients, reject sensitive context, and
     const accepted = await app.inject({
       method: "POST",
       url: "/api/v1/events/batch",
-      headers: { authorization: "Bearer chipmate-key" },
+      headers: { authorization: `Bearer ${token}` },
       payload: [
         {
           name: "market_search",
@@ -411,18 +407,14 @@ test("event batches derive identity, hash clients, reject sensitive context, and
 
 test("favorite writes emit SSE invalidation consumed by the other surface", async () => {
   const data = await fixture()
-  const resolveUser = async (key: string) =>
-    key === "alice"
-      ? ({ ok: true, user: { name: "Alice" }, status: 200 } as const)
-      : ({ ok: false, code: "token-not-found", status: 404 } as const)
-  const app = build(data.db, { resolveUser })
+  const app = build(data.db, { auth: data.auth })
   const origin = await app.listen({ host: "127.0.0.1", port: 0 })
   const abort = new AbortController()
   try {
     const login = await fetch(`${origin}/api/v1/auth/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ apiKey: "alice" }),
+      body: JSON.stringify({ username: "alice", password: "password" }),
     })
     const cookie = login.headers.get("set-cookie")?.split(";", 1)[0] ?? ""
     const csrf = login.headers.get("x-csrf-token") ?? ""
@@ -448,17 +440,11 @@ test("favorite writes emit SSE invalidation consumed by the other surface", asyn
 test("install intents are same-user, one-time, expiring, revision-pinned downloads", async () => {
   const data = await fixture()
   const clock = { value: Date.parse("2026-07-12T00:00:00.000Z") }
-  const resolveUser = async (key: string) =>
-    key === "alice"
-      ? ({ ok: true, user: { name: "Alice" }, status: 200 } as const)
-      : key === "bob"
-        ? ({ ok: true, user: { name: "Bob" }, status: 200 } as const)
-        : ({ ok: false, code: "token-not-found", status: 404 } as const)
-  const app = build(data.db, { resolveUser, now: () => clock.value })
+  const app = build(data.db, { auth: data.auth, now: () => clock.value })
   try {
-    const login = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: "alice" } })
-    const cookie = String(login.headers["set-cookie"] ?? "").split(";", 1)[0]
-    const csrf = String(login.headers["x-csrf-token"] ?? "")
+    const { cookie, csrf } = await webLogin(app, "alice")
+    const alice = await accessToken(app, "alice")
+    const bob = await accessToken(app, "bob")
     const headers = { cookie, "x-csrf-token": csrf, host: "market.test", origin: "http://market.test" }
     const created = await app.inject({
       method: "POST",
@@ -472,14 +458,14 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
     const wrong = await app.inject({
       method: "POST",
       url: `/api/v1/install-intents/${token}/consume`,
-      headers: { authorization: "Bearer bob" },
+      headers: { authorization: `Bearer ${bob}` },
     })
     assert.equal(wrong.statusCode, 404)
 
     const consumed = await app.inject({
       method: "POST",
       url: `/api/v1/install-intents/${token}/consume`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.equal(consumed.statusCode, 200)
     assert.equal(consumed.json().revision, 1)
@@ -517,7 +503,7 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
     const installed = await app.inject({
       method: "PUT",
       url: "/api/v1/installations/source-backed-detail-design",
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
       payload: {
         skillId: "source-backed-detail-design",
         revision: 1,
@@ -550,7 +536,7 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
     const replay = await app.inject({
       method: "POST",
       url: `/api/v1/install-intents/${token}/consume`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.equal(replay.statusCode, 409)
     assert.equal(replay.json().code, "INTENT_REPLAYED")
@@ -565,7 +551,7 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
     const expired = await app.inject({
       method: "POST",
       url: `/api/v1/install-intents/${expiring.json().token}/consume`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.equal(expired.statusCode, 410)
     assert.equal(expired.json().code, "INTENT_EXPIRED")
@@ -578,7 +564,7 @@ test("install intents are same-user, one-time, expiring, revision-pinned downloa
 
 test("an interrupted archive response does not increase downloads", async () => {
   const data = await fixture()
-  const app = build(data.db)
+  const app = build(data.db, { auth: data.auth })
   try {
     const skill = await data.db.get("source-backed-detail-design")
     const release = await data.db.release("source-backed-detail-design", 1)
@@ -615,27 +601,21 @@ test("an interrupted archive response does not increase downloads", async () => 
 
 test("publication API validates once, repairs snapshots, publishes immutable revisions, and enforces ownership", async () => {
   const data = await fixture()
-  const resolveUser = async (key: string) =>
-    key === "alice"
-      ? ({ ok: true, user: { name: "Alice" }, status: 200 } as const)
-      : key === "bob"
-        ? ({ ok: true, user: { name: "Bob" }, status: 200 } as const)
-        : ({ ok: false, code: "token-not-found", status: 404 } as const)
-  const app = build(data.db, { resolveUser })
+  const app = build(data.db, { auth: data.auth })
   try {
+    const alice = await accessToken(app, "alice")
+    const bob = await accessToken(app, "bob")
     const archive = await publicationArchive(
       data.dir,
       "new-skill",
       "---\nname: New Skill\ndescription: Published from either surface\nversion: 1.0.0\n---\n\n# New Skill\n\nStable body.\n",
     )
     const headers = {
-      authorization: "Bearer alice",
+      authorization: `Bearer ${alice}`,
       "content-type": "application/gzip",
       "idempotency-key": "publication-key-0001",
     }
-    const login = await app.inject({ method: "POST", url: "/api/v1/auth/session", payload: { apiKey: "alice" } })
-    const cookie = String(login.headers["set-cookie"] ?? "").split(";", 1)[0]
-    const csrf = String(login.headers["x-csrf-token"] ?? "")
+    const { cookie, csrf } = await webLogin(app, "alice")
     const created = await app.inject({
       method: "POST",
       url: "/api/v1/publications",
@@ -732,25 +712,25 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     const detail = await app.inject({
       method: "GET",
       url: `/api/v1/publications/${created.json().id}`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.equal(detail.statusCode, 200)
     const mine = await app.inject({
       method: "GET",
       url: "/api/v1/me/publications",
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.equal(mine.json().filter((item: { skillId?: string }) => item.skillId === "new-skill").length, 1)
     const other = await app.inject({
       method: "GET",
       url: "/api/v1/me/publications",
-      headers: { authorization: "Bearer bob" },
+      headers: { authorization: `Bearer ${bob}` },
     })
     assert.deepEqual(other.json(), [])
     const forbidden = await app.inject({
       method: "GET",
       url: `/api/v1/publications/${created.json().id}`,
-      headers: { authorization: "Bearer bob" },
+      headers: { authorization: `Bearer ${bob}` },
     })
     assert.equal(forbidden.statusCode, 403)
 
@@ -875,7 +855,7 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     const submitted = await app.inject({
       method: "POST",
       url: `/api/v1/publications/${tiny.json().id}/patches`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
       payload: [ai],
     })
     assert.equal(submitted.statusCode, 200)
@@ -883,28 +863,28 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     const foreignPatch = await app.inject({
       method: "POST",
       url: `/api/v1/publications/${tiny.json().id}/patches`,
-      headers: { authorization: "Bearer bob" },
+      headers: { authorization: `Bearer ${bob}` },
       payload: [ai],
     })
     assert.equal(foreignPatch.statusCode, 403)
     const expired = await app.inject({
       method: "POST",
       url: `/api/v1/publications/${tiny.json().id}/patches`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
       payload: [{ ...ai, id: "ai-patch-expired", expiresAt: new Date(Date.now() - 1).toISOString() }],
     })
     assert.equal(expired.statusCode, 400)
     const unconfirmed = await app.inject({
       method: "POST",
       url: `/api/v1/publications/${tiny.json().id}/apply`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
       payload: { patchIds: [] },
     })
     assert.equal(unconfirmed.statusCode, 409)
     const applied = await app.inject({
       method: "POST",
       url: `/api/v1/publications/${tiny.json().id}/apply`,
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
       payload: { patchIds: [ai.id] },
     })
     assert.equal(applied.statusCode, 200)
@@ -914,13 +894,13 @@ test("publication API validates once, repairs snapshots, publishes immutable rev
     const foreignUnpublish = await app.inject({
       method: "POST",
       url: "/api/v1/skills/new-skill/unpublish",
-      headers: { authorization: "Bearer bob" },
+      headers: { authorization: `Bearer ${bob}` },
     })
     assert.equal(foreignUnpublish.statusCode, 403)
     const unpublished = await app.inject({
       method: "POST",
       url: "/api/v1/skills/new-skill/unpublish",
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.equal(unpublished.statusCode, 200)
     assert.equal(unpublished.json().status, "UNPUBLISHED")
@@ -977,14 +957,15 @@ test("authenticated analytics overview returns Worker-aggregated series", async 
       occurredAt: "2026-07-12T01:00:00.000Z",
     },
   ])
-  const app = build(data.db, { resolveUser: async () => ({ ok: true, user: { name: "Alice" }, status: 200 }) as const })
+  const app = build(data.db, { auth: data.auth })
   try {
+    const alice = await accessToken(app, "alice")
     const denied = await app.inject({ method: "GET", url: "/api/v1/analytics/overview" })
     assert.equal(denied.statusCode, 401)
     const overview = await app.inject({
       method: "GET",
       url: "/api/v1/analytics/overview",
-      headers: { authorization: "Bearer alice" },
+      headers: { authorization: `Bearer ${alice}` },
     })
     assert.deepEqual(overview.json(), [
       { metric: "skill_open", scope: "global", points: [{ date: "2026-07-12", value: 1 }] },

@@ -8,6 +8,7 @@ export function isCurrentChipmateServerTest(request: string | undefined, respons
 export type ChipmateServerEndpoints = {
   marketplace: string
   word: string
+  wordImages: string
   mermaid: string
   plantuml: string
   health: string
@@ -55,11 +56,12 @@ export function normalizeChipmateServerBaseUrl(value: string): string {
   if (url.username || url.password)
     throw new ChipmateServerUrlError("Credentials are not allowed in the server address.")
   if (!url.hostname) throw new ChipmateServerUrlError("A host is required.")
-  if (!url.port) throw new ChipmateServerUrlError("An explicit port is required.")
+  const port = url.port || explicitPort(input)
+  if (!port) throw new ChipmateServerUrlError("An explicit port is required.")
   if (url.pathname !== "/") throw new ChipmateServerUrlError("Do not include an API path in the server address.")
   if (url.search) throw new ChipmateServerUrlError("Do not include query parameters in the server address.")
   if (url.hash) throw new ChipmateServerUrlError("Do not include a fragment in the server address.")
-  return `${url.protocol}//${url.host}`
+  return `${url.protocol}//${url.hostname}:${port}`
 }
 
 export function deriveChipmateServerEndpoints(value: string): ChipmateServerEndpoints {
@@ -67,6 +69,7 @@ export function deriveChipmateServerEndpoints(value: string): ChipmateServerEndp
   return {
     marketplace: `${base}/marketplace`,
     word: `${base}/render/word`,
+    wordImages: `${base}/convert/word-to-images`,
     mermaid: `${base}/render/mermaid`,
     plantuml: `${base}/render/plantuml`,
     health: `${base}/health`,
@@ -94,4 +97,13 @@ function parse(value: string): URL {
     const message = err instanceof Error ? err.message : String(err)
     throw new ChipmateServerUrlError(`Invalid server address: ${message}`)
   }
+}
+
+function explicitPort(value: string): string | undefined {
+  const authority = value.slice(value.indexOf("://") + 3).split(/[/?#]/u, 1)[0] ?? ""
+  const bracket = authority.lastIndexOf("]")
+  const colon = authority.lastIndexOf(":")
+  if (colon < 0 || (bracket >= 0 && colon < bracket)) return
+  const port = authority.slice(colon + 1)
+  return /^\d+$/u.test(port) ? port : undefined
 }

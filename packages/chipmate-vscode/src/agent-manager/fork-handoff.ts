@@ -4,6 +4,7 @@ export interface ForkHandoffInput {
   client: ChipMateClient
   sessionId: string
   directory?: string
+  operationID?: string
 }
 
 export function forkText(input: Pick<ForkHandoffInput, "directory">): string {
@@ -24,6 +25,19 @@ export function forkText(input: Pick<ForkHandoffInput, "directory">): string {
 }
 
 export async function recordForkHandoff(input: ForkHandoffInput): Promise<void> {
+  if (input.operationID) {
+    const existing = await input.client.session.messages(
+      { sessionID: input.sessionId, ...(input.directory ? { directory: input.directory } : {}) },
+      { throwOnError: true },
+    )
+    const found = existing.data.some((message) =>
+      message.parts.some(
+        (part) =>
+          "metadata" in part && part.metadata?.["chipmate.forkOperationID"] === input.operationID,
+      ),
+    )
+    if (found) return
+  }
   const payload = {
     sessionID: input.sessionId,
     ...(input.directory ? { directory: input.directory } : {}),
@@ -33,6 +47,7 @@ export async function recordForkHandoff(input: ForkHandoffInput): Promise<void> 
         type: "text",
         text: forkText(input),
         synthetic: true,
+        ...(input.operationID ? { metadata: { "chipmate.forkOperationID": input.operationID } } : {}),
       },
     ],
   } as Parameters<ChipMateClient["session"]["promptAsync"]>[0]

@@ -122,4 +122,71 @@ describe("resolveModelSelection", () => {
     })
     expect(result).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4" })
   })
+
+  it("falls back from a prohibited internal override to an allowed mode model", () => {
+    const internal = makeProvider("internal", "Internal", ["glm-5.2", "qwen3.8-27b"])
+    const result = resolveModelSelection({
+      providers: { internal },
+      connected: ["internal"],
+      override: { providerID: "internal", modelID: "glm-5.2" },
+      mode: { providerID: "internal", modelID: "qwen3.8-27b" },
+      fallback: null,
+      internal: true,
+    })
+    expect(result).toEqual({ providerID: "internal", modelID: "qwen3.8-27b" })
+  })
+
+  it("skips prohibited global and recent selections", () => {
+    const internal = makeProvider("internal", "Internal", ["doubao-seed-2.0-pro", "deepseek-v4-flash"])
+    const result = resolveModelSelection({
+      providers: { internal },
+      connected: ["internal"],
+      global: { providerID: "internal", modelID: "doubao-seed-2.0-pro" },
+      recent: [
+        { providerID: "internal", modelID: "glm-5.2" },
+        { providerID: "internal", modelID: "deepseek-v4-flash" },
+      ],
+      fallback: null,
+      internal: true,
+    })
+    expect(result).toEqual({ providerID: "internal", modelID: "deepseek-v4-flash" })
+  })
+
+  it("returns null when every internal candidate is prohibited", () => {
+    const internal = makeProvider("internal", "Internal", ["glm-5.2", "doubao-seed-2.0-pro"])
+    const result = resolveModelSelection({
+      providers: { internal },
+      connected: ["internal"],
+      global: { providerID: "internal", modelID: "glm-5.2" },
+      recent: [{ providerID: "internal", modelID: "doubao-seed-2.0-pro" }],
+      fallback: { providerID: "internal", modelID: "glm-5.2" },
+      internal: true,
+    })
+    expect(result).toBeNull()
+  })
+
+  it("does not restore an explicit prohibited id before providers load", () => {
+    const result = resolveModelSelection({
+      providers: {},
+      connected: [],
+      override: { providerID: "internal", modelID: "glm-5.2" },
+      fallback: null,
+      internal: true,
+    })
+    expect(result).toBeNull()
+  })
+
+  it("falls back after provider metadata identifies an opaque endpoint as Doubao", () => {
+    const internal = makeProvider("internal", "Internal", ["endpoint", "qwen3.8-27b"])
+    internal.models.endpoint!.name = "Doubao Seed 2.0 Pro"
+    const result = resolveModelSelection({
+      providers: { internal },
+      connected: ["internal"],
+      override: { providerID: "internal", modelID: "endpoint" },
+      global: { providerID: "internal", modelID: "qwen3.8-27b" },
+      fallback: null,
+      internal: true,
+    })
+    expect(result).toEqual({ providerID: "internal", modelID: "qwen3.8-27b" })
+  })
 })

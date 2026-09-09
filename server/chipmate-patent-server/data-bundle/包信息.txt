@@ -1,0 +1,9 @@
+产品：ChipMate 中国专利试运行数据包
+来源：CNIPA 中国发明专利申请公布标准化全文文本数据
+批次：CNIPA-CN-FULLTEXT-20231003-1-001
+数据日期：2023-10-03
+记录数：2000
+数据范围：局部 supplemental 周包，不是中国历史全量库
+适配服务：ChipMate Patent Server 0.1.2
+目标环境：Linux x86-64 内网 Patent Server
+接入客户端：ChipMate 1.2.7

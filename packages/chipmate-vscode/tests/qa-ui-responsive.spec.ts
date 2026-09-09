@@ -121,7 +121,7 @@ test("QA 忙碌态使用 Deep diving 兜底并保留具体恢复状态", async (
   await expect(offline).toHaveText("Connection lost. Waiting to reconnect.")
 })
 
-test("QA 完成态时长与复制、赞、踩同列，并按最终 agent 着色", async ({ page }) => {
+test("QA 响应性能位于操作按钮下一行，并按最终 agent 着色", async ({ page }) => {
   const story = "chat--qa-completed-elapsed-modes-420"
   const duration = (agent: "code" | "ultra") =>
     page.locator(`[data-component="turn-completion-duration"][data-agent="${agent}"]`)
@@ -133,6 +133,9 @@ test("QA 完成态时长与复制、赞、踩同列，并按最终 agent 着色"
     const ultra = duration("ultra")
     await expect(code).toContainText("已完成 · 本轮耗时 18秒")
     await expect(ultra).toContainText("已完成 · 本轮耗时 2分38秒")
+    await expect(page.locator('[data-component="assistant-throughput"]')).toHaveCount(1)
+    await expect(page.locator('[data-slot="assistant-throughput-speed"]')).toHaveText("28.7 t/s")
+    await expect(page.locator('[data-slot="assistant-throughput-ttft"]')).toHaveText("首词 0.82s")
     await expect(code.locator('[data-component="icon"]')).toHaveAttribute("data-size", "normal")
     await expect(ultra.locator('[data-component="icon"]')).toHaveAttribute("data-size", "normal")
     await expect(page.locator('[data-slot="assistant-copy-wrapper"] [data-icon="thumbs-down"]')).toHaveCount(2)
@@ -173,74 +176,74 @@ test("QA 完成态时长与复制、赞、踩同列，并按最终 agent 着色"
     expect(actual[0]).toEqual({ text: expected.foreground, icon: expected.foreground })
     expect(actual[1]).toEqual({ text: expected.ultra, icon: expected.ultra })
 
-    const alignment = await Promise.all(
+    const stacking = await Promise.all(
       [code, ultra].map((marker) =>
         marker.evaluate((element) => {
           const action = element.closest<HTMLElement>('[data-slot="assistant-copy-wrapper"]')!
           const copy = action.querySelector<HTMLElement>('[data-icon="copy"]')!
           const markerBox = element.getBoundingClientRect()
           const copyBox = copy.getBoundingClientRect()
-          return Math.abs(markerBox.top + markerBox.height / 2 - (copyBox.top + copyBox.height / 2))
+          return markerBox.top >= copyBox.bottom
         }),
       ),
     )
-    expect(
-      alignment.every((offset) => offset <= 1),
-      `完成态在 420px / ${theme} 未与行动作同列`,
-    ).toBe(true)
+    expect(stacking.every(Boolean), `完成态在 420px / ${theme} 未落到操作按钮下一行`).toBe(true)
   }
 
-  await load(page, story, 200, "dark-modern", '[data-component="turn-completion-duration"][data-agent="ultra"]')
-  const layout = await page.evaluate(() => {
-    const rect = (element: Element) => {
-      const box = element.getBoundingClientRect()
-      return {
-        left: box.left,
-        top: box.top,
-        right: box.right,
-        bottom: box.bottom,
-        width: box.width,
-        height: box.height,
+  for (const width of [420, 340, 300, 200]) {
+    await load(page, story, width, "dark-modern", '[data-slot="assistant-throughput-ttft"]')
+    const layout = await page.evaluate(() => {
+      const rect = (element: Element) => {
+        const box = element.getBoundingClientRect()
+        return {
+          left: box.left,
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
+          width: box.width,
+          height: box.height,
+        }
       }
-    }
-    const items = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        '[data-slot="assistant-copy-wrapper"] [data-component="icon-button"], [data-component="turn-completion-duration"]',
-      ),
-    )
-      .map(rect)
-      .filter((box) => box.width > 0 && box.height > 0)
-    const overlaps = items.flatMap((first, index) =>
-      items
-        .slice(index + 1)
-        .filter(
-          (second) =>
-            first.left < second.right &&
-            first.right > second.left &&
-            first.top < second.bottom &&
-            first.bottom > second.top,
+      const items = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-slot="assistant-copy-wrapper"] [data-component="icon-button"], [data-component="turn-completion-duration"], [data-slot="assistant-throughput-speed"], [data-slot="assistant-throughput-ttft"]',
         ),
-    )
-    return {
-      clientWidth: document.documentElement.clientWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-      items,
-      overlaps: overlaps.length,
-    }
-  })
+      )
+        .map(rect)
+        .filter((box) => box.width > 0 && box.height > 0)
+      const overlaps = items.flatMap((first, index) =>
+        items
+          .slice(index + 1)
+          .filter(
+            (second) =>
+              first.left < second.right &&
+              first.right > second.left &&
+              first.top < second.bottom &&
+              first.bottom > second.top,
+          ),
+      )
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        items,
+        overlaps: overlaps.length,
+      }
+    })
 
-  expect(layout.scrollWidth, "完成态时长在 200px 造成横向溢出").toBeLessThanOrEqual(layout.clientWidth)
-  expect(
-    layout.items.every((box) => box.left >= 0 && box.right <= layout.clientWidth + 1),
-    "行动作越过视口边界",
-  ).toBe(true)
-  expect(layout.overlaps, "完成态时长与行动作重叠").toBe(0)
+    expect(layout.scrollWidth, `响应性能在 ${width}px 造成横向溢出`).toBeLessThanOrEqual(layout.clientWidth)
+    expect(
+      layout.items.every((box) => box.left >= 0 && box.right <= layout.clientWidth + 1),
+      `${width}px 下行动作或元数据越过视口边界`,
+    ).toBe(true)
+    expect(layout.overlaps, `${width}px 下行动作、耗时或性能指标发生重叠`).toBe(0)
+  }
 })
 
 test("QA 未完成消息不留下空的完成态分隔符", async ({ page }) => {
   await load(page, "chat--chat-view-readable-420", 420, "dark-modern", '[data-slot="assistant-copy-wrapper"]')
 
   await expect(page.locator('[data-slot="assistant-completion-inline"]')).toHaveCount(0)
+  await expect(page.locator('[data-slot="assistant-turn-metadata"]')).toHaveCount(0)
 })
 
 test("Document RAG 的 qwen 覆盖态保留模型名称并让重置按钮同行", async ({ page }) => {

@@ -5,6 +5,7 @@ import { Button } from "@chipmate/chipmate-ui/button"
 import { Tooltip } from "@chipmate/chipmate-ui/tooltip"
 import { Icon } from "@chipmate/chipmate-ui/icon"
 import { useLanguage } from "../../context/language"
+import { PromptStatusIcon } from "./PromptStatusIcon"
 
 export interface SandboxButtonBaseProps {
   enabled: boolean
@@ -87,7 +88,7 @@ export const SandboxButtonBase: Component<SandboxButtonBaseProps> = (props) => {
         class={`prompt-status-button ${props.enabled ? "prompt-status-button--active" : ""}`}
         data-ui="qa-action-sandbox"
       >
-        <Icon name="lock" size="small" />
+        <PromptStatusIcon name="lock" />
       </Button>
     </Tooltip>
   )

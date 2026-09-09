@@ -5,9 +5,14 @@ import { ChipMateToolRegistry } from "../../src/chipmate/tool/registry"
 import { Agent } from "../../src/agent/agent"
 import * as Truncate from "../../src/tool/truncate"
 import type * as Tool from "../../src/tool/tool"
+import { Parameters as TaskParameters } from "../../src/tool/task"
 
 const logger = Log.create({ service: "chipmate-tool-registry" })
-const deps = { agent: {} as Agent.Interface, truncate: {} as Truncate.Interface }
+const deps = {
+  agent: {} as Agent.Interface,
+  truncate: {} as Truncate.Interface,
+  task: {} as Tool.Def<typeof TaskParameters>,
+}
 
 describe("chipmate tool registry indexing import failure", () => {
   test("omits indexing tools when the indexing module cannot load", async () => {

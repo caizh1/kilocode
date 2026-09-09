@@ -35,12 +35,19 @@ function getSystemMode(): "light" | "dark" {
 }
 
 function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "dark") {
+  // 独立皮肤的深色方案优先于旧缓存和系统主题，切回后仍使用原方案。
+  const night = document.documentElement.dataset.chipmateSkin === "night-city"
+  if (night) {
+    theme = DEFAULT_THEMES["chipmate-vscode"]
+    themeId = "chipmate-vscode"
+    mode = "dark"
+  }
   const isDark = mode === "dark"
   const variant = isDark ? theme.dark : theme.light
   const tokens = resolveThemeVariant(variant, isDark)
   const css = themeToCss(tokens)
 
-  if (themeId !== DEFAULT_THEME_ID) {
+  if (!night && themeId !== DEFAULT_THEME_ID) {
     try {
       localStorage.setItem(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css)
     } catch {}
@@ -84,6 +91,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     onMount(() => {
+      const appearance = () => {
+        const theme = store.themes[store.themeId]
+        if (theme) applyThemeCss(theme, store.themeId, store.mode)
+      }
+      window.addEventListener("chipmate:appearance-changed", appearance)
+      onCleanup(() => window.removeEventListener("chipmate:appearance-changed", appearance))
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
       const handler = () => {
         if (store.colorScheme === "system") {

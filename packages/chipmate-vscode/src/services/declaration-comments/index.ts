@@ -1,0 +1,6 @@
+export { declarationResultToSourceAnnotationArtifact } from "./artifact-adapter"
+export { DeclarationCommentOrchestrator } from "./orchestrator"
+export { buildDeclarationCommentPrompt, parseDeclarationCommentResponse } from "./protocol"
+export { resolveDeclarationTarget, resolveDeclarationTargetsInRange } from "./target"
+export type * from "./types"
+export { buildValidatedDeclarationCandidate } from "./validator"

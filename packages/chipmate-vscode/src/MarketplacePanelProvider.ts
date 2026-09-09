@@ -1,3 +1,4 @@
+import { bindAppearance } from "./appearance"
 import * as os from "os"
 import * as path from "path"
 import { createHash, randomUUID } from "crypto"
@@ -15,6 +16,7 @@ import { marketplaceIdentityErrorMessage, marketplaceIssue } from "./services/ma
 import { pickInstallScope } from "./services/marketplace/install-ui"
 import { applyLocalRepairs } from "./services/marketplace/local-repair"
 import { MarketplaceAnalytics } from "./services/marketplace/analytics"
+import { MarketplaceAuth, sharedMarketplaceAuth } from "./services/marketplace/auth"
 import { InstallRegistry } from "./services/marketplace/registry"
 import { LocalImportRegistry } from "./services/marketplace/local-import-registry"
 import { LocalSkillImporter } from "./services/marketplace/local-import"
@@ -40,6 +42,7 @@ import {
   fetchMarketplaceSkills,
   invalidateMarketplaceSkills,
   installMarketplaceItem,
+  marketplaceActivationError,
   removeMarketplaceItem,
   type MarketplaceActionContext,
 } from "./services/marketplace/actions"
@@ -55,8 +58,6 @@ import type {
 } from "./services/marketplace/types"
 import { TelemetryProxy } from "./services/telemetry"
 import { TelemetryEventName } from "./services/telemetry/types"
-
-const MARKETPLACE_PROVIDER_KEY_TIMEOUT_MS = 3000
 
 interface MarketplaceMessage {
   type?: string
@@ -112,6 +113,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private readonly importer: LocalSkillImporter
   private readonly removal: LocalSkillRemoval
   private readonly analytics: MarketplaceAnalytics
+  private readonly auth: MarketplaceAuth
   private uploadableSkillIds = new Set<string>()
   private uploadableSkillHashes = new Map<string, string | undefined>()
   private readonly blockedSkillIds = new Set<string>()
@@ -129,6 +131,8 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     private readonly context: vscode.ExtensionContext,
   ) {
     this.marketplace = new MarketplaceService(path.join(context.globalStorageUri.fsPath, "config"))
+    this.auth = sharedMarketplaceAuth(context.secrets, () => this.marketplace.serverBaseUrl())
+    this.marketplace.setAuthorization((task, interactive) => this.auth.authorized(task, interactive))
     this.registry = new InstallRegistry(context)
     this.localRegistry = new LocalImportRegistry(context)
     this.removal = new LocalSkillRemoval(connection, context)
@@ -146,8 +150,11 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     this.analytics = new MarketplaceAnalytics(
       (items, key) => this.marketplace.events(items, key),
       () => this.registry.clientId(),
-      () => this.getCurrentProviderApiKey(),
+      () => this.auth.access(false),
     )
+    void this.marketplace
+      .recoverSkillTransactions(vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [])
+      .catch((err) => console.warn("[ChipMate New] Marketplace Skill transaction recovery failed:", err))
   }
 
   private get marketplaceCtx(): MarketplaceActionContext {
@@ -191,7 +198,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       vscode.window.showErrorMessage("安装链接无效：来源、路径或一次性 token 未通过校验。")
       return
     }
-    const apiKey = await this.marketplaceApiKey("安装市场 Skill")
+    const apiKey = await this.marketplaceAccessToken("安装市场 Skill")
     if (!apiKey) return
 
     try {
@@ -207,7 +214,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       vscode.window.showErrorMessage("AI 修复链接无效：来源或 publicationRunId 未通过校验。")
       return
     }
-    const apiKey = await this.marketplaceApiKey("使用 AI 修复发布快照")
+    const apiKey = await this.marketplaceAccessToken("使用 AI 修复发布快照")
     if (!apiKey) return
     try {
       const run = await this.marketplace.getPublication(link.runId, apiKey)
@@ -299,6 +306,8 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         ),
     )
     if (!result.success) throw new Error(result.error ?? "安装失败")
+    const dir = workspace ?? this.directory()
+    await this.activateInstalledSkill(intent.skillId, selected.scope, dir, result.filePath)
 
     const clientId = saved?.clientId ?? (await this.registry.clientId())
     const state = {
@@ -316,11 +325,26 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       revision: intent.revision,
     })
     await this.registry.put({ origin: link.origin, ...state, changedAt: synced.changedAt })
-    const dir = workspace ?? this.directory()
-    await invalidateMarketplaceSkills(this.marketplaceCtx, selected.scope, dir)
     vscode.window.showInformationMessage(`${intent.skillId} r${intent.revision} 已安全安装并同步。`)
     this.openPanel(workspace ?? null)
     await this.fetchData()
+  }
+
+  private async activateInstalledSkill(
+    id: string,
+    scope: "project" | "global",
+    dir: string,
+    location?: string,
+  ): Promise<void> {
+    const activation = await activateMarketplaceSkills(
+      this.marketplaceCtx,
+      scope,
+      dir,
+      [id],
+      location ? { [normalizeSkillKey(id)]: location } : undefined,
+    )
+    const activationError = marketplaceActivationError(activation)
+    if (activationError) throw new Error(activationError)
   }
 
   /** Open the panel and surface the install dialog for a specific item, project scope preselected. */
@@ -356,6 +380,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       enableScripts: true,
       localResourceRoots: [this.extensionUri],
     }
+    bindAppearance(panel)
     panel.webview.html = this.getHtml(panel.webview)
 
     this.disposables.push(
@@ -436,6 +461,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   }
 
   private async handle(msg: MarketplaceMessage): Promise<void> {
+    if (await this.handleAuthMessage(msg)) return
     if (await this.handleBatchMessage(msg)) return
     if (await this.handleSkillMessage(msg)) return
     switch (msg.type) {
@@ -460,9 +486,6 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       case "fetchMarketplaceData":
         await this.fetchData()
         return
-      case "verifyMarketplaceUser":
-        if (await this.refreshMarketplaceUser(true)) await this.fetchData()
-        return
       case "installMarketplaceItem":
         if (msg.mpItem && msg.mpInstallOptions) await this.install(msg.mpItem, msg.mpInstallOptions)
         return
@@ -478,6 +501,25 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       case "telemetry":
         if (msg.event) TelemetryProxy.capture(msg.event as TelemetryEventName, msg.properties)
         return
+    }
+  }
+
+  private async handleAuthMessage(msg: MarketplaceMessage): Promise<boolean> {
+    switch (msg.type) {
+      case "verifyMarketplaceUser":
+        if (await this.refreshMarketplaceUser(true)) await this.fetchData()
+        return true
+      case "logoutMarketplaceUser":
+        await this.auth.logout()
+        this.marketplaceUser = undefined
+        this.identityState = identityState("unverified", {
+          issue: { summary: "尚未登录 ChipMate 市场。", code: "marketplace-login-required" },
+        })
+        this.postRuntime()
+        await this.fetchData()
+        return true
+      default:
+        return false
     }
   }
 
@@ -554,7 +596,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     const generation = ++this.generation
     try {
       const project = this.project ?? undefined
-      const apiKey = await this.getCurrentProviderApiKey()
+      const apiKey = await this.auth.access(false)
       const data = await fetchMarketplaceData(
         this.marketplaceCtx,
         project,
@@ -608,7 +650,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private async refresh(name: string): Promise<void> {
     if (name === "catalog.invalidated" || name.startsWith("skill.") || name === "favorite.changed") {
       const project = this.project ?? undefined
-      const apiKey = await this.getCurrentProviderApiKey()
+      const apiKey = await this.auth.access(false)
       const data = await fetchMarketplaceData(this.marketplaceCtx, project, this.directory(), apiKey, false)
       const skills = (await fetchMarketplaceSkills(this.marketplaceCtx, this.directory())) ?? []
       const targets = this.removal.issue(skills, project)
@@ -623,7 +665,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
       })
       return
     }
-    const apiKey = await this.getCurrentProviderApiKey()
+    const apiKey = await this.auth.access(false)
     if (!apiKey) return
     if (name === "installation.changed") {
       this.post({ type: "marketplaceSync", marketplaceInstallations: await this.marketplace.installations(apiKey) })
@@ -722,7 +764,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     const origin = new URL(this.marketplace.serverBaseUrl()).origin
     const saved = await this.registry.get(origin, id, scope, workspaceId)
     if (!saved) return
-    const apiKey = await this.getCurrentProviderApiKey()
+    const apiKey = await this.auth.access(false)
     if (apiKey) {
       await this.marketplace
         .syncInstallation(
@@ -843,7 +885,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         title: "正在验证市场用户...",
         cancellable: false,
       },
-      async () => await this.marketplaceApiKey("上传 Skill 到市场"),
+      async () => await this.marketplaceAccessToken("上传 Skill 到市场"),
     )
     if (!apiKey) return
     void this.analytics.track("publication_start", { context: { source: "vscode" } })
@@ -890,7 +932,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         title: "正在验证市场用户...",
         cancellable: false,
       },
-      async () => await this.marketplaceApiKey("批量上传 Skill 到市场"),
+      async () => await this.marketplaceAccessToken("批量上传 Skill 到市场"),
     )
     if (!apiKey) {
       this.postBatchFailure(requested, "市场身份验证失败，批量上传未启动。")
@@ -1074,7 +1116,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         cancellable: false,
       },
       async () => {
-        const apiKey = await this.marketplaceApiKey("为 Skill 点赞")
+        const apiKey = await this.marketplaceAccessToken("为 Skill 点赞")
         if (!apiKey) return
 
         try {
@@ -1096,7 +1138,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     )
     if (confirm !== "确认下架") return
 
-    const apiKey = await this.marketplaceApiKey("下架市场 Skill")
+    const apiKey = await this.marketplaceAccessToken("下架市场 Skill")
     if (!apiKey) return
 
     await vscode.window.withProgress(
@@ -1129,108 +1171,42 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     return run
   }
 
-  private async marketplaceApiKey(action: string): Promise<string | undefined> {
-    const apiKey = await this.refreshMarketplaceUser(true)
-    if (!apiKey) {
+  private async marketplaceAccessToken(action: string): Promise<string | undefined> {
+    const accessToken = await this.refreshMarketplaceUser(true)
+    if (!accessToken) {
       if (this.identityState.status === "unverified") {
-        vscode.window.showWarningMessage(`当前提供商未配置 API Key，无法${action}。`)
+        vscode.window.showWarningMessage(`尚未登录 ChipMate 市场，无法${action}。`)
       }
       return undefined
     }
-    return apiKey
-  }
-
-  private async getCurrentProviderApiKey(): Promise<string | undefined> {
-    try {
-      const key = await withTimeout(
-        this.readCurrentProviderApiKey(),
-        MARKETPLACE_PROVIDER_KEY_TIMEOUT_MS,
-        () => undefined,
-      )
-      if (!key) console.info("[ChipMate New] Marketplace did not find a current provider API key.")
-      return key
-    } catch (err) {
-      console.warn("[ChipMate New] Marketplace current provider API key lookup failed:", err)
-      return undefined
-    }
-  }
-
-  private async readCurrentProviderApiKey(): Promise<string | undefined> {
-    try {
-      const client = this.connection.getClient()
-      if (!client) return undefined
-      const directory = this.directory()
-      const { data: config } = await client.config.get({ directory }, { throwOnError: true })
-      const selectedProvider = providerIdFromModel(config?.model)
-
-      if (selectedProvider) {
-        const saved = await client.auth
-          .get({ providerID: selectedProvider }, { throwOnError: true })
-          .then((result) => authApiKey(result.data))
-          .catch((err: unknown) => {
-            console.warn("[ChipMate New] Marketplace failed to read current provider auth:", err)
-            return undefined
-          })
-        if (saved) return saved
-      }
-
-      const providers = await client.provider
-        .list({ directory }, { throwOnError: true })
-        .then((result) => result.data)
-        .catch((err: unknown) => {
-          console.warn("[ChipMate New] Marketplace failed to read provider fallbacks:", err)
-          return undefined
-        })
-      const keyed = (providers?.all ?? [])
-        .map((provider) => {
-          const raw = provider as Record<string, unknown>
-          return {
-            id: typeof raw.id === "string" ? raw.id : "",
-            key: typeof raw.key === "string" && raw.key.trim() ? raw.key.trim() : undefined,
-          }
-        })
-        .filter((provider): provider is { id: string; key: string } => Boolean(provider.id && provider.key))
-
-      if (selectedProvider) {
-        const selected = keyed.find((provider) => provider.id === selectedProvider)
-        if (selected) return selected.key
-        const selectedConfigKey = configApiKey(config?.provider?.[selectedProvider])
-        if (selectedConfigKey) return selectedConfigKey
-      }
-
-      if (keyed.length === 1) return keyed[0].key
-    } catch (err) {
-      console.warn("[ChipMate New] Marketplace failed to read current provider API key:", err)
-    }
-    return undefined
+    return accessToken
   }
 
   private async authenticateMarketplaceUser(): Promise<string | undefined> {
     this.identityState = identityState("verifying", { user: this.marketplaceUser })
     this.postRuntime()
-    const apiKey = await this.getCurrentProviderApiKey()
-    if (!apiKey) {
+    const accessToken = await this.auth.access(this.identityNotify)
+    if (!accessToken) {
       this.marketplaceUser = undefined
       this.identityState = identityState("unverified", {
-        issue: { summary: "当前提供商未配置 API Key。", code: "provider-api-key-missing" },
+        issue: { summary: "尚未登录 ChipMate 市场。", code: "marketplace-login-required" },
       })
       this.postRuntime()
-      if (this.identityNotify) vscode.window.showWarningMessage("当前提供商未配置 API Key，无法验证市场身份。")
       return undefined
     }
     try {
-      this.marketplaceUser = await this.marketplace.resolveUser(apiKey)
+      this.marketplaceUser = await this.marketplace.resolveUser(accessToken)
       this.identityState = identityState("verified", { user: this.marketplaceUser })
       this.postRuntime()
       if (this.identityNotify) vscode.window.showInformationMessage(`市场用户：${this.marketplaceUser.name}`)
-      return apiKey
+      return accessToken
     } catch (err) {
       this.marketplaceUser = undefined
       const message = marketplaceIdentityErrorMessage(err)
       this.identityState = identityState("failed", { issue: marketplaceIssue(err, message) })
       this.postRuntime()
       if (this.identityNotify) vscode.window.showWarningMessage(`市场用户验证失败：${message}`)
-      else console.warn("[ChipMate New] Marketplace provider API key did not resolve to a user:", err)
+      else console.warn("[ChipMate New] Marketplace LDAP session validation failed:", err)
       return undefined
     }
   }
@@ -1284,7 +1260,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
     scope: "project" | "global",
     status: "installed" | "removed",
   ): Promise<void> {
-    const apiKey = await this.getCurrentProviderApiKey()
+    const apiKey = await this.auth.access(false)
     if (!apiKey) return
     const workspace = scope === "project" ? (this.project ?? undefined) : undefined
     const workspaceId = this.registry.workspaceId(workspace)
@@ -1316,7 +1292,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
   private async restoreManaged(): Promise<void> {
     if (this.restored) return
     this.restored = true
-    const apiKey = await this.getCurrentProviderApiKey()
+    const apiKey = await this.auth.access(false)
     if (!apiKey) return
     const origin = new URL(this.marketplace.serverBaseUrl()).origin
     const project = this.project ?? undefined
@@ -1414,17 +1390,6 @@ function marketplaceDataErrorMessage(err: unknown): string {
   return message.startsWith("获取") ? message : `获取技能市场失败：${message}`
 }
 
-function providerIdFromModel(model: unknown): string | undefined {
-  if (model && typeof model === "object" && !Array.isArray(model)) {
-    const providerID = (model as Record<string, unknown>).providerID
-    return typeof providerID === "string" && providerID.trim() ? providerID.trim() : undefined
-  }
-  if (typeof model !== "string") return undefined
-  const slash = model.indexOf("/")
-  const provider = slash > 0 ? model.slice(0, slash).trim() : ""
-  return provider || undefined
-}
-
 function normalizeLocalSkill(skill: CliSkill): UploadableSkill | undefined {
   const name = skill.name.trim()
   const location = skill.location.trim()
@@ -1446,38 +1411,5 @@ function normalizeLocalSkill(skill: CliSkill): UploadableSkill | undefined {
     name,
     description: skill.description?.trim() || undefined,
     root,
-  }
-}
-
-function configApiKey(config: unknown): string | undefined {
-  if (!config || typeof config !== "object" || Array.isArray(config)) return undefined
-  const record = config as Record<string, unknown>
-  const direct = typeof record.apiKey === "string" ? record.apiKey.trim() : ""
-  if (direct) return direct
-  const options = record.options
-  if (!options || typeof options !== "object" || Array.isArray(options)) return undefined
-  const key = (options as Record<string, unknown>).apiKey
-  return typeof key === "string" && key.trim() ? key.trim() : undefined
-}
-
-function authApiKey(auth: unknown): string | undefined {
-  if (!auth || typeof auth !== "object" || Array.isArray(auth)) return undefined
-  const record = auth as Record<string, unknown>
-  if (record.type !== "api") return undefined
-  const key = typeof record.key === "string" ? record.key.trim() : ""
-  return key || undefined
-}
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: () => T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((resolve) => {
-        timer = setTimeout(() => resolve(fallback()), ms)
-      }),
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
   }
 }

@@ -40,7 +40,7 @@ export function internalOfflineEnv(
   return {
     CHIPMATE_INTERNAL_OFFLINE: "1",
     CHIPMATE_DISABLE_MODELS_FETCH: "1",
-    ...(config ? { CHIPMATE_CONFIG_CONTENT: config } : {}),
+    ...(config ? { CHIPMATE_INTERNAL_PROVIDER_DEFAULTS: config } : {}),
   }
 }
 
@@ -78,7 +78,6 @@ export function internalOfflineConfigContent(
 ): string | undefined {
   if (!defaults) return undefined
   return JSON.stringify({
-    model: `${defaults.providerID}/${defaults.modelID}`,
     provider: {
       [defaults.providerID]: {
         name: defaults.name,

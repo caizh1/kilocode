@@ -363,8 +363,8 @@ describe("PromptInput send origin contract", () => {
   })
 
   it("passes the captured origin to message and command sends", () => {
-    expect(source).toMatch(/session\.sendMessage\([\s\S]*origin \?\? null\)/)
-    expect(source).toMatch(/session\.sendCommand\([\s\S]*origin \?\? null\)/)
+    expect(source).toMatch(/session\.sendMessage\([\s\S]*origin \?\? null,\s*revision/)
+    expect(source).toMatch(/session\.sendCommand\([\s\S]*origin \?\? null,\s*revision/)
   })
 
   it("records sent prompts before a pending session key change can return", () => {
@@ -382,16 +382,60 @@ describe("PromptInput send origin contract", () => {
   })
 })
 
+describe("SessionSurface 发送事务契约", () => {
+  const prompt = readFile(PROMPT_FILE)
+  const host = readFile(CHIPMATEPROVIDER_FILE)
+  const cloud = readFile(CLOUD_SESSION_FILE)
+
+  it("草稿 ack 先于消息派发，未提交请求不会清空输入", () => {
+    const start = prompt.indexOf("const handleSend = async () =>")
+    const end = prompt.indexOf("\n  const collapse", start)
+    const body = prompt.slice(start, end)
+    const commit = body.indexOf("await commitSharedDraft(ownerKey, committedContent)")
+    const send = Math.min(
+      ...[body.indexOf("session.sendMessage("), body.indexOf("session.sendCommand(")].filter((value) => value >= 0),
+    )
+    const missing = body.indexOf("if (!submitted)")
+    const clear = body.lastIndexOf('setText("")')
+    expect(commit).toBeGreaterThan(-1)
+    expect(prompt).toContain("await surface.commitDraft(content)")
+    expect(send).toBeGreaterThan(commit)
+    expect(missing).toBeGreaterThan(send)
+    expect(clear).toBeGreaterThan(missing)
+  })
+
+  it("owner 拒绝会映射为带原 payload 的发送失败", () => {
+    expect(host).toContain('code: "surface-ownership-changed"')
+    expect(host).toContain("this.rejectSurfaceSubmission(message as Record<string, unknown>)")
+    expect(host).toMatch(
+      /message\.type !== "sendMessage"[\s\S]*message\.type !== "sendCommand"[\s\S]*message\.type !== "importAndSend"/,
+    )
+  })
+
+  it("本地消息、命令和云导入成功后均回 accepted，失败后均回 failed", () => {
+    expect((host.match(/type: "sendMessageAccepted"/g) ?? []).length).toBeGreaterThanOrEqual(2)
+    expect(cloud).toContain('type: "sendMessageAccepted"')
+    expect(cloud).toContain('type: "sendMessageFailed"')
+  })
+
+  it("真实会话不从共享草稿写入自定义模型策略元数据", () => {
+    expect(prompt).toContain('content.selection && shared.key.kind === "draft"')
+    expect(prompt).toContain("override: scope ? session.hasSessionModelOverride(scope) : false")
+    expect(prompt).toMatch(/if \(content\.selection\.override\)[\s\S]*session\.setSessionModel\(scope/)
+    expect(prompt).not.toContain("getSessionModelPolicy")
+  })
+})
+
 describe("new-task draft handoff contract", () => {
   const source = readFile(PROMPT_FILE)
 
   it("captures the complete draft before a new tab changes the draft key", () => {
-    const start = source.indexOf("const onNewTaskRequest = () =>")
-    const end = source.indexOf("window.addEventListener(\"newTaskRequest\"", start)
+    const start = source.indexOf("const createNewTask = async () =>")
+    const end = source.indexOf('window.addEventListener("newTaskRequest"', start)
     const body = source.slice(start, end)
 
     const capture = body.indexOf("handoff = readDraft()")
-    const add = body.indexOf("tabs?.add()")
+    const add = body.indexOf("await tabs?.add()")
     expect(capture).toBeGreaterThan(-1)
     expect(add).toBeGreaterThan(capture)
     expect(source).toMatch(/const readDraft = \(\) => \(\{\s*text: text\(\),/)

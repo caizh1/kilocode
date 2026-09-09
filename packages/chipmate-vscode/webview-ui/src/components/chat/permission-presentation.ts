@@ -8,7 +8,7 @@ export function permissionCommand(request: PermissionRequest): string | undefine
 }
 
 export function permissionPresentation(request: PermissionRequest): PermissionSeverity {
-  return request.toolName === "bash" || request.toolName === "agent_console_shell"
+  return request.toolName === "bash"
     ? permissionSeverity(permissionCommand(request))
     : "standard"
 }

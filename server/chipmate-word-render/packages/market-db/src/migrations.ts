@@ -427,4 +427,115 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX idx_extensions_owner ON extensions(owner_id,updated_at DESC);
     `,
   },
+  {
+    version: 10,
+    name: "ldap-authentication",
+    sql: `
+      CREATE TABLE auth_settings (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        revision INTEGER NOT NULL,
+        config_json TEXT NOT NULL,
+        bind_password_ciphertext TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT NOT NULL
+      );
+      CREATE TABLE external_identities (
+        source_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        username TEXT NOT NULL,
+        email TEXT,
+        display_name TEXT NOT NULL,
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        last_verified_at TEXT NOT NULL,
+        PRIMARY KEY(source_id, subject)
+      );
+      ALTER TABLE sessions ADD COLUMN auth_revision INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN subject TEXT;
+      ALTER TABLE sessions ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN verified_at TEXT;
+      CREATE TABLE device_authorizations (
+        device_hash TEXT PRIMARY KEY,
+        user_code TEXT NOT NULL UNIQUE,
+        interval_seconds INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        approved_at TEXT,
+        denied_at TEXT,
+        consumed_at TEXT,
+        last_polled_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE token_families (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        auth_revision INTEGER NOT NULL,
+        subject TEXT NOT NULL,
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE access_tokens (
+        hash TEXT PRIMARY KEY,
+        family_id TEXT NOT NULL REFERENCES token_families(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE refresh_tokens (
+        hash TEXT PRIMARY KEY,
+        family_id TEXT NOT NULL REFERENCES token_families(id) ON DELETE CASCADE,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE auth_audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details_json TEXT NOT NULL DEFAULT '{}',
+        occurred_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_external_identities_username ON external_identities(source_id,username);
+      CREATE INDEX idx_device_authorizations_expiry ON device_authorizations(expires_at);
+      CREATE INDEX idx_access_tokens_expiry ON access_tokens(expires_at);
+      CREATE INDEX idx_refresh_tokens_expiry ON refresh_tokens(expires_at);
+      CREATE INDEX idx_auth_audit_time ON auth_audit_events(occurred_at DESC);
+    `,
+  },
+  {
+    version: 11,
+    name: "server-managed-administrators",
+    sql: `
+      CREATE TABLE auth_admins (
+        source_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        username TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        email TEXT,
+        granted_by TEXT NOT NULL,
+        granted_at TEXT NOT NULL,
+        PRIMARY KEY(source_id,subject)
+      );
+      DELETE FROM sessions;
+      DELETE FROM token_families;
+      DELETE FROM device_authorizations;
+    `,
+  },
+  {
+    version: 12,
+    name: "private-diagnostic-bundles",
+    sql: `
+      CREATE TABLE diagnostic_bundles (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        metadata_json TEXT NOT NULL
+      );
+      CREATE INDEX idx_diagnostics_owner_time ON diagnostic_bundles(owner_id,created_at DESC);
+      CREATE INDEX idx_diagnostics_expiry ON diagnostic_bundles(expires_at);
+    `,
+  },
 ]

@@ -29,6 +29,7 @@ const environment = {
   freeMemoryBytes: freemem(),
   node: process.version,
   headless: !args.headed,
+  appearanceSkin: args.skin === "night-city" ? "night-city" : "default",
 }
 
 let server
@@ -40,7 +41,6 @@ try {
   const stories = {
     settings: story(index, "Performance/LowEnd", "Settings heavy fixture"),
     history: story(index, "Performance/LowEnd", "Long history fixture"),
-    console: story(index, "Performance/LowEnd", "Agent Console fixture"),
   }
   const attempts = []
   attempts.push(await attempt(browser, base, stories, 1, args.settingsOnly === true))
@@ -77,7 +77,7 @@ try {
       "CPU 降速只精确作用于 Webview renderer，不等同于限制整机为两个物理核心。",
       "8GB 与 HDD 通过大数据 fixture、延迟和内存增长门禁代理，不制造真实系统换页或物理磁盘吞吐。",
       "该结果不代表真实低配 Windows，也不测试模型回答质量。",
-      ...(args.settingsOnly ? ["本次聚焦设置页，不包含历史记录和 Agent Console 指标。"] : []),
+      ...(args.settingsOnly ? ["本次聚焦设置页，不包含历史记录指标。"] : []),
     ],
   }
   const result = join(output, "results.json")
@@ -129,7 +129,10 @@ async function serve() {
 }
 
 async function attempt(browser, base, stories, number, settingsOnly) {
-  const context = await browser.newContext({ viewport: { width: 940, height: 720 }, reducedMotion: "reduce" })
+  const context = await browser.newContext({
+    viewport: { width: 940, height: 720 },
+    reducedMotion: args.skin === "night-city" ? "no-preference" : "reduce",
+  })
   const trace = join(evidence, `attempt-${number}-trace.zip`)
   // DOM snapshots retain the full 1000-turn fixture after each page closes and
   // materially distort later samples. Screenshots plus the Chromium timeline
@@ -142,7 +145,6 @@ async function attempt(browser, base, stories, number, settingsOnly) {
     } else {
       await settings(context, base, stories.settings, metrics, number)
       await history(context, base, stories.history, metrics)
-      await consolePath(context, base, stories.console, metrics)
     }
     const status = metrics.some((item) => item.status === "BLOCKED")
       ? "BLOCKED"
@@ -391,36 +393,6 @@ async function history(context, base, id, metrics) {
   metrics.push(timing("history.return", "返回 1000-turn 会话", returns, budgets.historyReturnMs, "median", true))
 }
 
-async function consolePath(context, base, id, metrics) {
-  const opens = []
-  const outputs = []
-  for (let count = 0; count < 5; count++) {
-    const item = await page(context, base, id)
-    opens.push(
-      await measure(
-        () => item.page.locator('[data-ui="low-end-open-console"]').click({ noWaitAfter: true }),
-        () => item.page.locator('[data-component="agent-console"]').waitFor({ state: "visible" }),
-      ),
-    )
-    if (count === 0) {
-      await item.page
-        .locator('[data-slot="agent-console-mode"] button[data-value="shell"]')
-        .click({ noWaitAfter: true })
-      const field = item.page.locator(".xterm-helper-textarea")
-      await field.pressSequentially("printf CHIPMATE_LOW_END_OK")
-      outputs.push(
-        await measure(
-          () => field.press("Enter"),
-          () => item.page.locator(".xterm-screen").getByText("CHIPMATE_LOW_END_OK").waitFor(),
-        ),
-      )
-    }
-    await item.page.close()
-  }
-  metrics.push(timing("console.open", "Agent Console 打开", opens, budgets.consoleOpenMs, "median", true))
-  metrics.push(timing("console.output", "Agent Console 固定命令输出", outputs, budgets.consoleOutputMs, "median", true))
-}
-
 async function page(context, base, id) {
   const page = await context.newPage()
   await page.addInitScript(() => {
@@ -439,11 +411,15 @@ async function page(context, base, id) {
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: profile.cpuRate })
   await cdp.send("Network.enable")
   await cdp.send("Performance.enable")
-  await page.goto(`${base}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story`, {
+  const skin = args.skin === "night-city" ? "&globals=skin:night-city" : ""
+  await page.goto(`${base}/iframe.html?id=${encodeURIComponent(id)}&viewMode=story${skin}`, {
     waitUntil: "domcontentloaded",
     timeout: 120_000,
   })
   await page.locator("#storybook-root").waitFor({ state: "visible", timeout: 60_000 })
+  if (args.skin === "night-city") {
+    await page.waitForFunction(() => document.documentElement.dataset.chipmateSkin === "night-city")
+  }
   // Storybook assets stand in for files bundled inside the VSIX and therefore
   // load locally. Apply slow-network conditions only after the production
   // component chain is present so service traffic, not fixture delivery, is
@@ -654,6 +630,7 @@ function parse(argv) {
     if (arg === "--settings-only") result.settingsOnly = true
     if (arg === "--output") result.output = argv[++index]
     if (arg === "--base-url") result.baseUrl = argv[++index]
+    if (arg === "--skin") result.skin = argv[++index]
   }
   return result
 }

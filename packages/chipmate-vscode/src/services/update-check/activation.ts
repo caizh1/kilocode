@@ -1,8 +1,11 @@
 import * as vscode from "vscode"
+import { compareVersions } from "./version"
 import { CHIPMATE_UPDATE_TARGETS, type ChipmateUpdateTarget } from "../../shared/update-check"
 
 export const PENDING_ACTIVATION_KEY = "chipmate.v2.updateCheck.pendingActivation"
 export const LAST_ACTIVATION_KEY = "chipmate.v2.updateCheck.lastActivation"
+
+export const LAST_SUPERSEDED_KEY = "chipmate.v2.updateCheck.lastSuperseded"
 
 const SCHEMA_VERSION = 1
 
@@ -42,6 +45,7 @@ export type PendingActivationResult =
   | { status: "none" }
   | { status: "invalid" }
   | { status: "host-active"; record: UpdateActivationRecord }
+  | { status: "superseded"; pending: PendingUpdateActivation; actual: ExtensionIdentity }
   | { status: "mismatch"; pending: PendingUpdateActivation; actual: ExtensionIdentity }
 
 export type UpdateWebviewReceipt = {
@@ -94,6 +98,16 @@ export async function confirmPendingUpdateActivation(
     return { status: "host-active", record }
   }
 
+  if (
+    actual.extensionId === pending.extensionId &&
+    actual.target === pending.target &&
+    compareVersions(actual.version, pending.expectedVersion) > 0
+  ) {
+    await context.globalState.update(LAST_SUPERSEDED_KEY, { pending, actual, supersededAt: now })
+    await context.globalState.update(PENDING_ACTIVATION_KEY, undefined)
+    return { status: "superseded", pending, actual }
+  }
+
   const next: PendingUpdateActivation = {
     ...pending,
     lastMismatch: {
@@ -104,14 +118,6 @@ export async function confirmPendingUpdateActivation(
   }
   await writePendingUpdateActivation(context, next)
   return { status: "mismatch", pending: next, actual }
-}
-
-export function shouldRetryFirstReload(result: PendingActivationResult): boolean {
-  return (
-    result.status === "mismatch" &&
-    result.pending.reloadRequestedAt !== undefined &&
-    result.pending.reloadAttempts === 1
-  )
 }
 
 export async function recordUpdateWebviewReady(

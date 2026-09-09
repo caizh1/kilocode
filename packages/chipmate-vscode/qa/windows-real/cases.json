@@ -283,46 +283,6 @@
       "cleanup": ["关闭补全并删除测试编辑文件"]
     },
     {
-      "id": "WIN-AGENT-CONSOLE",
-      "suite": "Agent Manager 与终端",
-      "title": "验证 session/worktree/terminal 和危险操作审批",
-      "severity": "P1",
-      "profiles": ["clean"],
-      "changesets": ["agent-console-webview", "fix-agent-console-windows-powershell"],
-      "pathPatterns": [
-        "^packages/chipmate-vscode/src/agent-console/",
-        "^packages/chipmate-vscode/webview-ui/agent-console/",
-        "^packages/chipmate-vscode/assets/agent-console/",
-        "^packages/chipmate-vscode/src/agent-manager/",
-        "^packages/chipmate-vscode/src/services/agent-terminal/"
-      ],
-      "preconditions": [
-        "测试 Git 仓库与 sentinel 临时根已创建",
-        "x64 VS Code Stable 与正式 win32-x64-baseline VSIX 已安装",
-        "确定性本地 Mock Provider 已启动",
-        "本次运行明确声明 arm64-vm 或 native-x64 gate"
-      ],
-      "steps": [
-        "打开 Agent Console 并确认 Agent 模式只有一个真实 PowerShell 提示符和一个 UIA Edit 控件",
-        "逐字符输入 Write-Output CHIPMATE_QA_OK 并按 Enter，确认直接执行且只出现一次输出",
-        "输入中文自然语言并确认进入 Agent 时间线而不是 PowerShell 执行",
-        "用 Mock Provider 触发命令审批，依次验证取消与确认",
-        "连续提交 100 次并检查零丢失零重复",
-        "切换 Agent/Shell 50 次，执行 5000 行输出、Reload 与重连",
-        "分别在 GPU 默认与 --disable-gpu 下采集逐帧视频、截图、UIA 树和 Extension Host 日志"
-      ],
-      "expectedState": [
-        "命令与自然语言共享同一个真实 PowerShell 提示符",
-        "Enter 无丢失或重复并保留 PSReadLine 历史、补全、光标与中文 IME",
-        "命令直接执行，自然语言进入 Agent，审批命令仍需用户确认",
-        "Shell 标签保持同一 PTY 的完整 scrollback",
-        "字体、DPI、滚动、模式切换与流式输出无闪白、跳动或未裁决差异"
-      ],
-      "visualOracle": "baseline",
-      "timeoutSeconds": 900,
-      "cleanup": ["仅删除 sentinel 临时 worktree"]
-    },
-    {
       "id": "WIN-MARKETPLACE",
       "suite": "Skill 与 Extension Market",
       "title": "验证本地导入、发布、风险、身份同步和批量上传",

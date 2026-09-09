@@ -172,7 +172,8 @@ export const dict = {
   "ui.message.copy": "复制",
   "ui.message.copyMessage": "复制消息",
   "ui.message.deleteQueued": "删除排队中的消息", // chipmate_change
-  "ui.message.forkMessage": "分叉到新会话",
+  "ui.message.forkMessage": "从此回答分支", // chipmate_change
+  "ui.message.forkMessageDescription": "创建新会话，不会回退当前工作区文件", // chipmate_change
   "ui.message.revertMessage": "重置到此点",
   "ui.message.copyResponse": "复制回复",
   "ui.message.copied": "已复制！",

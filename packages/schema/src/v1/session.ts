@@ -238,6 +238,45 @@ export const StepStartPart = Schema.Struct({
 }).annotate({ identifier: "StepStartPart" })
 export type StepStartPart = Types.DeepMutable<Schema.Schema.Type<typeof StepStartPart>>
 
+// chipmate_change start - persist auditable New API per-request billing without breaking historical sessions
+const BillingAmount = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+
+export const StepBilling = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("pending"),
+    source: Schema.Literal("new-api-log"),
+    requestID: Schema.String,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("settled"),
+    source: Schema.Literal("new-api-log"),
+    requestID: Schema.String,
+    currency: Schema.Literal("CNY"),
+    amount: BillingAmount,
+    quota: BillingAmount,
+    quotaPerUnit: BillingAmount,
+    exchangeRate: BillingAmount,
+    group: Schema.String,
+    modelName: Schema.String,
+    settledAt: NonNegativeInt,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("unavailable"),
+    source: Schema.Literal("new-api-log"),
+    requestID: Schema.String,
+    reason: Schema.Literals([
+      "credentials",
+      "unsupported-url",
+      "request-log-missing",
+      "network",
+      "invalid-response",
+      "model-mismatch",
+    ]),
+  }),
+]).pipe(Schema.toTaggedUnion("status"))
+export type StepBilling = Types.DeepMutable<Schema.Schema.Type<typeof StepBilling>>
+// chipmate_change end
+
 export const StepFinishPart = Schema.Struct({
   ...partBase,
   type: Schema.Literal("step-finish"),
@@ -252,18 +291,18 @@ export const StepFinishPart = Schema.Struct({
   ),
   generationID: Schema.optional(Schema.String),
   vercelID: Schema.optional(Schema.String),
+  billing: Schema.optional(StepBilling),
   metrics: Schema.optional(
     Schema.Struct({
       prompt: Schema.optional(Schema.Finite),
       generation: Schema.optional(Schema.Finite),
+      ttftMs: Schema.optional(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
       source: Schema.Literals(["provider", "computed"]),
     }),
   ),
-  // Wall-clock timestamps + active generation duration captured at the
-  // session processor. The webview's weighted throughput aggregator uses
-  // `time.elapsed` (active model-generation duration in milliseconds,
-  // excluding tool execution and idle waiting) to weight the per-turn
-  // rate. Optional so legacy persisted sessions keep decoding.
+  // Wall-clock timestamps captured across the full model step. Decode-only
+  // timing is represented by `metrics.generation`; `time` remains optional
+  // so legacy persisted sessions keep decoding.
   time: Schema.optional(
     Schema.Struct({
       start: NonNegativeInt,

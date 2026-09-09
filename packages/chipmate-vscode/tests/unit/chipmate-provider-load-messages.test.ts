@@ -244,6 +244,7 @@ type ProviderInternals = {
   handleToggleSandbox: (input: { sessionID: string; requestID: string }) => Promise<void>
   handleLoadMessages: (sid: string, opts?: { mode?: string; before?: string; limit?: number }) => Promise<void>
   handleDeleteSession: (sid: string) => Promise<void>
+  rejectSurfaceSubmission: (message: Record<string, unknown>) => void
 }
 
 function makeProvider(client: ReturnType<typeof createClient>) {
@@ -410,6 +411,21 @@ describe("ChipMateProvider.handleAbort", () => {
 })
 
 describe("ChipMateProvider missing model guard", () => {
+  it("forwards the resolved Qwen model to the first real prompt request", async () => {
+    const client = createClient()
+    const { internal } = makeProvider(client)
+    internal.gatherEditorContext = async () => ({})
+
+    await internal.handleSendMessage("hello", "msg-qwen", undefined, "draft-qwen", "chipmate", "qwen")
+
+    expect(client.prompted).toHaveLength(1)
+    expect(client.prompted[0]).toMatchObject({
+      sessionID: "created",
+      messageID: "msg-qwen",
+      model: { providerID: "chipmate", modelID: "qwen" },
+    })
+  })
+
   it("rejects a prompt before creating a session", async () => {
     const client = createClient()
     const { internal, sent } = makeProvider(client)
@@ -420,6 +436,29 @@ describe("ChipMateProvider missing model guard", () => {
     expect(client.prompted).toEqual([])
     expect(sent).toContainEqual(
       expect.objectContaining({ type: "sendMessageFailed", error: "Select a model before sending" }),
+    )
+  })
+
+  it("maps a surface ownership rejection to the original draft payload", () => {
+    const client = createClient()
+    const { internal, sent } = makeProvider(client)
+
+    internal.rejectSurfaceSubmission({
+      type: "sendMessage",
+      text: "keep me",
+      messageID: "msg-1",
+      draftID: "draft-1",
+      files: [],
+    })
+
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "sendMessageFailed",
+        code: "surface-ownership-changed",
+        text: "keep me",
+        messageID: "msg-1",
+        draftID: "draft-1",
+      }),
     )
   })
 })
@@ -556,7 +595,7 @@ describe("ChipMateProvider sidebar tabs", () => {
     const client = createClient({
       createSession: async (_params, index) => ({ data: { ...mkSession(), id: `s${index + 1}` } }),
     })
-    const { internal } = makeProvider(client)
+    const { internal, sent } = makeProvider(client)
     internal.gatherEditorContext = async () => ({})
 
     await internal.handleSendMessage("first", "m1", undefined, "draft-1", "openai", "gpt-4.1")
@@ -565,6 +604,11 @@ describe("ChipMateProvider sidebar tabs", () => {
 
     expect(client.created).toHaveLength(2)
     expect(client.prompted.map((call) => call.sessionID)).toEqual(["s1", "s2", "s2"])
+    expect(sent.filter((message) => (message as { type?: string }).type === "sendMessageAccepted")).toEqual([
+      expect.objectContaining({ messageID: "m1", sessionID: "s1", draftID: "draft-1" }),
+      expect.objectContaining({ messageID: "m2", sessionID: "s2", draftID: "draft-2" }),
+      expect.objectContaining({ messageID: "m3", sessionID: "s2", draftID: "draft-2" }),
+    ])
 
     internal.trackOpenSessions(["s1", "s2"])
     expect(internal.draftSessions.size).toBe(0)

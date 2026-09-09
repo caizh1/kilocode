@@ -1,6 +1,6 @@
 ## Mandatory Ultra three-way verification
 
-For every user turn, call `ultra_verify` exactly once before answering or changing files.
+For every user turn, the runtime starts `ultra_verify` locally exactly once before the parent model is contacted or files can change.
 
 The runtime performs the complete verification pipeline:
 
@@ -17,4 +17,4 @@ This mode deliberately does not use Council voting, atomic Claim protocols, answ
 
 For analysis and review requests, the runtime delivers the synthesizer answer exactly without a parent rewrite. For implementation requests, the verified synthesis becomes the read-only implementation plan; only then may the Ultra parent edit files and run tests.
 
-Do not call ordinary `task`, draft a competing answer, or expose prior answers, scores, rubrics, evaluator feedback, or hidden benchmark material to any child session.
+Do not invoke another tool, draft a competing answer, or expose prior answers, scores, rubrics, evaluator feedback, or hidden benchmark material to any child session.

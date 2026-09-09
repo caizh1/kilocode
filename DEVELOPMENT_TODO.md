@@ -6,6 +6,137 @@
 
 普通代码 TODO、当前 session 内的临时步骤、推测性风险和证据不足的问题不进入本台账。
 
+## DEV-016：降低 Webview 初始化阶段的最大长任务
+
+- 状态：`待开发`
+- 记录日期：2026-09-08
+- 模块：`packages/chipmate-ui` 共享初始化、高亮链路与 `packages/chipmate-vscode/qa/low-end`。
+- 证据：夜之城皮肤完整低配复测中，长会话返回已为 247/278ms，输入、滚动和内存指标通过；启动阶段最大长任务仍为 764/823ms，超过既有 500ms 门槛。原皮肤此前对照也存在该项失败。记录位于本地 `.qa-night-city-20260908/验收记录.md`，采样位于 `设置启动热点.cpuprofile`。
+- 已完成：修复静态 GrowBox 的逐条同步高度测量；修复长历史夹具缺少 flex 高度约束导致全部 1500 行挂载的问题，保留全部 1000 条消息及原阈值。
+- 延期原因：剩余热点位于共享初始化与高亮处理，尚未完成精确归因及安全拆分；本轮不以放宽阈值或排除启动数据宣称性能通过。
+- 验收：分别追踪真实 Webview 与 Storybook 初始化，定位超长任务；完成必要的异步拆分或延迟加载后，保持数据和阈值不变，重跑两种皮肤的完整低配基准，并回归代码高亮、静态消息、流式消息及展开收起。
+
+## DEV-015：修复原生 question 在会话中止后的等待清理
+
+- 状态：`待开发`
+- 记录日期：2026-09-08
+- 模块：`packages/opencode/src/session/tools.ts`、原生 `question` 工具。
+- 证据：真实 `/spec` 通过普通 Agent 调用 question 后执行会话取消，模型轮次已结束但问题等待记录仍存在；`SessionTools` 的 Promise 工具执行未将取消信号绑定到 question 的 Effect 等待。下一条普通消息会撤销旧问题，已验证不会续跑旧轮次。
+- 本轮复查：图页改动验证中，Spec 和普通 QA 中断回归均超时 40 秒；保留原命令测试服务集合、排除新增读图权限/文件锁服务后仍复现。先前“下一条消息恢复”证据不覆盖本轮超时，需重新定位当前取消执行最后事件；记录见 `packages/opencode/src/chipmate/spec/validation/图页阅读验证.md`。
+- 延期原因：本轮仅替换 Spec，保持普通 QA 工具调度与取消实现；该通用生命周期修复需独立实施。
+- 验收：从普通 QA 和命令两种真实入口创建问题，中止后等待、ToolPart 与前端卡片均终止；旧回答不可推进新轮次，同时验证不影响其他正在运行的会话。
+
+## DEV-014：完成 `/spec` 内网 Qwen、UFS 固件与人工效率验收
+
+- 状态：`待开发（本地实现与固定测试已完成，目标环境验收明确延期）`
+- 记录日期：2026-09-07
+- 模块：`packages/opencode/src/chipmate/spec`
+- 背景：用户确认当前机器没有目标模型，完成开发后自行带到内网真实机器验证。当前已切换为显式 Skill、原生 Agent 与 question，保留任务 Markdown 和验收统计；旧状态机的验收不覆盖新 Skill，不能据此宣称生产质量或减少人工 80%。
+- 下一步：按模块使用说明，在实际部署核对建议使用的 Qwen 的图像、上下文、Skill 遵循、提问质量和取消恢复能力；完成协议处理、调度资源、FTL/NAND 各至少三个已评审真实任务及 Windows/内网编译和 FPGA 验证。
+- 图页验收补充：按 `packages/opencode/src/chipmate/spec/validation/图页阅读验证.md` 完成人工标注长文档对照，检查上下文补读、否定分支/单位/脚注/跨页连接删除反例、关键漏项、主子会话实际 token 峰值及复核人工成本；本轮脚本化工具接入通过不能替代该质量验收。
+- 放行指标：条款映射覆盖 100%、证据准确率至少 95%、固定标注样本严重问题漏检为零、阻塞误报率不高于 5%、包含 FPGA 操作的人工时间减少至少 80%。保存真实输入、部署版本、独立标注、输出及全部人工耗时，再运行 `script/chipmate-spec-acceptance.ts` 汇总。
+
+## DEV-013：完成 Patent Server 六地区真实语料与 Patent Radar 质量发布验收
+
+- 状态：`进行中（源码、确定性门禁和本地评审闭环已实现，真实语料与质量基准待完成）`
+- 记录日期：2026-08-26
+- 模块：`server/chipmate-patent-server`、`packages/opencode/src/chipmate/patent-radar`、`packages/chipmate-vscode/src/patent-radar`
+- 背景：独立 Patent Server、流式导入、防覆盖 generation、混合检索、本地代码/文档候选提取、证据矩阵、20% 盲审和 VS Code 界面已经实现。当前没有六地区授权历史包与增量包、专用 Linux 主机、10 个真实嵌入式项目及人工金标准，因此不能宣称语料库已建成或达到生产质量。
+- 目标：取得 CN、JP、KR、US、EP、RU 真实历史与增量样本，冻结地区适配器和批次规则，在专用 Linux x86-64 主机完成全量导入与灾难重建，并执行固定专利冲突集和真实项目盲审。
+
+### 验收标准
+
+- 用真实包验证字段映射、编码、归档格式、记录数、历史基线、增量连续性、修订、软删除和失败后旧 generation 在线；完成 PostgreSQL/OpenSearch/原始包抽样一致性与完整重建。
+- 按实测单记录占用确认磁盘满足全部原始数据、规范化库、两代索引和 30% 余量，并完成 HTTPS、公司网段、模型端点和目标机恢复演练。
+- 已知冲突 `Recall@50 ≥ 95%`，固定冲突样本不得进入 `continue-human-review`；100% 报告引用可解析。
+- 至少覆盖 10 个真实嵌入式项目或模块和 100 个候选，主队列人工确认率至少 75%，相对人工基线减少至少 80% 阅读与初筛工作，同时保留至少 95% 人工已发现单篇冲突。
+
+### 完成记录
+
+2026-08-26 已完成源码实现和本地固定测试。当前机器缺少 Docker Compose，且尚未提供真实专利包、专用主机和人工基准，所以 Docker 全栈、目标机导入、六地区覆盖与质量指标均未验证。
+
+2026-09-03 已在本机 Docker 试运行环境导入中国专利周包并完成真实全文检索。待修复项：运行状态不得携带逐条不支持文件清单并由设置页每秒全量拉取；运行列表必须分页或只返回轻量摘要；模块预览与实际扫描不得重复执行全仓解析；已有扫描只能在模型与范围完全一致时恢复；初始工作区解析需要可观测进度与真实取消；归档导入需要单次流式展开并跨归档条目累计批次，避免每个 XML 单独启动解压进程和数据库提交。完成这些修复后，仍需在内网 Linux x86-64 真实项目和完整语料上复验。
+
+## DEV-012：完成 UFS Review 内网模型、真实固件与人工效率发布验收
+
+- 状态：`进行中（独立 Agent、只读多 Session 工具和确定性门禁已实现，真实 UFS 固件盲测待完成）`
+- 记录日期：2026-08-21
+- 模块：`packages/opencode/src/chipmate/ufs-review`、`packages/opencode/src/chipmate/tool/ufs-review.ts`、`packages/chipmate-vscode/webview-ui/src/components/chat/UfsReviewToolCard.tsx`
+- 背景：当前已实现专用 `UFS Review` Agent、自然语言强制工具门禁、Git/模块范围快照、2～4 路只读 Reviewer、一次格式重试、批量验证确认、对抗复核、证据降级、源码漂移检测、双门禁报告和 Code Agent 修复交接。公开代理样本和公司内部真实 UFS 设备固件的40组盲测、目标机证据及人工基线尚未执行，因此功能只能标记为技术预览。
+- 目标：冻结至少40组多文件缺陷/修复样本，每个审核方向至少10组且30%保持盲测；使用实际部署的 `deepseek-v4-flash` 和内部真实 UFS 固件完成同预算单 Session/多 Session 对照与人工效率验收。
+
+### 验收标准
+
+- P0/P1 召回率为100%，高影响问题召回率不低于95%，finding 精确率不低于90%，干净样本阻塞误报率不高于5%，P0/P1证据有效率为100%。
+- A1召回率不低于90%，干净样本错误 `NEEDS REWORK` 不高于5%，`LIMITED/INCOMPLETE/STALE/CANCELLED` 错误产生可批准结论的比例为0。
+- 同模型、同推理等级、同总 Token 预算下，多 Session 的 P0/P1 不低于单 Session；宏平均召回至少提升10个百分点，或无证据/重复 finding 减少30%，精确率下降不超过2个百分点。
+- 与同一批评审人员、相同代码范围的纯人工流程相比，主动阅读、判断和重复验证时间至少减少80%。
+- 在真实 VS Code Extension Host 中验证自然语言、全部范围快捷入口、批量命令确认、子 Session 查看、窄宽度/长文本/深浅色/高对比主题，以及切换 Code 修复后重新审核闭环。
+
+### 完成记录
+
+2026-08-21 已完成源码闭环、CLI与Webview类型检查、范围/漂移/调度/证据门禁固定测试及真实工具注册隔离测试。未使用 CodeGraph、代码RAG或Document RAG；未执行内部真实固件盲测、人工耗时对照和目标机运行，因此不得宣称生产可用或已减少人工80%。
+
+## DEV-011：完成本地聊天历史统一迁移的 Windows x64 真实 Profile 验收
+
+- 状态：`进行中（源码实现和 macOS 固定样本验证已完成，Windows x64 真实升级待验收）`
+- 记录日期：2026-08-19
+- 模块：`packages/opencode/src/chipmate/history`、`packages/chipmate-vscode/src/commands/chat-history-migration.ts`
+- 背景：当前已实现当前 VS Code Profile 内 `kilo.db`、旧 JSON 与 `chipmate.db` 的手动备份、幂等合并、冲突双份保留和安全恢复，并完成 WAL、恶意路径、重复执行和恢复不覆盖新聊天的固定测试；真实 Windows x64 安装态仍未验证。
+- 目标：在真实 Windows x64 当前 Profile 中准备 1.0.19 旧聊天，再由 1.1/1.2 创建新聊天并升级到包含迁移功能的版本，执行插件命令后验证两批历史并存且可继续对话。
+
+### 验收标准
+
+- 迁移前 ZIP 位于当前 Profile 的 `v2/data/migration-backups`，清单、CRC、SHA-256、数据库统计与未 checkpoint WAL 内容均通过校验。
+- 1.0.19 历史和 1.1/1.2 新聊天均可列出、打开、搜索和继续发送；当前聊天零覆盖、零删除，重复迁移零重复。
+- 活动回复、工具调用或后台会话任务存在时命令立即拒绝；空闲迁移后共享 Server、SSE 和历史列表自动恢复。
+- 使用代表性大库记录峰值 RSS、耗时和人工步骤，确认额外峰值 RSS 不超过 256 MiB，且人工操作相对手工停服、复制、合库、校验和重启减少至少 80%。
+
+### 完成记录
+
+2026-08-19 已完成 CLI、维护门禁、插件命令、备份/恢复安全校验和固定单测。随后在 macOS arm64 隔离 VS Code Profile 中实际安装 1.0.19、通过其捆绑 Server 创建中文会话，再覆盖安装 1.2.2 并从插件命令完成备份与迁移；新版捆绑 Server 可列出、打开并继续该旧会话，重复执行后仍为 1 个会话、2 条消息，最终插件命令执行期间旧 `kilo.db` 的修改时间保持不变。迁移 ZIP 的 CRC、清单 SHA-256、统计和数据库完整性独立校验通过，安装态 CLI 安全恢复后也未删除新消息。2,205,581,312 字节基准库迁移得到 1 个会话、1,401 条消息和 1,401 个 Part，源库 SHA-256 前后一致；最终 CLI 空载峰值 RSS 为 337,510,400 字节，迁移峰值为 571,260,928 字节，额外峰值 233,750,528 字节（约 222.9 MiB），低于 256 MiB 门禁。另一次真实中断留下 1 个会话、98 条消息、0 个 Part 和失主锁，修复后无需等待 stale 超时即可续迁为 1/1,401/1,401，只有一个完成标记且完整性检查通过。用户已明确允许以本次 macOS 实测作为当前发布门禁；仅 Windows x64 真实 Profile 互操作仍待完成，因此本事项继续保持进行中。
+
+## DEV-010：回收 Windows ChipMate 1.2.0 压缩诊断日志并确认根因
+
+- 状态：`待开发（源码诊断与模拟验证已完成，目标 Windows 现场复现待执行）`
+- 记录日期：2026-08-17
+- 模块：`packages/opencode/src/chipmate/session/compaction-diagnostics.ts`、Windows ChipMate 1.2.0 安装态
+- 背景：用户在 GLM 5.2 长对话切换到 DeepSeek V4 Flash 后观察到自动压缩及 `Compaction worker returned an empty response`，随后继续发送消息仍可工作。当前源码已增加仅含白名单元数据的 `compaction_diag` INFO/WARN 日志，并完成跨模型触发、reasoning-only 长度耗尽、正常摘要、无输出、provider 错误和失败后下一请求的模拟验证；尚无目标 Windows 现场日志，不能据此确认真实根因或压缩是否成功。
+- 目标：在发生问题的 Windows VS Code profile 中复现一次，从 `%APPDATA%\Code\User\globalStorage\chipmate.chipmate\v2\data\log\opencode.log` 回收同一 session 的 `compaction_diag` 记录，按消息 ID 串联触发、preflight、worker 和最终结果。
+
+### 验收标准
+
+- 若判定跨模型旧 token 误触发，必须同时观察到旧/新 provider 或 model 不一致、`reported_usage_check.triggered=true`，且下一条当前模型 `preflight_check` 明显低于阈值。
+- 若判定 reasoning 耗尽 worker 预算，必须同时观察到 `finish=length`、`textChars=0`、`reasoningChars>0`，且 reasoning token 接近 `workerBudgetTokenLimit=2048`。
+- 只有 `compaction_result` 无错误、`summaryTextChars>0`、`boundaryEligible=true` 且 `compactedEvent=true` 才判定压缩成功；后续消息能继续工作不能替代该证据。
+- 现场日志不得包含对话或摘要正文、reasoning 内容、文件路径、请求或响应体、endpoint、header 或凭据；回收前后均执行敏感信息检查。
+
+### 完成记录
+
+2026-08-17 已完成源码与固定模拟验证，未打包、未发布，目标 Windows 实机复现与日志回收未验证。
+
+## DEV-009：完成 ChipMate DeepSeek Harness 官方会话投影与双平台发布验收
+
+- 状态：`进行中（官方客户端投影已接通，双平台真实机和质量发布验收待完成）`
+- 记录日期：2026-08-15
+- 模块：`packages/chipmate-vscode/src/services/deepseek-harness`、`packages/chipmate-vscode/webview-ui/src/components/deepseek-harness`、`server/chipmate-word-render`
+- 背景：ChipMate 原有 QA 已接入未经修改的官方 DSH Web Profile，运行时、环境、工具和索引隔离、任务到官方 Session 映射、远程内容寻址安装、跨窗口租约、独立 Supervisor 与 Server 1.2.0 分发接口已经实现。固定版本的官方客户端通过官方 `ClientModuleSystem`、Cordis Loader 和固定 Web seed 表在 QA Webview 中运行，当前任务由官方 `SessionFace` 与 `ConversationSnapshot` 驱动；仍需完成 Windows/Linux 真实机和质量发布验收。
+- 目标：使用不修改官方投影逻辑的加载方式运行 `@deepseek-ai/dsh-client-runtime` 与 `@deepseek-ai/dsh-client-ui-conversation`，把官方节点投影到 ChipMate 原有 QA；完成 Windows 与 Linux 真实机、自动升级和质量对照后再发布 1.2.0。
+
+### 验收标准
+
+- 官方 `ConversationNodeAssembler`、Conversation Definitions 和 `ConversationSnapshot` 直接消费 Relay 的官方帧；删除原始 JSON 事件展示，不实现 ChipMate 自有 Harness 状态机。
+- 消息、reasoning、工具树、retry、compaction、queue、审批、问题、plan、子 Agent、workflow 和 unknown surface 的顺序与官方 DSH Web UI 一致。
+- 独立 Supervisor 在 Windows 与 Linux 上验证正常信号清理、15 秒强制终止、Extension Host 崩溃孤儿清理、多窗口租约和 PID 重用保护。
+- 完成固定 30 个真实任务的官方 Web UI 对照；综合评分、成功率和耗时达到 1.2.0 计划门槛。
+- P0/P1 审查为 `PASS`，Windows/Linux VSIX、运行时、Server 和真实升级门禁全部通过后，才允许进入自动更新清单。
+
+### 完成记录
+
+2026-08-15 已移除独立页面并恢复原有 QA 壳、Agent 和模型入口；完成命名空间迁移、DeepSeek-only 模型门禁、任务 Session 映射、私有 Home/Profile 校验、环境清洗、安装后逐文件复核和独立 Supervisor。随后删除服务层手写历史、Prompt、取消和审批状态机，Relay 改为转发完整官方 HTTP、mux、host 和插件事件流；QA 由官方 `SessionFace.prompt/cancel`、`PendingWait.respond` 和 `ConversationSnapshot.chat.order` 驱动。使用真实官方 `dsh web 0.1.0-rc.6` 模块图、真实 Session 和 Chromium 完成投影烟测，结果为 `open`。Windows/Linux 真实机、30 个质量任务和发布 P0/P1 总审查仍未完成，因此独立发布门禁继续禁止打包、部署和发布。
+
+2026-08-18 已在锁定的 AlmaLinux 8.10、glibc 2.28、linux/amd64 构建环境重建 Linux 运行时，补齐并实际加载 `sharp`、`node-pty` 和 Koffi，完成官方 DSH Web 监听、握手、双 WebSocket 与 SIGTERM 容器冒烟；同时全新生成 Windows x64 运行时并通过静态 PE 审计。Server 1.2.0 Docker/离线包和双平台 1.2.0 VSIX 手动验证候选已完成本地构建、哈希与内容审计；仍缺真实 Windows x64、真实 Linux x64、30 个质量任务及同版本替换回滚验收，因此未部署、未发布、未替换现有 1.2.0。
+
 ## DEV-008：高可信 C/C++ 代码注释发布定标
 
 - 状态：`进行中（入口和安全写入链路已实现，模型质量门槛未通过）`

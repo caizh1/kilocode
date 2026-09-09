@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test"
-import { compactionActive, compactionBoundary } from "../../webview-ui/src/context/compaction-activity"
+import {
+  compactionActive,
+  compactionBoundary,
+  compactionDisplayState,
+  compactionStatus,
+} from "../../webview-ui/src/context/compaction-activity"
 import type { Message, Part, SessionStatusInfo } from "../../webview-ui/src/types/messages"
 
 const base = {
@@ -19,6 +24,22 @@ const compact = (id: string): Part => ({
   messageID: id,
   type: "compaction",
   auto: true,
+})
+
+const tracked = (id: string, state: "running" | "succeeded" | "failed" | "interrupted", auto = true): Part => ({
+  id: `status-${id}`,
+  messageID: id,
+  type: "text",
+  text: "",
+  synthetic: true,
+  metadata: {
+    "chipmate.compaction": {
+      state,
+      source: auto ? "auto" : "manual",
+      startedAt: 1_000,
+      ...(state === "running" ? {} : { completedAt: 2_000 }),
+    },
+  },
 })
 
 const parts = (ids: string[]) => (id: string) => (ids.includes(id) ? [compact(id)] : [])
@@ -62,6 +83,15 @@ describe("compactionActive", () => {
     expect(compactionActive(messages, parts(["u1"]), status("idle"))).toBe(false)
     expect(compactionActive(messages, parts(["u1"]), status("retry"))).toBe(false)
     expect(compactionActive(messages, parts(["u1"]), status("offline"))).toBe(false)
+  })
+
+  it("retains compaction identity during retry and offline states when lifecycle metadata is running", () => {
+    const messages = [message("u1", "user")]
+    const lookup = (id: string) => (id === "u1" ? [compact(id), tracked(id, "running")] : [])
+    expect(compactionActive(messages, lookup, status("busy"))).toBe(true)
+    expect(compactionActive(messages, lookup, status("retry"))).toBe(true)
+    expect(compactionActive(messages, lookup, status("offline"))).toBe(true)
+    expect(compactionActive(messages, lookup, status("idle"))).toBe(false)
   })
 
   it("ends on an explicit summary failure", () => {
@@ -122,5 +152,86 @@ describe("compactionBoundary", () => {
       message("u2", "user"),
     ]
     expect(compactionBoundary(messages, parts(["u1"]))).toBe(1)
+  })
+
+  it("uses committed lifecycle state instead of a prematurely finished summary", () => {
+    const messages = [
+      message("u1", "user"),
+      message("a1", "assistant", { parentID: "u1", summary: true, finish: "stop" }),
+    ]
+    const failed = (id: string) => (id === "u1" ? [compact(id), tracked(id, "failed")] : [])
+    const succeeded = (id: string) => (id === "u1" ? [compact(id), tracked(id, "succeeded")] : [])
+    expect(compactionBoundary(messages, failed)).toBe(-1)
+    expect(compactionBoundary(messages, succeeded)).toBe(0)
+  })
+})
+
+describe("compactionStatus", () => {
+  it("parses durable lifecycle metadata and rejects unrelated synthetic parts", () => {
+    expect(compactionStatus([tracked("u1", "interrupted", false)])).toEqual({
+      state: "interrupted",
+      source: "manual",
+      startedAt: 1_000,
+      completedAt: 2_000,
+      attempt: 1,
+      attemptMode: "selected",
+      phase: "preparing",
+      completedUnits: undefined,
+      totalUnits: undefined,
+      reduceDepth: undefined,
+      activity: undefined,
+    })
+    expect(compactionStatus([{ id: "other", type: "text", text: "", synthetic: true }])).toBeUndefined()
+  })
+
+  it("treats an old running marker in an idle session as failed without guessing success", () => {
+    const value = compactionStatus([tracked("u1", "running")])!
+    expect(compactionDisplayState(value, status("busy"), 20_000)).toBe("running")
+    expect(compactionDisplayState(value, status("idle"), 10_999)).toBe("running")
+    expect(compactionDisplayState(value, status("idle"), 11_000)).toBe("failed")
+  })
+
+  it("parses determinate progress and rejects impossible counts", () => {
+    const value = tracked("u1", "running")
+    const metadata = value.type === "text" ? value.metadata?.["chipmate.compaction"] : undefined
+    expect(
+      compactionStatus([
+        {
+          ...value,
+          metadata: {
+            "chipmate.compaction": {
+              ...(metadata as Record<string, unknown>),
+              attempt: 2,
+              attemptMode: "none",
+              phase: "reduce",
+              completedUnits: 2,
+              totalUnits: 5,
+              reduceDepth: 1,
+            },
+          },
+        },
+      ]),
+    ).toMatchObject({
+      attempt: 2,
+      attemptMode: "none",
+      phase: "reduce",
+      completedUnits: 2,
+      totalUnits: 5,
+      reduceDepth: 1,
+    })
+    expect(
+      compactionStatus([
+        {
+          ...value,
+          metadata: {
+            "chipmate.compaction": {
+              ...(metadata as Record<string, unknown>),
+              completedUnits: 6,
+              totalUnits: 5,
+            },
+          },
+        },
+      ]),
+    ).toBeUndefined()
   })
 })

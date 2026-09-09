@@ -16,6 +16,7 @@ import {
 } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { ensureLinuxPoppler } from "./poppler-linux-helper"
 
 const version = "26.02.0-0"
 const file = `Release-${version}.zip`
@@ -35,6 +36,7 @@ export function popplerBinary(bin: string): string {
 }
 
 export async function ensurePopplerForTarget(target: string, bin: string): Promise<void> {
+  if (target === "linux-x64") return ensureLinuxPoppler(bin)
   if (target !== "win32-x64") return
   const dir = popplerDir(bin)
   rmSync(dir, { recursive: true, force: true })

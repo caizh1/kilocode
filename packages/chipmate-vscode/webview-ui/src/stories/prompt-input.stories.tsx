@@ -19,10 +19,13 @@ import { ServerContext } from "../context/server"
 import { PromptInput } from "../components/chat/PromptInput"
 import { UltraModeDialog } from "../components/shared/UltraModeDialog"
 import { DocumentModeDialog } from "../components/shared/DocumentModeDialog"
+import { DeepSeekHarnessDialog } from "../components/shared/DeepSeekHarnessDialog"
+import { DeepSeekHarnessContext, type DeepSeekHarnessContextValue } from "../context/deepseek-harness"
+import type { DeepSeekHarnessSnapshot } from "../../../src/shared/deepseek-harness"
 import type { AgentInfo, Config, IndexingStatus, Provider } from "../types/messages"
 import { SandboxTooltipContent } from "../components/shared/SandboxButton"
+import { PromptStatusIcon } from "../components/shared/PromptStatusIcon"
 import { Button } from "@chipmate/chipmate-ui/button"
-import { Icon } from "@chipmate/chipmate-ui/icon"
 import { Tooltip } from "@chipmate/chipmate-ui/tooltip"
 
 const agents = [
@@ -41,6 +44,14 @@ const documentAgent = {
   name: "document",
   displayName: "Document RAG",
   description: "Search indexed documents",
+  mode: "primary" as const,
+  native: true,
+}
+
+const deepSeekHarnessAgent = {
+  name: "deepseek-harness",
+  displayName: "ChipMate DeepSeek Harness",
+  description: "ChipMate QA over the unmodified official DSH Web Profile",
   mode: "primary" as const,
   native: true,
 }
@@ -104,6 +115,16 @@ const IndexFixture: ParentComponent<{ status?: IndexingStatus }> = (props) => {
   onMount(() => {
     if (!props.status) return
     window.dispatchEvent(new MessageEvent("message", { data: { type: "indexingStatusLoaded", status: props.status } }))
+  })
+  return props.children
+}
+
+const AutoApproveFixture: ParentComponent<{ active?: boolean }> = (props) => {
+  onMount(() => {
+    if (props.active === undefined) return
+    queueMicrotask(() => {
+      window.dispatchEvent(new MessageEvent("message", { data: { type: "autoApproveState", active: props.active } }))
+    })
   })
   return props.children
 }
@@ -175,11 +196,13 @@ const speechServer = {
 
 const PromptProviders: ParentComponent<{
   variants?: boolean
+  variantValues?: string[]
   modelOverride?: boolean
   indexing?: boolean
   longModel?: boolean
   speech?: boolean
   sandbox?: boolean
+  autoApprove?: boolean
   busy?: boolean
   none?: boolean
   autoFree?: boolean
@@ -187,6 +210,7 @@ const PromptProviders: ParentComponent<{
   documentScope?: "documents" | "documents_and_code"
   fullHeight?: boolean
   switchable?: boolean
+  materializable?: boolean
   agents?: AgentInfo[]
   agent?: string
   locale?: "en" | "zh" | "zht"
@@ -194,11 +218,45 @@ const PromptProviders: ParentComponent<{
   variant?: string
 }> = (props) => {
   const base = mockSessionValue({ status: props.busy ? "busy" : "idle" })
-  const [variant, setVariant] = createSignal(props.variant ?? "medium")
-  const [sid, update] = createSignal("story-session-001")
+  const [variant, setVariant] = createSignal<Record<string, string>>({})
+  const [sid, update] = createSignal(props.materializable ? "" : "story-session-001")
   const [aborts, tally] = createSignal(0)
   const [agent, setAgent] = createSignal(props.agent ?? (props.documentQwen ? "document" : "code"))
   const [selects, count] = createSignal(0)
+  const [dshActive, setDshActive] = createSignal(false)
+  const [dshActivations, countDshActivation] = createSignal(0)
+  const dshModel = { providerID: "deepseek", modelID: "deepseek-v4-flash", name: "DeepSeek V4 Flash" }
+  const dshSnapshot = (): DeepSeekHarnessSnapshot => ({
+    state: dshActive() ? "ready" : "stopped",
+    active: dshActive(),
+    sessions: [],
+    models: [dshModel],
+    providerOptions: [],
+    selectionState: dshActive() ? "ready" : "checking",
+    selectedModel: dshModel,
+    connectionGeneration: 1,
+    running: false,
+  })
+  const dsh: DeepSeekHarnessContextValue = {
+    active: dshActive,
+    snapshot: dshSnapshot,
+    conversation: () => undefined,
+    operationError: () => undefined,
+    pending: () => [],
+    readyForInput: dshActive,
+    eligible: () => [dshModel],
+    selectedModel: () => dshModel,
+    activate: () => {
+      countDshActivation((value) => value + 1)
+      setDshActive(true)
+    },
+    deactivate: () => setDshActive(false),
+    send: async () => undefined,
+    cancel: async () => undefined,
+    selectModel: async () => undefined,
+    selectReasoningEffort: async () => undefined,
+    post: noop,
+  }
   const selected = () => {
     if (props.none) return null
     if (props.autoFree) return { providerID: "chipmate", modelID: "chipmate-auto/free" }
@@ -221,9 +279,10 @@ const PromptProviders: ParentComponent<{
     },
     selected,
     getSessionModel: selected,
-    variantList: () => (props.variants ? ["low", "medium", "high"] : []),
-    currentVariant: () => (props.variants ? variant() : undefined),
-    selectVariant: (value: string) => setVariant(value),
+    variantList: () => props.variantValues ?? (props.variants ? ["low", "medium", "high"] : []),
+    currentVariant: () =>
+      props.variantValues || props.variants ? (variant()[sid()] ?? props.variant ?? "medium") : undefined,
+    selectVariant: (value: string) => setVariant((current) => ({ ...current, [sid()]: value })),
     hasModelOverride: () => props.modelOverride ?? false,
     clearModelOverride: noop,
     abort: () => tally((value) => value + 1),
@@ -247,53 +306,65 @@ const PromptProviders: ParentComponent<{
       connected={props.documentQwen ? ["myprovider"] : undefined}
     >
       <IndexFixture status={props.index}>
-        {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
-        <div class="chat-view" data-ui="qa-shell" style={{ overflow: "hidden" }}>
-          {props.fullHeight ? <div aria-hidden="true" style={{ flex: "1 1 auto" }} /> : null}
-          <div class="chat-input" data-ui="qa-dock">
-            {props.speech ? (
-              <ServerContext.Provider value={speechServer as any}>
-                <SessionContext.Provider value={session as any}>
-                  {props.children}
-                  <span hidden data-ui="qa-abort-count">
-                    {aborts()}
-                  </span>
-                  <span hidden data-ui="qa-agent-select-count">
-                    {selects()}
-                  </span>
-                  {props.switchable ? (
-                    <button
-                      hidden
-                      data-ui="qa-switch-session"
-                      onClick={() =>
-                        update((value) => (value === "story-session-001" ? "story-session-002" : "story-session-001"))
-                      }
-                    />
-                  ) : null}
-                </SessionContext.Provider>
-              </ServerContext.Provider>
-            ) : (
-              <SessionContext.Provider value={session as any}>
-                {props.children}
-                <span hidden data-ui="qa-abort-count">
-                  {aborts()}
-                </span>
-                <span hidden data-ui="qa-agent-select-count">
-                  {selects()}
-                </span>
-                {props.switchable ? (
-                  <button
-                    hidden
-                    data-ui="qa-switch-session"
-                    onClick={() =>
-                      update((value) => (value === "story-session-001" ? "story-session-002" : "story-session-001"))
-                    }
-                  />
-                ) : null}
-              </SessionContext.Provider>
-            )}
-          </div>
-        </div>
+        <AutoApproveFixture active={props.autoApprove}>
+          <DeepSeekHarnessContext.Provider value={dsh}>
+            {/* overflow:hidden prevents margin-collapse so top/bottom borders are captured in screenshots */}
+            <div class="chat-view" data-ui="qa-shell" style={{ overflow: "hidden" }}>
+              {props.fullHeight ? <div aria-hidden="true" style={{ flex: "1 1 auto" }} /> : null}
+              <div class="chat-input" data-ui="qa-dock">
+                {props.speech ? (
+                  <ServerContext.Provider value={speechServer as any}>
+                    <SessionContext.Provider value={session as any}>
+                      {props.children}
+                      <span hidden data-ui="qa-abort-count">
+                        {aborts()}
+                      </span>
+                      <span hidden data-ui="qa-agent-select-count">
+                        {selects()}
+                      </span>
+                      {props.switchable ? (
+                        <button
+                          hidden
+                          data-ui="qa-switch-session"
+                          onClick={() =>
+                            update((value) =>
+                              value === "story-session-001" ? "story-session-002" : "story-session-001",
+                            )
+                          }
+                        />
+                      ) : null}
+                    </SessionContext.Provider>
+                  </ServerContext.Provider>
+                ) : (
+                  <SessionContext.Provider value={session as any}>
+                    {props.children}
+                    <span hidden data-ui="qa-abort-count">
+                      {aborts()}
+                    </span>
+                    <span hidden data-ui="qa-agent-select-count">
+                      {selects()}
+                    </span>
+                    {props.switchable ? (
+                      <button
+                        hidden
+                        data-ui="qa-switch-session"
+                        onClick={() =>
+                          update((value) => (value === "story-session-001" ? "story-session-002" : "story-session-001"))
+                        }
+                      />
+                    ) : null}
+                  </SessionContext.Provider>
+                )}
+              </div>
+            </div>
+            <span hidden data-ui="qa-dsh-activation-count">
+              {dshActivations()}
+            </span>
+            {props.materializable ? (
+              <button hidden data-ui="qa-materialize-session" onClick={() => update("story-session-001")} />
+            ) : null}
+          </DeepSeekHarnessContext.Provider>
+        </AutoApproveFixture>
       </IndexFixture>
     </StoryProviders>
   )
@@ -354,6 +425,33 @@ export const Default200: Story = {
   name: "Default — 200px",
   render: () => (
     <PromptProviders>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAAutoApproveDisabled420: Story = {
+  name: "QA auto-approve — disabled — 420px",
+  render: () => (
+    <PromptProviders autoApprove={false}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAAutoApproveEnabled420: Story = {
+  name: "QA auto-approve — enabled — 420px",
+  render: () => (
+    <PromptProviders autoApprove>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const QAAutoApproveEnabled200: Story = {
+  name: "QA auto-approve — enabled — 200px",
+  render: () => (
+    <PromptProviders autoApprove>
       <PromptInput />
     </PromptProviders>
   ),
@@ -435,6 +533,57 @@ export const DocumentConfirmation200: Story = {
         <DocumentModeDialog open onConfirm={noop} />
       </PromptProviders>
     </FullHeight>
+  ),
+}
+
+export const DeepSeekHarnessSelection420: Story = {
+  name: "ChipMate DeepSeek Harness selection — 420px",
+  render: () => (
+    <PromptProviders agents={[...agents, deepSeekHarnessAgent]}>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const DeepSeekHarnessConfirmation420: Story = {
+  name: "ChipMate DeepSeek Harness confirmation — 420px",
+  render: () => (
+    <FullHeight>
+      <PromptProviders agents={[...agents, deepSeekHarnessAgent]} fullHeight locale="zh">
+        <PromptInput />
+        <DeepSeekHarnessDialog open onConfirm={noop} />
+      </PromptProviders>
+    </FullHeight>
+  ),
+}
+
+export const DeepSeekHarnessConfirmation200: Story = {
+  name: "ChipMate DeepSeek Harness confirmation — 200px",
+  render: () => (
+    <FullHeight>
+      <PromptProviders agents={[...agents, deepSeekHarnessAgent]} fullHeight locale="zh">
+        <PromptInput />
+        <DeepSeekHarnessDialog open onConfirm={noop} />
+      </PromptProviders>
+    </FullHeight>
+  ),
+}
+
+export const DeepSeekHarnessSessionSwitch420: Story = {
+  name: "ChipMate DeepSeek Harness confirmation — session switch",
+  render: () => (
+    <PromptProviders agents={[...agents, deepSeekHarnessAgent]} switchable>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const DeepSeekHarnessPendingSession420: Story = {
+  name: "ChipMate DeepSeek Harness confirmation — pending session materializes",
+  render: () => (
+    <PromptProviders agents={[...agents, deepSeekHarnessAgent]} materializable>
+      <PromptInput />
+    </PromptProviders>
   ),
 }
 
@@ -541,7 +690,7 @@ export const SandboxTooltipEnabled: Story = {
           placement="top"
         >
           <Button variant="ghost" size="small" class="prompt-status-button prompt-status-button--active">
-            <Icon name="lock" size="small" />
+            <PromptStatusIcon name="lock" />
           </Button>
         </Tooltip>
       </div>
@@ -561,7 +710,7 @@ export const SandboxTooltipDisabled: Story = {
           placement="top"
         >
           <Button variant="ghost" size="small" class="prompt-status-button">
-            <Icon name="lock" size="small" />
+            <PromptStatusIcon name="lock" />
           </Button>
         </Tooltip>
       </div>
@@ -586,6 +735,15 @@ export const WithThinking200: Story = {
   name: "With thinking selector — 200px",
   render: () => (
     <PromptProviders variants>
+      <PromptInput />
+    </PromptProviders>
+  ),
+}
+
+export const Qwen38ThinkingZh: Story = {
+  name: "Qwen3.8 thinking selector — Chinese",
+  render: () => (
+    <PromptProviders locale="zh" variantValues={["xhigh", "medium", "low", "none"]} variant="xhigh" switchable>
       <PromptInput />
     </PromptProviders>
   ),

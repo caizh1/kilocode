@@ -1,0 +1,126 @@
+/* 图标始终处于正常文档流；收起后抽屉不保留尺寸。 */
+.chat-view [data-component="turn-changes-dock"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+  width: min(calc(100% - 24px), var(--qa-composer-max-width, 100%));
+  min-width: 0;
+  margin: 0 auto;
+  padding: 0;
+  gap: 0;
+  color: var(--vscode-descriptionForeground);
+}
+.chat-view [data-slot="turn-changes-drawer"] {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 150ms ease,
+    visibility 150ms;
+}
+.chat-view [data-expanded="true"] > [data-slot="turn-changes-drawer"] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+}
+[data-slot="turn-changes-drawer-clip"] {
+  min-height: 0;
+  overflow: hidden;
+}
+[data-slot="turn-changes-drawer-content"] {
+  box-sizing: border-box;
+  max-height: 56px;
+  overflow: hidden;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 20px;
+  background: var(--vscode-editor-background);
+  border-top: 1px solid var(--vscode-widget-border, var(--border-base));
+}
+[data-slot="turn-changes-drawer-line"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+[data-slot="turn-changes-drawer-line"] > span:not([data-component="spinner"]) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+[data-slot="turn-changes-drawer-count"] {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+[data-slot="turn-changes-drawer-reason"] {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.turn-changes-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+.chat-view [data-slot="turn-changes-toggle"] {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+  flex: 0 0 16px;
+  width: 28px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.chat-view [data-slot="turn-changes-toggle"] .codicon {
+  font-size: 8px;
+  width: 8px;
+  height: 8px;
+  line-height: 8px;
+}
+.chat-view [data-slot="turn-changes-toggle"]:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+.chat-view [data-slot="turn-changes-toggle"]:hover {
+  color: var(--vscode-foreground);
+}
+.chat-view[data-ui="qa-shell"]
+  .chat-input:has([data-component="turn-changes-dock"])
+  .prompt-input-container[data-ui="qa-composer"] {
+  margin-top: 0;
+}
+.chat-view:has([data-component="turn-changes-dock"]) .chat-input > .prompt-input-container {
+  margin-top: 0;
+}
+.chat-view[data-ui="qa-shell"] .message-list {
+  padding-bottom: 8px;
+}
+/* 隐藏的修改结果连同虚拟行间距归零，不能只隐藏卡片内部。 */
+.chat-view .vscode-session-turn[data-row="diff"]:not(:has([data-component="turn-changes"])) {
+  display: none;
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+}
+body.vscode-reduce-motion [data-slot="turn-changes-drawer"] {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  body:not([data-vscode-theme-id]) [data-slot="turn-changes-drawer"] {
+    transition: none;
+  }
+}

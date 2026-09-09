@@ -13,7 +13,16 @@ import { EffectBridge } from "@/effect/bridge"
 import type { LLMEvent, ProviderMetadata, Usage } from "@opencode-ai/llm"
 import type { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionRetry } from "@/session/retry"
-import { computeMetrics as computeMetricsHelper, type TokenRates } from "@/chipmate/session/metrics"
+import {
+  computeMetrics as computeMetricsHelper,
+  finishStepPerformance as finishStepPerformanceHelper,
+  observeFirstToken as observeFirstTokenHelper,
+  observeToolFinish as observeToolFinishHelper,
+  observeToolStart as observeToolStartHelper,
+  startStepPerformance as startStepPerformanceHelper,
+  type StepPerformanceTimer,
+  type TokenRates,
+} from "@/chipmate/session/metrics"
 
 export type ReviewTelemetry = {
   mode: "review"
@@ -136,6 +145,12 @@ export namespace ChipMateSessionProcessor {
 
   /** Pure throughput helper re-exported for namespace symmetry. */
   export const computeMetrics: typeof computeMetricsHelper = computeMetricsHelper
+  export const finishStepPerformance: typeof finishStepPerformanceHelper = finishStepPerformanceHelper
+  export const observeFirstToken: typeof observeFirstTokenHelper = observeFirstTokenHelper
+  export const observeToolFinish: typeof observeToolFinishHelper = observeToolFinishHelper
+  export const observeToolStart: typeof observeToolStartHelper = observeToolStartHelper
+  export const startStepPerformance: typeof startStepPerformanceHelper = startStepPerformanceHelper
+  export type StepTimer = StepPerformanceTimer
   /** Returned shape for downstream consumers that prefer the namespace. */
   export type Metrics = TokenRates
 

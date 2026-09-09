@@ -1,9 +1,9 @@
+import { diagnostic } from "../diagnostics/record"
 import * as vscode from "vscode"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
 import { createReadStream } from "node:fs"
-import { exec as run } from "../../util/process"
 import { chipmateServerEndpoints } from "../chipmate-server"
 import {
   CHIPMATE_UPDATE_TARGETS,
@@ -11,7 +11,9 @@ import {
   type ChipmateUpdateResult,
   type ChipmateUpdateTarget,
 } from "../../shared/update-check"
-import { installDetail, resolveInstall, type Exec } from "./install"
+import { installDetail, installInCurrentProfile } from "./install"
+import { compareVersions, parseVersion } from "./version"
+export { compareVersions } from "./version"
 import { readVsixManifest } from "./vsix"
 import {
   markPendingUpdateReloadRequested,
@@ -26,10 +28,8 @@ export const LAST_WARNING_KEY = "chipmate.v2.updateCheck.lastWarningMs"
 const DEFAULT_INTERVAL = 24
 const DEFAULT_TIMEOUT = 30_000
 const DEFAULT_DOWNLOAD_TIMEOUT = 15 * 60_000
-const DEFAULT_CODE = "code"
 const DEFAULT_MAX = 536_870_912
 const DEFAULT_IDLE = 60_000
-const INSTALL_TIMEOUT = 5 * 60_000
 const CANDIDATE_TIMEOUT = 30 * 60_000
 const INSTALL_AND_RELOAD = "Install and Reload Window"
 const RETRY_RELOAD = "Retry Reload Window"
@@ -77,7 +77,6 @@ type Config = {
   intervalHours: number
   timeoutMs: number
   downloadTimeoutMs: number
-  codeCliPath: string
   maxDownloadBytes: number
 }
 
@@ -94,7 +93,7 @@ export type UpdateLog = Pick<Console, "log" | "warn" | "error"> & {
 
 type Deps = {
   fetch: typeof fetch
-  exec: Exec
+  install: (file: string) => Promise<void>
   now: () => number
   updates: () => string
   log: UpdateLog
@@ -131,6 +130,7 @@ type Probe =
   | { status: "available"; currentVersion: string; target: Target; item: Package; url: URL }
 
 export class UpdateCheckService implements vscode.Disposable {
+  private disposed = false
   private timer: ReturnType<typeof setTimeout> | undefined
   private readonly disposables: vscode.Disposable[] = []
   private readonly controllers = new Set<AbortController>()
@@ -147,7 +147,7 @@ export class UpdateCheckService implements vscode.Disposable {
     this.owns = !deps.log
     this.deps = {
       fetch: deps.fetch ?? fetch,
-      exec: deps.exec ?? run,
+      install: deps.install ?? installInCurrentProfile,
       now: deps.now ?? Date.now,
       updates: deps.updates ?? updateManifestUrl,
       log: deps.log ?? createUpdateLog(),
@@ -283,6 +283,7 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.disposed = true
     if (this.timer) clearTimeout(this.timer)
     for (const ctrl of this.controllers) ctrl.abort()
     this.controllers.clear()
@@ -420,7 +421,10 @@ export class UpdateCheckService implements vscode.Disposable {
     if (current?.state === "installing") return current.promise
 
     const fromVersion = this.identity().version
-    const task = this.install(cfg, file).then(() => this.rememberPendingActivation(item, fromVersion))
+    const task = this.install(file).then(() => {
+      this.ensureActive()
+      return this.rememberPendingActivation(item, fromVersion)
+    })
     this.transactions.set(key, { state: "installing", promise: task, file })
     try {
       await task
@@ -438,7 +442,9 @@ export class UpdateCheckService implements vscode.Disposable {
       this.info(`版本 ${item.version} 的安装并重载事务已在运行或完成，复用现有结果。`)
       return current
     }
+    this.ensureActive()
     const task = this.apply(cfg, item, url).then(async () => {
+      this.ensureActive()
       this.info(`版本 ${item.version} 已安装，立即请求完整窗口重载。`)
       await this.requestReload(item.version)
     })
@@ -453,6 +459,7 @@ export class UpdateCheckService implements vscode.Disposable {
 
   private async requestReload(version: string): Promise<void> {
     while (true) {
+      this.ensureActive()
       let pending: PendingUpdateActivation | undefined
       try {
         pending = await markPendingUpdateReloadRequested(this.context, this.deps.now())
@@ -473,6 +480,7 @@ export class UpdateCheckService implements vscode.Disposable {
           "ChipMate installed the update but its activation receipt is missing. Check for updates again before reloading.",
         )
       }
+      this.ensureActive()
       this.info(`已请求完整窗口重载以激活版本 ${pending.expectedVersion}（尝试 ${pending.reloadAttempts ?? 1}）。`)
       try {
         await vscode.commands.executeCommand("workbench.action.reloadWindow")
@@ -640,32 +648,28 @@ export class UpdateCheckService implements vscode.Disposable {
     }
   }
 
-  private async install(cfg: Config, file: string): Promise<void> {
+  private async install(file: string): Promise<void> {
+    this.ensureActive()
     const start = this.deps.now()
     try {
-      const call = resolveInstall(cfg.codeCliPath, file)
-      this.info(`开始安装：安装器 ${call.label}，命令 ${call.display}。`)
-      const result = await this.deps.exec(call.cmd, call.args, {
-        ...call.opts,
-        timeout: INSTALL_TIMEOUT,
-        windowsHide: true,
-      })
-      const elapsed = this.deps.now() - start
-      const stdout = result.stdout.trim()
-      const stderr = result.stderr.trim()
-      this.info(`安装器成功退出：退出码 0，耗时 ${elapsed} 毫秒。`)
-      if (stderr) this.warn(`安装器 stderr：${clip(stderr)}。`)
-      if (stdout) this.info(`安装器 stdout：${clip(stdout)}。`)
+      this.info(`开始安装：使用当前窗口的 VS Code 扩展安装服务，文件 ${file}。`)
+      await this.deps.install(file)
+      this.ensureActive()
+      this.info(`当前窗口的扩展安装服务已完成，耗时 ${this.deps.now() - start} 毫秒；等待重载确认运行版本。`)
     } catch (err) {
       const detail = installDetail(err)
-      this.errorLog(`安装阶段失败：${detail}`)
+      this.errorLog(`安装阶段未完成：${detail}`)
       throw new UpdateError(
         "install",
-        `Failed to install VSIX: ${detail}`,
-        `ChipMate update install failed. The verified VSIX was kept for retry.\n${detail}`,
+        `Failed to install VSIX in the current profile: ${detail}`,
+        `ChipMate update was not confirmed in the current profile. The verified VSIX was kept.\n${detail}`,
         file,
       )
     }
+  }
+
+  private ensureActive(): void {
+    if (this.disposed) throw new UpdateError("install", "The update window was closed or its profile changed.")
   }
 
   private async rememberPendingActivation(item: Package, fromVersion: string): Promise<void> {
@@ -705,6 +709,7 @@ export class UpdateCheckService implements vscode.Disposable {
   }
 
   private async warning(text: string, ...items: string[]): Promise<string | undefined> {
+    if (this.disposed) return undefined
     try {
       return await vscode.window.showWarningMessage(text, ...items)
     } catch (err) {
@@ -755,7 +760,7 @@ export class UpdateCheckService implements vscode.Disposable {
   private schedule(cfg = this.config()): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
-    if (!cfg.enabled || cfg.intervalHours <= 0) return
+    if (this.disposed || !cfg.enabled || cfg.intervalHours <= 0) return
     const last = this.context.globalState.get<number>(LAST_AUTO_KEY, 0)
     const wait = last > 0 ? Math.max(0, last + intervalMs(cfg) - this.deps.now()) : intervalMs(cfg)
     this.timer = setTimeout(() => {
@@ -772,7 +777,6 @@ export class UpdateCheckService implements vscode.Disposable {
       intervalHours: positive(cfg.get("intervalHours", DEFAULT_INTERVAL), DEFAULT_INTERVAL),
       timeoutMs: positive(cfg.get("timeoutMs", DEFAULT_TIMEOUT), DEFAULT_TIMEOUT),
       downloadTimeoutMs: positive(cfg.get("downloadTimeoutMs", DEFAULT_DOWNLOAD_TIMEOUT), DEFAULT_DOWNLOAD_TIMEOUT),
-      codeCliPath: nonempty(cfg.get("codeCliPath", DEFAULT_CODE), DEFAULT_CODE),
       maxDownloadBytes: positive(cfg.get("maxDownloadBytes", DEFAULT_MAX), DEFAULT_MAX),
     }
   }
@@ -848,19 +852,6 @@ export function resolvePackageUrl(base: URL, value: string): URL {
   return url
 }
 
-export function compareVersions(a: string, b: string): number {
-  const left = parseVersion(a)
-  const right = parseVersion(b)
-  if (!left || !right) return 0
-  for (const index of [0, 1, 2] as const) {
-    if (left.main[index] !== right.main[index]) return left.main[index] > right.main[index] ? 1 : -1
-  }
-  if (left.pre === right.pre) return 0
-  if (!left.pre) return 1
-  if (!right.pre) return -1
-  return left.pre > right.pre ? 1 : left.pre < right.pre ? -1 : 0
-}
-
 function updateManifestUrl(): string {
   const result = chipmateServerEndpoints()
   if (!result.endpoints)
@@ -871,6 +862,7 @@ function updateManifestUrl(): string {
 export function createUpdateLog(): UpdateLog {
   const channel = vscode.window.createOutputChannel("ChipMate 更新", { log: true })
   const emit = (level: "info" | "warn" | "error", value: unknown) => {
+    diagnostic("更新阶段", { message: String(value) }, level === "error" ? "ERROR" : level === "warn" ? "WARN" : "INFO", "update")
     const raw = sanitize(String(value).replace(/^\[ChipMate New\]\s*/, ""))
     for (const line of raw.split(/\r?\n/)) {
       channel[level](`[ChipMate New] [${new Date().toISOString()}] ${line}`)
@@ -1039,25 +1031,12 @@ function hashFile(file: string): Promise<string> {
   })
 }
 
-function parseVersion(value: string): { main: [number, number, number]; pre: string } | undefined {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value)
-  if (!match) return undefined
-  return {
-    main: [Number(match[1]), Number(match[2]), Number(match[3])],
-    pre: match[4] ?? "",
-  }
-}
-
 function intervalMs(cfg: Config): number {
   return cfg.intervalHours * 60 * 60 * 1000
 }
 
 function safe(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]/g, "_")
-}
-
-function nonempty(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback
 }
 
 function positive(value: unknown, fallback: number): number {

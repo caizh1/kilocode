@@ -1000,6 +1000,18 @@ body:has(.chat-view[data-ui="qa-shell"]),
   box-shadow: var(--titanium-control-shadow);
 }
 
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions .prompt-status-button--active,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions .prompt-status-button--active:hover,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions .prompt-status-button--active:active,
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions .prompt-status-button--active:focus-visible {
+  color: var(--prompt-status-success);
+}
+
+.chat-view[data-ui="qa-shell"] .prompt-input-hint-actions .prompt-status-indicator {
+  background: var(--prompt-status-success);
+  box-shadow: 0 0 0 1px var(--titanium-raised);
+}
+
 .chat-view[data-ui="qa-shell"] .prompt-indexing-summary-button,
 .chat-view[data-ui="qa-shell"] .prompt-overflow-button {
   display: none;
@@ -2531,10 +2543,10 @@ body:has(.chat-view[data-ui="qa-shell"]) .thinking-selector-item-state .codicon 
 
 /* --------------------- Theme and capability fallbacks ------------------ */
 
-body.vscode-light:has(.chat-view[data-ui="qa-shell"]),
-body.vscode-light:has(.settings-shell),
-.vscode-light .chat-view[data-ui="qa-shell"],
-.vscode-light .settings-shell {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light:has(.chat-view[data-ui="qa-shell"]),
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light:has(.settings-shell),
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell {
   --titanium-deep: #fbfcfe;
   --titanium-canvas: #ffffff;
   --titanium-panel: #f8fafc;
@@ -2569,38 +2581,38 @@ body.vscode-light:has(.settings-shell),
 
 /* ----------------------- Light material application ------------------- */
 
-body.vscode-light .chat-view[data-ui="qa-shell"],
-.vscode-light .chat-view[data-ui="qa-shell"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] {
   background:
     radial-gradient(circle at 58% -12%, var(--qa-shell-ambient), transparent 42%),
     linear-gradient(155deg, var(--titanium-canvas) 0%, var(--titanium-deep) 100%);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"],
-.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-conversation"] {
   background: transparent;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty,
-.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty {
   width: min(100%, 520px);
   padding: 28px 20px;
   gap: 12px;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo,
-.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo {
   width: 64px;
   height: 64px;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo img,
-.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo img {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo img,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .chipmate-logo img {
   filter: saturate(1.04) brightness(1.03) drop-shadow(0 8px 18px rgba(0, 122, 255, 0.14));
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-product-title,
-.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-product-title {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-product-title,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .chipmate-product-title {
   display: block;
   margin: 2px 0 0;
   color: var(--titanium-text);
@@ -2610,8 +2622,8 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-product-title,
   letter-spacing: -0.015em;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-about-text,
-.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-about-text {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-about-text,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .chipmate-about-text {
   max-width: 360px;
   margin: 0;
   color: var(--titanium-muted);
@@ -2620,15 +2632,15 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .chipmate-about-text,
   line-height: 1.55;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions {
   width: min(100%, 492px);
   max-width: 492px;
   gap: 8px;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label {
   padding: 0 4px;
   color: var(--titanium-muted);
   font-size: var(--chipmate-font-size-12);
@@ -2637,8 +2649,8 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .recent-sessions-label,
   text-transform: none;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -2653,8 +2665,8 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-list,
   -webkit-backdrop-filter: var(--titanium-blur);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item {
   min-height: 52px;
   padding: 0 20px;
   border: 0;
@@ -2664,21 +2676,21 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item,
   box-shadow: none;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-title,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-title {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-title,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-session-title {
   color: var(--titanium-text);
   font-size: var(--chipmate-font-size-14);
   font-weight: 500;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-date,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-date {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-date,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-session-date {
   color: var(--titanium-muted);
   font-size: var(--chipmate-font-size-12);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn,
-.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn {
   min-height: 44px;
   margin: 0;
   border: 0;
@@ -2687,17 +2699,17 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn,
   box-shadow: none;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item:hover,
-body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn:hover,
-.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item:hover,
-.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn:hover {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item:hover,
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn:hover,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .recent-session-item:hover,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .show-history-btn:hover {
   border-color: #edf1f5;
   background: rgba(0, 122, 255, 0.05);
   box-shadow: none;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .feedback-button,
-.vscode-light .chat-view[data-ui="qa-shell"] .feedback-button {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .feedback-button,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .feedback-button {
   min-height: 42px;
   padding-inline: 16px;
   border-color: var(--titanium-line);
@@ -2706,15 +2718,15 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .feedback-button,
   box-shadow: var(--titanium-control-shadow);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-dock"],
-.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-dock"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-dock"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-dock"] {
   border-top-color: #e7ecf1;
   background: rgba(251, 252, 254, 0.94);
   box-shadow: 0 -8px 20px rgba(31, 50, 72, 0.035);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"],
-.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
   width: min(calc(100% - 32px), var(--qa-composer-max-width));
   margin: 10px auto 16px;
   padding: 10px;
@@ -2724,8 +2736,8 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui
   box-shadow: var(--titanium-card-shadow);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within,
-.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"]:focus-within {
   border-color: rgba(0, 122, 255, 0.38);
   background: var(--titanium-raised);
   box-shadow:
@@ -2733,8 +2745,8 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui
     var(--titanium-card-shadow);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"],
-.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"] {
   min-height: 46px;
   padding: 0;
   border-color: var(--titanium-line);
@@ -2742,10 +2754,10 @@ body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui
   box-shadow: var(--titanium-card-shadow);
 }
 
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .chat-view[data-ui="qa-shell"]
   .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"]:focus-within,
-.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light
   .chat-view[data-ui="qa-shell"]
   .prompt-input-container[data-ui="qa-composer"][data-state="collapsed"]:focus-within {
   border-color: var(--titanium-line);
@@ -2753,30 +2765,30 @@ body.vscode-light
   box-shadow: var(--titanium-card-shadow);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"],
-.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-wrapper[data-ui="qa-composer-input"] {
   border-color: var(--titanium-input-border);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.76);
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] :is(.prompt-input, .prompt-input-highlight-overlay),
-.vscode-light .chat-view[data-ui="qa-shell"] :is(.prompt-input, .prompt-input-highlight-overlay) {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] :is(.prompt-input, .prompt-input-highlight-overlay),
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] :is(.prompt-input, .prompt-input-highlight-overlay) {
   min-height: 64px;
   max-height: 180px;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"],
-.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-hint-selectors [data-component="button"] {
   height: 38px !important;
   min-height: 38px;
 }
 
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .chat-view[data-ui="qa-shell"]
   .prompt-input-hint-actions
   :is([data-component="button"], [data-component="icon-button"]),
-.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light
   .chat-view[data-ui="qa-shell"]
   .prompt-input-hint-actions
   :is([data-component="button"], [data-component="icon-button"]) {
@@ -2784,8 +2796,8 @@ body.vscode-light
   min-height: 38px;
 }
 
-body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:not(:disabled),
-.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:not(:disabled) {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:not(:disabled),
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:not(:disabled) {
   color: #ffffff;
   border-color: color-mix(in srgb, var(--titanium-accent) 76%, white);
   background: var(--titanium-accent);
@@ -2794,39 +2806,39 @@ body.vscode-light .chat-view[data-ui="qa-shell"] [data-ui="qa-action-submit"]:no
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
-body.vscode-light .settings-shell,
-.vscode-light .settings-shell {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell {
   background: var(--titanium-panel);
 }
 
-body.vscode-light .settings-shell .settings-brand-icon,
-.vscode-light .settings-shell .settings-brand-icon {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-brand-icon,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-brand-icon {
   box-shadow:
     0 6px 16px rgba(31, 50, 72, 0.08),
     inset 0 1px 0 var(--titanium-highlight);
 }
 
-body.vscode-light .settings-shell .settings-header-actions [data-component="button"],
-.vscode-light .settings-shell .settings-header-actions [data-component="button"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-header-actions [data-component="button"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-header-actions [data-component="button"] {
   min-height: 36px;
   border-radius: 9px;
   font-size: var(--chipmate-font-size-13);
 }
 
-body.vscode-light .settings-shell .settings-close-button[data-component="button"],
-.vscode-light .settings-shell .settings-close-button[data-component="button"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-close-button[data-component="button"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-close-button[data-component="button"] {
   flex-basis: 36px;
   width: 36px;
   height: 36px;
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-component="tabs"],
-.vscode-light .settings-shell .settings-tabs[data-component="tabs"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-component="tabs"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-component="tabs"] {
   gap: 8px;
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
   flex-basis: 216px;
   width: 216px;
   min-width: 216px;
@@ -2837,41 +2849,41 @@ body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-
     inset 0 1px 0 var(--titanium-highlight);
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"],
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger-wrapper"] {
   flex-basis: 50px;
   height: 50px;
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"],
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"] {
   font-size: var(--chipmate-font-size-15);
 }
 
-body.vscode-light .settings-shell .settings-nav-icon,
-.vscode-light .settings-shell .settings-nav-icon {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-nav-icon,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-nav-icon {
   flex-basis: 20px;
   width: 20px;
   height: 20px;
   font-size: var(--chipmate-font-size-18);
 }
 
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .settings-shell
   .settings-tabs[data-variant="settings"]
   [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled),
-.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light
   .settings-shell
   .settings-tabs[data-variant="settings"]
   [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled) {
   background: rgba(0, 122, 255, 0.05);
 }
 
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .settings-shell
   .settings-tabs[data-variant="settings"]
   [data-slot="tabs-trigger-wrapper"]:has([data-selected]),
-.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light
   .settings-shell
   .settings-tabs[data-variant="settings"]
   [data-slot="tabs-trigger-wrapper"]:has([data-selected]) {
@@ -2880,14 +2892,14 @@ body.vscode-light
   box-shadow: inset 3px 0 0 var(--titanium-accent);
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"]:focus-visible,
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"]:focus-visible {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"]:focus-visible,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-trigger"]:focus-visible {
   outline: 2px solid var(--titanium-focus);
   outline-offset: -2px;
 }
 
-body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
-.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
   padding: 24px 28px;
   background: rgba(255, 255, 255, 0.72);
   box-shadow:
@@ -2895,13 +2907,13 @@ body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-
     inset 0 1px 0 var(--titanium-highlight);
 }
 
-body.vscode-light .settings-shell .settings-page-header,
-.vscode-light .settings-shell .settings-page-header {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-page-header,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-page-header {
   margin-bottom: 16px;
 }
 
-body.vscode-light .settings-shell .settings-page-header p,
-.vscode-light .settings-shell .settings-page-header p {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-page-header p,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-page-header p {
   display: block;
   max-width: 680px;
   margin: 7px 0 0;
@@ -2910,13 +2922,13 @@ body.vscode-light .settings-shell .settings-page-header p,
   line-height: 1.5;
 }
 
-body.vscode-light .settings-shell .settings-page-groups,
-.vscode-light .settings-shell .settings-page-groups {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-page-groups,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-page-groups {
   gap: 12px;
 }
 
-body.vscode-light .settings-shell .settings-page-groups [data-component="card"],
-.vscode-light .settings-shell .settings-page-groups [data-component="card"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-page-groups [data-component="card"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-page-groups [data-component="card"] {
   padding: 0;
   overflow: hidden;
   border-color: var(--titanium-line);
@@ -2927,8 +2939,8 @@ body.vscode-light .settings-shell .settings-page-groups [data-component="card"],
     inset 0 1px 0 var(--titanium-highlight);
 }
 
-body.vscode-light .settings-shell .settings-section-title,
-.vscode-light .settings-shell .settings-section-title {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-section-title,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-section-title {
   display: flex;
   min-height: 42px;
   align-items: center;
@@ -2939,8 +2951,8 @@ body.vscode-light .settings-shell .settings-section-title,
   font-weight: 600;
 }
 
-body.vscode-light .settings-shell [data-slot="settings-row"],
-.vscode-light .settings-shell [data-slot="settings-row"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row"] {
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 280px);
   gap: 24px;
   min-height: 68px;
@@ -2949,36 +2961,36 @@ body.vscode-light .settings-shell [data-slot="settings-row"],
   border-bottom: 1px solid #edf1f5;
 }
 
-body.vscode-light .settings-shell [data-slot="settings-row"][data-last],
-body.vscode-light .settings-shell [data-component="card"] > [data-slot="settings-row"]:last-child,
-.vscode-light .settings-shell [data-slot="settings-row"][data-last],
-.vscode-light .settings-shell [data-component="card"] > [data-slot="settings-row"]:last-child {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row"][data-last],
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-component="card"] > [data-slot="settings-row"]:last-child,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row"][data-last],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-component="card"] > [data-slot="settings-row"]:last-child {
   padding-bottom: 12px;
   border-bottom: 0;
 }
 
-body.vscode-light .settings-shell [data-slot="settings-row-label-title"],
-.vscode-light .settings-shell [data-slot="settings-row-label-title"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row-label-title"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row-label-title"] {
   font-size: var(--chipmate-font-size-13);
   font-weight: 600;
 }
 
-body.vscode-light .settings-shell [data-slot="settings-row-label-subtitle"],
-.vscode-light .settings-shell [data-slot="settings-row-label-subtitle"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row-label-subtitle"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row-label-subtitle"] {
   color: var(--titanium-muted);
   font-size: var(--chipmate-font-size-12);
   line-height: 1.45;
 }
 
-body.vscode-light .settings-shell [data-slot="settings-row-input"],
-.vscode-light .settings-shell [data-slot="settings-row-input"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row-input"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row-input"] {
   max-width: 280px;
 }
 
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .settings-shell
   :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]),
-.vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]) {
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]) {
   min-height: 38px;
   color: var(--titanium-text);
   border-color: var(--titanium-input-border);
@@ -2987,16 +2999,16 @@ body.vscode-light
   font-size: var(--chipmate-font-size-13);
 }
 
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .settings-shell
   :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
-body.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light
   .settings-shell
   :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"],
-.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light
   .settings-shell
   :is(input, textarea, [data-component="text-field"], [data-slot="select-select-trigger"]):disabled,
-.vscode-light
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light
   .settings-shell
   :is([data-component="text-field"], [data-slot="select-select-trigger"])[aria-disabled="true"] {
   color: var(--titanium-faint);
@@ -3005,8 +3017,8 @@ body.vscode-light
   opacity: 1;
 }
 
-body.vscode-light .settings-shell .settings-save-bar-wrap,
-.vscode-light .settings-shell .settings-save-bar-wrap {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-save-bar-wrap,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-save-bar-wrap {
   border-color: var(--titanium-line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.84);
@@ -3015,14 +3027,14 @@ body.vscode-light .settings-shell .settings-save-bar-wrap,
     inset 0 1px 0 var(--titanium-highlight);
 }
 
-body.vscode-light .settings-shell .settings-save-bar,
-.vscode-light .settings-shell .settings-save-bar {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-save-bar,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-save-bar {
   min-height: 60px;
   padding: 10px 16px;
 }
 
-body.vscode-light .settings-shell .settings-save-status,
-.vscode-light .settings-shell .settings-save-status {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-save-status,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-save-status {
   display: block;
   flex: 0 0 8px;
   width: 8px;
@@ -3032,27 +3044,27 @@ body.vscode-light .settings-shell .settings-save-status,
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--titanium-warning) 14%, transparent);
 }
 
-body.vscode-light .settings-shell .settings-save-status-saving,
-.vscode-light .settings-shell .settings-save-status-saving {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-save-status-saving,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-save-status-saving {
   background: var(--titanium-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--titanium-accent) 14%, transparent);
 }
 
-body.vscode-light .settings-shell .settings-save-status-error,
-.vscode-light .settings-shell .settings-save-status-error {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-save-status-error,
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-save-status-error {
   background: var(--titanium-danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--titanium-danger) 14%, transparent);
 }
 
-body.vscode-light .settings-shell .settings-discard-button[data-component="button"],
-.vscode-light .settings-shell .settings-discard-button[data-component="button"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-discard-button[data-component="button"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-discard-button[data-component="button"] {
   min-width: 112px;
   min-height: 40px;
   border-radius: 8px;
 }
 
-body.vscode-light .settings-shell .settings-save-button[data-component="button"],
-.vscode-light .settings-shell .settings-save-button[data-component="button"] {
+:where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-save-button[data-component="button"],
+:where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-save-button[data-component="button"] {
   min-width: 120px;
   min-height: 40px;
   color: #ffffff;
@@ -3066,67 +3078,67 @@ body.vscode-light .settings-shell .settings-save-button[data-component="button"]
 }
 
 @container settings (max-width: 1199px) {
-  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
-  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
     flex-basis: 176px;
     width: 176px;
     min-width: 176px;
   }
 
-  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
-  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
     padding: 18px 24px;
   }
 }
 
 @container settings (max-width: 719px) {
-  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
-  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-list"] {
     flex-basis: 56px;
     width: 56px;
     min-width: 56px;
   }
 
-  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
-  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
     padding: 18px;
   }
 
-  body.vscode-light .settings-shell [data-slot="settings-row"],
-  .vscode-light .settings-shell [data-slot="settings-row"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row"] {
     grid-template-columns: minmax(150px, 1fr) minmax(150px, 220px);
     gap: 14px;
   }
 }
 
 @container settings (max-width: 559px) {
-  body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
-  .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell .settings-tabs[data-variant="settings"] [data-slot="tabs-content"] {
     padding: 16px 12px;
   }
 
-  body.vscode-light .settings-shell [data-slot="settings-row"],
-  .vscode-light .settings-shell [data-slot="settings-row"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row"] {
     grid-template-columns: minmax(0, 1fr);
     gap: 9px;
   }
 
-  body.vscode-light .settings-shell [data-slot="settings-row-input"],
-  .vscode-light .settings-shell [data-slot="settings-row-input"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .settings-shell [data-slot="settings-row-input"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .settings-shell [data-slot="settings-row-input"] {
     max-width: none;
   }
 }
 
 @media (max-width: 420px) {
-  body.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty,
-  .vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty,
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .message-list-empty {
     padding: 20px 12px;
   }
 }
 
 @media (max-width: 300px) {
-  body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"],
-  .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
+  :where(:root:not([data-chipmate-skin="night-city"])) body.vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"],
+  :where(:root:not([data-chipmate-skin="night-city"])) .vscode-light .chat-view[data-ui="qa-shell"] .prompt-input-container[data-ui="qa-composer"] {
     width: calc(100% - 14px);
     padding: 7px;
   }
@@ -3213,13 +3225,25 @@ body.vscode-high-contrast-light:has(.chat-view[data-ui="qa-shell"])
   }
 }
 
+body.vscode-reduce-motion .chat-view[data-ui="qa-shell"] *,
+body.vscode-reduce-motion .chat-view[data-ui="qa-shell"] *::before,
+body.vscode-reduce-motion .chat-view[data-ui="qa-shell"] *::after,
+body.vscode-reduce-motion .settings-shell *,
+body.vscode-reduce-motion .settings-shell *::before,
+body.vscode-reduce-motion .settings-shell *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chat-view[data-ui="qa-shell"] *,
-  .chat-view[data-ui="qa-shell"] *::before,
-  .chat-view[data-ui="qa-shell"] *::after,
-  .settings-shell *,
-  .settings-shell *::before,
-  .settings-shell *::after {
+  body:not([data-vscode-theme-id]) .chat-view[data-ui="qa-shell"] *,
+  body:not([data-vscode-theme-id]) .chat-view[data-ui="qa-shell"] *::before,
+  body:not([data-vscode-theme-id]) .chat-view[data-ui="qa-shell"] *::after,
+  body:not([data-vscode-theme-id]) .settings-shell *,
+  body:not([data-vscode-theme-id]) .settings-shell *::before,
+  body:not([data-vscode-theme-id]) .settings-shell *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

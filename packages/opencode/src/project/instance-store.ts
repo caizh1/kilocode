@@ -23,6 +23,7 @@ export interface Interface {
   readonly dispose: (ctx: InstanceContext) => Effect.Effect<void>
   readonly disposeDirectory: (directory: string) => Effect.Effect<void>
   readonly disposeAll: () => Effect.Effect<void>
+  readonly listLoaded: () => Effect.Effect<readonly InstanceContext[]> // chipmate_change
   readonly provide: <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
@@ -221,6 +222,11 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
     const provide = <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
       load(input).pipe(Effect.flatMap((ctx) => effect.pipe(Effect.provideService(InstanceRef, ctx))))
 
+    // chipmate_change start - maintenance commands must account for every loaded worktree before stopping the shared server
+    const listLoaded = () =>
+      Effect.forEach([...cache.values()], (entry) => Deferred.await(entry.deferred), { concurrency: 4 })
+    // chipmate_change end
+
     yield* Effect.addFinalizer(() => disposeAll().pipe(Effect.ignore))
 
     return Service.of({
@@ -229,6 +235,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       dispose,
       disposeDirectory,
       disposeAll,
+      listLoaded, // chipmate_change
       provide,
     })
   }),

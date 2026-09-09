@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test"
 import type { Config } from "@chipmate/sdk/v2/client"
 import * as vscode from "vscode"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 // vscode mock is provided by the shared preload (tests/setup/vscode-mock.ts)
 const { ChipMateProvider } = await import("../../src/ChipMateProvider")
@@ -36,6 +39,8 @@ type Internals = {
   pruneDeletedSession: (sessionId: string) => void
   selectDocumentRagFolder: (scope?: "global" | "project") => Promise<void>
   rebuildDocumentRag: () => Promise<void>
+  pending: number
+  configSaveTimeoutMs: number
 }
 
 function status(message: string, state: "Complete" | "Standby" = "Complete") {
@@ -96,32 +101,48 @@ function createIndexingConnection() {
   }
 }
 
-function createConnection() {
+function createConnection(
+  options: {
+    overlayUpdate?: (patch: unknown, request?: { signal?: AbortSignal }) => Promise<unknown>
+    state?: string
+  } = {},
+) {
   let drains = 0
+  let directUpdates = 0
   const patches: unknown[] = []
+  const resolved = { effective: {}, global: {}, project: {} }
   const client = {
+    path: { get: async () => ({ data: { state: options.state } }) },
     global: {
       config: {
         get: async () => ({ data: {} }),
-        update: async () => ({ data: {} }),
+        update: async () => {
+          directUpdates += 1
+          return { data: {} }
+        },
       },
     },
     config: {
       get: async () => ({ data: {} }),
-      update: async () => ({ data: {} }),
-      overlay: async () => ({ data: { project: {} } }),
-      overlayUpdate: async (patch: unknown) => {
-        patches.push(patch)
+      update: async () => {
+        directUpdates += 1
         return { data: {} }
+      },
+      overlay: async () => ({ data: { project: {} } }),
+      overlayUpdate: async (patch: unknown, request?: { signal?: AbortSignal }) => {
+        patches.push(patch)
+        if (options.overlayUpdate) return options.overlayUpdate(patch, request)
+        return { data: resolved }
       },
     },
   }
 
   return {
     drains: () => drains,
+    directUpdates: () => directUpdates,
     patches: () => patches,
     service: {
-      drainPendingPrompts: async () => {
+      drainPendingPrompts: async (_signal?: AbortSignal) => {
         drains += 1
       },
       getClient: () => client,
@@ -149,6 +170,7 @@ describe("ChipMateProvider indexing refresh", () => {
         conn.service as never,
         {
           extension: { packageJSON: { version: "0.0.0-test" } },
+          extensionUri: { fsPath: "/extension" },
           globalStorageUri: { fsPath: "/global-storage/v2" },
         } as never,
       )
@@ -269,6 +291,173 @@ describe("ChipMateProvider indexing refresh", () => {
         unset: [["indexing", "searchMinScore"]],
       }),
     ])
+    expect(conn.drains()).toBe(0)
+    expect(conn.directUpdates()).toBe(0)
+  })
+
+  it("saves project indexing through one overlay write without draining prompts", async () => {
+    const conn = createConnection()
+    const provider = new ChipMateProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    const messages: unknown[] = []
+    internal.connectionState = "connected"
+    internal.webview = { postMessage: async (message) => void messages.push(message) }
+
+    await internal.handleUpdateConfig({}, { indexing: { model: "working-model" } }, "project-indexing-save")
+
+    expect(conn.drains()).toBe(0)
+    expect(conn.directUpdates()).toBe(0)
+    expect(conn.patches()).toHaveLength(1)
+    expect(messages).toContainEqual(expect.objectContaining({ type: "configUpdated", requestId: "project-indexing-save" }))
+  })
+
+  it("clears the task subagent model through an unset-only overlay write", async () => {
+    const conn = createConnection()
+    const provider = new ChipMateProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    const messages: unknown[] = []
+    internal.connectionState = "connected"
+    internal.webview = { postMessage: async (message) => void messages.push(message) }
+
+    await internal.handleUpdateConfig(
+      {},
+      {},
+      "clear-subagent-default",
+      [["subagent_model"], ["subagent_variant"]],
+      [],
+    )
+
+    expect(conn.directUpdates()).toBe(0)
+    expect(conn.patches()).toEqual([
+      {
+        scope: "global",
+        set: {},
+        unset: [["subagent_model"], ["subagent_variant"]],
+        directory: expect.any(String),
+      },
+    ])
+    expect(messages).toContainEqual(
+      expect.objectContaining({ type: "configUpdated", requestId: "clear-subagent-default", config: {} }),
+    )
+  })
+
+  it("publishes a new global default without rewriting explicit per-mode selections", async () => {
+    const state = await mkdtemp(join(tmpdir(), "chipmate-default-model-"))
+    await writeFile(
+      join(state, "model.json"),
+      JSON.stringify({
+        model: {
+          build: { providerID: "legacy", modelID: "deepseek-v4" },
+          plan: { providerID: "legacy", modelID: "deepseek-v4" },
+        },
+        favorite: [{ providerID: "qa-local", modelID: "favorite" }],
+      }),
+    )
+    const conn = createConnection({
+      state,
+      overlayUpdate: async () => ({
+        data: {
+          effective: { model: "qa-local/new-default" },
+          global: { model: "qa-local/new-default" },
+          project: {},
+        },
+      }),
+    })
+    const provider = new ChipMateProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    const messages: Array<Record<string, unknown>> = []
+    internal.connectionState = "connected"
+    internal.webview = { postMessage: async (message) => void messages.push(message as Record<string, unknown>) }
+
+    try {
+      await internal.handleUpdateConfig({ model: "qa-local/new-default" }, {}, "default-model-save")
+
+      expect(JSON.parse(await readFile(join(state, "model.json"), "utf-8"))).toEqual({
+        model: {
+          build: { providerID: "legacy", modelID: "deepseek-v4" },
+          plan: { providerID: "legacy", modelID: "deepseek-v4" },
+        },
+        favorite: [{ providerID: "qa-local", modelID: "favorite" }],
+      })
+      expect(messages).toContainEqual(
+        expect.objectContaining({
+          type: "configUpdated",
+          requestId: "default-model-save",
+          config: expect.objectContaining({ model: "qa-local/new-default" }),
+        }),
+      )
+      expect(messages.some((message) => message.type === "modelSelectionsLoaded")).toBe(false)
+    } finally {
+      await rm(state, { recursive: true, force: true })
+    }
+  })
+
+  it("reports a protocol mismatch without publishing undefined config", async () => {
+    const conn = createConnection({
+      overlayUpdate: async () => ({ data: { subagent_model: "legacy/small" } }),
+    })
+    const provider = new ChipMateProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    const messages: Array<Record<string, unknown>> = []
+    internal.connectionState = "connected"
+    internal.webview = { postMessage: async (message) => void messages.push(message as Record<string, unknown>) }
+
+    await internal.handleUpdateConfig(
+      {},
+      {},
+      "legacy-overlay-response",
+      [["subagent_model"], ["subagent_variant"]],
+      [],
+    )
+
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "configUpdateFailed",
+        requestId: "legacy-overlay-response",
+        reason: "protocol-mismatch",
+        stage: "confirm",
+      }),
+    )
+    expect(messages.some((message) => message.type === "configUpdated")).toBe(false)
+  })
+
+  it("aborts a hung overlay write and releases pending save state", async () => {
+    const conn = createConnection({
+      overlayUpdate: async (_patch, request) =>
+        new Promise((_resolve, reject) => {
+          request?.signal?.addEventListener("abort", () => reject(request.signal?.reason), { once: true })
+        }),
+    })
+    const provider = new ChipMateProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    const messages: unknown[] = []
+    internal.connectionState = "connected"
+    internal.configSaveTimeoutMs = 5
+    internal.webview = { postMessage: async (message) => void messages.push(message) }
+
+    await internal.handleUpdateConfig({}, { indexing: { model: "working-model" } }, "timeout-save")
+
+    expect(internal.pending).toBe(0)
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "configUpdateFailed",
+        requestId: "timeout-save",
+        reason: "timeout",
+        stage: "write-project",
+      }),
+    )
+  })
+
+  it("does not wait for ancillary provider refresh after config acknowledgement", async () => {
+    const conn = createConnection()
+    const provider = new ChipMateProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    internal.connectionState = "connected"
+    internal.fetchAndSendProviders = () => new Promise(() => undefined)
+
+    await internal.handleUpdateConfig({ hide_prompt_training_models: true }, {}, "background-refresh")
+
+    expect(conn.patches()).toHaveLength(1)
   })
 
   it("fetchAndSendIndexingStatus uses current session directory header", async () => {

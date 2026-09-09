@@ -1,3 +1,4 @@
+import { commandIntroduction } from "../shared/command-introduction"
 import type { ChipMateClient } from "@chipmate/sdk/v2/client"
 import { retry } from "../services/cli-backend/retry"
 
@@ -15,6 +16,7 @@ export async function loadCommands(client: ChipMateClient, dir: string): Promise
     type: "commandsLoaded",
     commands: data.map((cmd) => ({
       name: cmd.name,
+      introduction: commandIntroduction(cmd),
       description: cmd.description,
       source: cmd.source,
       hints: cmd.hints,

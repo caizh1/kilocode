@@ -9,25 +9,6 @@ const root = join(dir, "../../../..")
 const matrix = JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"))
 const parents = new Map(matrix.cases.flatMap((item) => item.changesets.map((change) => [change, item.id])))
 const checks = {
-  "agent-console-webview": [
-    "Agent Console 使用真实交互终端",
-    "Agent 审批命令执行并显示输出",
-    "高风险命令触发二次确认",
-    "取消审批后命令没有执行",
-    "侧边栏快捷入口打开同一个 Agent Console",
-  ],
-  "fix-agent-console-windows-powershell": [
-    { id: "REG-AGENT-CONSOLE-SINGLE-SHELL-01", title: "Agent 模式不存在独立 textarea 且只有一个可见 Shell 提示符" },
-    { id: "REG-AGENT-CONSOLE-SINGLE-SHELL-02", title: "已知命令直接执行且自然语言进入 Agent" },
-    { id: "REG-AGENT-CONSOLE-SINGLE-SHELL-03", title: "连续 100 次 Enter 零丢失零重复" },
-    { id: "REG-AGENT-CONSOLE-SINGLE-SHELL-04", title: "流式输出和 50 次模式切换没有空白帧或 DOM 重挂载" },
-    { id: "REG-AGENT-CONSOLE-SINGLE-SHELL-05", title: "用户上滚后不被自动拉回底部" },
-    { id: "REG-AGENT-CONSOLE-SINGLE-SHELL-06", title: "ARM VM 与原生 x64 结果分别记录且不能互相替代" },
-    { id: "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-01", title: "Windows Agent Console 启动 PowerShell 7 或 Windows PowerShell 5.1" },
-    { id: "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-02", title: "PSReadLine 捕获别名函数与 PATH 命令" },
-    { id: "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-03", title: "中文 IME 第一 Enter 只提交候选且第二 Enter 才路由" },
-    { id: "REG-FIX-AGENT-CONSOLE-WINDOWS-POWERSHELL-04", title: "PowerShell 捕获超时不清除当前编辑行" },
-  ],
   "align-qa-liquid-glass": [
     "940px 下 Composer 工具栏保持单行且控件可操作",
     "560px 下语义选择器、索引和工具组不重叠",
@@ -411,32 +392,19 @@ const mac = {
   "WIN-INDEXING-LIFECYCLE": "MAC-INDEXING",
   "WIN-RETRIEVAL-EVIDENCE": "MAC-RETRIEVAL",
   "WIN-QWEN-AUTOCOMPLETE": "MAC-QWEN",
-  "WIN-AGENT-CONSOLE": "MAC-AGENT-CONSOLE",
   "WIN-MARKETPLACE": "MAC-MARKETPLACE",
   "WIN-DOCUMENTS": "MAC-DOCUMENTS",
   "WIN-UPDATE": "MAC-UPDATE-FAILURES",
 }
-const win = new Set(["WIN-PACKAGE-INSTALL", "WIN-SETTINGS-PROVIDER", "WIN-INDEXING-LIFECYCLE", "WIN-AGENT-CONSOLE"])
+const win = new Set(["WIN-PACKAGE-INSTALL", "WIN-SETTINGS-PROVIDER", "WIN-INDEXING-LIFECYCLE"])
 const source = {
-  "agent-console-webview": [
-    "packages/chipmate-vscode/tests/unit/agent-console-provider.test.ts",
-    "packages/chipmate-vscode/tests/agent-console.spec.ts",
-  ],
-  "fix-agent-console-windows-powershell": [
-    "packages/chipmate-vscode/tests/unit/agent-console-provider.test.ts",
-    "packages/chipmate-vscode/tests/agent-console.spec.ts",
-    "packages/chipmate-vscode/tests/unit/agent-manager-terminal-font.test.ts",
-  ],
   "clear-recovered-rag-diagnostics": ["packages/chipmate-indexing/test/chipmate/indexing/manager.test.ts"],
   "keep-indexing-project-bound": [
     "packages/chipmate-vscode/tests/unit/chipmate-provider-indexing-refresh.test.ts",
     "packages/chipmate-vscode/tests/unit/agent-manager-indexing-routing.test.ts",
   ],
 }
-const windows = {
-  "agent-console-webview": 5,
-  "fix-agent-console-windows-powershell": 10,
-}
+const windows = {}
 const evidence = {
   "WIN-PACKAGE-INSTALL": ["manifest", "archive-inventory", "sha256"],
   "WIN-IDENTITY-UPGRADE": ["extension-list", "probe", "storage-snapshot"],
@@ -446,7 +414,6 @@ const evidence = {
   "WIN-INDEXING-LIFECYCLE": ["provider-requests", "pipeline-status", "storage-inventory", "extension-host-log"],
   "WIN-RETRIEVAL-EVIDENCE": ["tool-result", "source-evidence", "provider-requests"],
   "WIN-QWEN-AUTOCOMPLETE": ["request-fixture", "editor-screenshot", "redacted-diagnostics"],
-  "WIN-AGENT-CONSOLE": ["terminal-transcript", "approval-screenshot", "filesystem-snapshot"],
   "WIN-MARKETPLACE": ["api-transcript", "screenshot", "storage-snapshot"],
   "WIN-DOCUMENTS": ["tool-transcript", "artifact-inventory", "rendered-output"],
   "WIN-UPDATE": ["manifest", "download-transcript", "extension-list"],
@@ -505,7 +472,7 @@ const rows = problems
   .join("\n")
 writeFileSync(
   join(dir, "atomic-matrix.md"),
-  `# ChipMate 历史修复原子回归矩阵\n\n状态约定：\`✅ 已实现\`、\`⬜ 未实现\`、\`🟨 待复核\`、\`🚫 非当前范围\`。已完成项后续不得退回套件级笼统描述；每次执行必须按原子 ID 上报结果。\n\n- 历史 changeset：${problems.length}\n- 原子断言：${problems.reduce((sum, item) => sum + item.assertions.length, 0)}\n- macOS 是全部原子断言的代理验收主通道。\n- Windows 只要求安装、设置输入、索引和 Agent Console 高风险断言。\n\n| 原子 ID | 历史修复 | 父 case | 单一判定 | 源码测试 | macOS 安装态 | Windows 冒烟 |\n|---|---|---|---|---|---|---|\n${rows}\n`,
+  `# ChipMate 历史修复原子回归矩阵\n\n状态约定：\`✅ 已实现\`、\`⬜ 未实现\`、\`🟨 待复核\`、\`🚫 非当前范围\`。已完成项后续不得退回套件级笼统描述；每次执行必须按原子 ID 上报结果。\n\n- 历史 changeset：${problems.length}\n- 原子断言：${problems.reduce((sum, item) => sum + item.assertions.length, 0)}\n- macOS 是全部原子断言的代理验收主通道。\n- Windows 只要求安装、设置输入和索引断言。\n\n| 原子 ID | 历史修复 | 父 case | 单一判定 | 源码测试 | macOS 安装态 | Windows 冒烟 |\n|---|---|---|---|---|---|---|\n${rows}\n`,
 )
 process.stdout.write(
   `${JSON.stringify({ changesets: problems.length, assertions: problems.reduce((sum, item) => sum + item.assertions.length, 0) }, null, 2)}\n`,

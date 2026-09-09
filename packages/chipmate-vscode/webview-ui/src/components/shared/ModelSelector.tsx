@@ -50,6 +50,7 @@ import {
 } from "./model-selector-utils"
 import { ModelPreview } from "./ModelPreview"
 import { searchMatch } from "../../utils/search-match"
+import { isInternalModelHidden } from "../../utils/internal-model-policy"
 import { isCustomProviderPackage } from "../../../../src/shared/provider-model"
 import { internalOfflineProviderDefaults } from "../../../../src/shared/internal-offline"
 import CustomProviderDialog from "../settings/CustomProviderDialog"
@@ -145,10 +146,20 @@ export interface ModelSelectorBaseProps {
   customProviderOnly?: boolean
   /** Configured custom provider IDs. Undefined while provider config is loading. */
   customProviderIDs?: readonly string[]
+  /** Disable opening the selector while a host-owned transition is in progress. */
+  disabled?: boolean
+  /** Include the provider name in the trigger label for settings that choose across providers. */
+  showProviderName?: boolean
+  /** Show a compact connected status indicator inside the trigger. */
+  showConnectionStatus?: boolean
+  /** Return a user-facing reason when a catalog item must remain visible but cannot be selected. */
+  disabledModelReason?: (providerID: string, modelID: string) => string | undefined
+  /** Optional action for a disabled item, such as opening Provider settings. */
+  onDisabledModelSelect?: (providerID: string, modelID: string) => void
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
-  const { connected, models, findModel } = useProvider()
+  const { providers, connected, models, findModel } = useProvider()
   const language = useLanguage()
   const vscode = useVSCode()
   const dialog = useDialog()
@@ -160,10 +171,36 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const previewID = `${uid}-preview`
   const descriptionID = `${uid}-description`
   const optionID = (key: string) => `${uid}-option-${encodeURIComponent(key)}`
+  const allowed = (model: EnrichedModel) =>
+    !isInternalModelHidden({
+      providerID: model.providerID,
+      providerName: model.providerName,
+      modelID: model.id,
+      modelName: model.name,
+    })
+  const selection = createMemo(() => {
+    const value = props.value
+    if (!value) return null
+    const provider = providers()[value.providerID]
+    const model = provider?.models[value.modelID]
+    const supplied = props.models?.find((item) => item.providerID === value.providerID && item.id === value.modelID)
+    if (
+      isInternalModelHidden({
+        providerID: value.providerID,
+        providerName: supplied?.providerName ?? provider?.name,
+        modelID: value.modelID,
+        modelName: supplied?.name ?? model?.name,
+      })
+    )
+      return null
+    return value
+  })
   const activeModel = createMemo(() => {
+    const value = selection()
     const items = props.models
-    if (items) return items.find((m) => m.providerID === props.value?.providerID && m.id === props.value?.modelID)
-    return findModel(props.value)
+    if (items) return items.find((m) => m.providerID === value?.providerID && m.id === value?.modelID && allowed(m))
+    const model = findModel(value)
+    return model && allowed(model) ? model : undefined
   })
 
   const [open, setOpen] = createSignal(false)
@@ -225,9 +262,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // Only show models from ChipMate Gateway or connected providers.
   // chipmate-auto/small is excluded unless includeAutoSmall is explicitly true.
   const visibleModels = createMemo(() => {
-    if (props.models) return props.models
+    const visible = (props.models ?? models()).filter(allowed)
+    if (props.models) return visible
     const c = connected()
-    return models().filter((m) => {
+    return visible.filter((m) => {
       if (!props.includeAutoSmall && isSmall(m)) return false
       return m.providerID === CHIPMATE_GATEWAY_ID || c.includes(m.providerID)
     })
@@ -236,7 +274,8 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const hasProviders = () => visibleModels().length > 0
   const setup = () =>
     props.customProviderOnly === true && props.customProviderIDs !== undefined && props.customProviderIDs.length === 0
-  const canOpen = () => hasProviders() || setup() || ((props.allowClear ?? false) && !!props.value)
+  const canOpen = () =>
+    !props.disabled && (hasProviders() || setup() || ((props.allowClear ?? false) && !!selection()))
 
   // Debounce search input to avoid re-filtering on every keystroke
   createEffect(() => {
@@ -431,7 +470,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     return canonicalKey(m)
   }
   const chosen = (row: ModelRow) => {
-    if (row.kind === "clear") return !props.value?.providerID
+    if (row.kind === "clear") return !selection()?.providerID
     if (!row.model || !isActive(row.model)) return false
     return activeKey(row.model) === row.key
   }
@@ -555,6 +594,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   function pick(model: EnrichedModel) {
+    if (props.disabledModelReason?.(model.providerID, model.id)) {
+      props.onDisabledModelSelect?.(model.providerID, model.id)
+      return
+    }
     props.onSelect(model.providerID, model.id)
     setOpen(false)
     props.onPick?.()
@@ -653,6 +696,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       return
     }
     if (!row.model) return
+    if (props.disabledModelReason?.(row.model.providerID, row.model.id)) {
+      props.onDisabledModelSelect?.(row.model.providerID, row.model.id)
+      return
+    }
     setRow(row.key)
     setPreviewKey(row.key)
     pick(row.model)
@@ -733,12 +780,14 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     return m !== undefined && m.providerID === model.providerID && m.id === model.id
   }
 
-  const triggerLabel = () =>
-    buildTriggerLabel(
+  const triggerLabel = () => {
+    const active = activeModel()
+    if (props.showProviderName && active) return `${active.providerName} · ${active.name}`
+    return buildTriggerLabel(
       activeModel()?.name,
       activeModel()?.providerID,
       activeModel()?.providerName,
-      props.value,
+      selection(),
       props.allowClear ?? false,
       props.clearLabel ?? "",
       hasProviders(),
@@ -749,6 +798,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       },
       props.emptyLabel,
     )
+  }
   const label = () => props.label ?? language.t("dialog.model.select.title")
   const controlLabel = () => `${label()}: ${triggerLabel()}`
   const searchLabel = () => `${controlLabel()}. ${language.t("dialog.model.search.placeholder")}`
@@ -801,6 +851,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         }}
         trigger={
           <>
+            <Show when={props.showConnectionStatus && activeModel()}>
+              <span class="model-selector-trigger-status" aria-hidden="true" />
+            </Show>
             <span class="model-selector-trigger-label">{triggerLabel()}</span>
             <Show when={activeCollectsData()}>
               <Tooltip value={dataLabel()} placement="top">
@@ -964,10 +1017,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           return (
                             <div
                               id={optionID(CLEAR_KEY)}
-                              class={`model-selector-item${isSelected(CLEAR_KEY) && !pointer() ? " keyboard-focused" : ""}${isSelected(CLEAR_KEY) ? " selected" : ""}${!props.value?.providerID ? " active" : ""}`}
+                              class={`model-selector-item${isSelected(CLEAR_KEY) && !pointer() ? " keyboard-focused" : ""}${isSelected(CLEAR_KEY) ? " selected" : ""}${!selection()?.providerID ? " active" : ""}`}
                               role="treeitem"
                               aria-level={1}
-                              aria-selected={!props.value?.providerID}
+                              aria-selected={!selection()?.providerID}
                               onClick={() => pickClear()}
                               onMouseMove={() => setPointer(true)}
                               onMouseEnter={() => {
@@ -983,17 +1036,18 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                         if (!row.model) return null
 
                         const model = row.model
+                        const disabledReason = () => props.disabledModelReason?.(model.providerID, model.id)
                         const hovered = () => isSelected(row.key)
                         const preActive = () => isPreActive(row.key)
                         const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
                         const showProvider = () => row.kind === "favorite"
-                        const showSelect = () => expanded() && preActive() && !isActive(model)
+                        const showSelect = () => expanded() && preActive() && !isActive(model) && !disabledReason()
                         const starLabel = () =>
                           `${starred() ? language.t("model.favorite.remove") : language.t("model.favorite.add")}: ${sanitizeName(model.name)}`
                         return (
                           <div
                             role="presentation"
-                            class={`model-selector-row${hovered() || preActive() ? " selected" : ""}`}
+                            class={`model-selector-row${hovered() || preActive() ? " selected" : ""}${disabledReason() ? " model-selector-row--disabled" : ""}`}
                           >
                             <div
                               id={optionID(row.key)}
@@ -1001,6 +1055,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                               role="treeitem"
                               aria-level={2}
                               aria-selected={chosen(row)}
+                              aria-disabled={disabledReason() ? "true" : undefined}
                               onClick={() => {
                                 if (!expanded()) {
                                   selectRow(row)
@@ -1062,6 +1117,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                 </Show>
                                 <Show when={showProvider()}>
                                   <span class="model-selector-item-provider-tag">{model.providerName}</span>
+                                </Show>
+                                <Show when={disabledReason()}>
+                                  {(reason) => <span class="model-selector-item-disabled-reason">{reason()}</span>}
                                 </Show>
                               </div>
                             </div>

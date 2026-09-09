@@ -1,9 +1,17 @@
+import type { DiagnosticResponse } from "../../../../src/shared/diagnostics"
+import type { AppearanceMessage } from "../../../../src/shared/appearance"
+import type { TurnChangesMessage } from "../../../../src/shared/turn-changes"
+import type { CommandIntroductionResponse } from "../../../../src/shared/command-introduction"
 import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@chipmate/sdk/v2/client"
 import type { DiffSourceCapabilities, DiffSourceDescriptor } from "../../../../src/diff/sources/types"
 import type { PartBatch, PartRemove, PartUpdate } from "../../../../src/shared/stream-messages"
 import type { ChipmateServerState, ChipmateServerTestResult } from "../../../../src/shared/chipmate-server"
 import type { ChipmateUpdateResult } from "../../../../src/shared/update-check"
 import type { SessionMode } from "../../context/worktree-mode"
+import type {
+  DeepSeekHarnessEventMessage,
+  DeepSeekHarnessExtensionMessage,
+} from "../../../../src/shared/deepseek-harness"
 import type {
   AnalyticsSeries,
   BatchPublicationResult,
@@ -35,6 +43,9 @@ import type {
 } from "./sessions"
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
+import type { SessionSurfaceExtensionMessage } from "../../../../src/shared/session-surface"
+import type { PatentCenterAction, PatentCenterSettings, PatentCenterTestResult } from "../../../../src/shared/patent-center"
+import type { PatentRadarRun } from "../../../../src/patent-radar/types"
 import type { QuestionRequest, SuggestionRequest, TodoItem } from "./questions"
 import type { ModelSelection, Provider, ProviderAuthState } from "./providers"
 import type { AgentInfo, AgentRequirementResult, SkillInfo, SlashCommandInfo } from "./agents"
@@ -120,12 +131,21 @@ export interface ErrorMessage {
 export interface SendMessageFailedMessage {
   type: "sendMessageFailed"
   error: string
+  code?: string
   text: string
   sessionID?: string
   draftID?: string
   messageID?: string
   files?: FileAttachment[]
   review?: import("../../../../src/shared/review-comments").ReviewMessageData
+}
+
+export interface SendMessageAcceptedMessage {
+  type: "sendMessageAccepted"
+  messageID: string
+  sessionID?: string
+  draftID?: string
+  revision?: number
 }
 
 export interface SessionCommandCompletedMessage {
@@ -194,6 +214,14 @@ export interface SessionForkedMessage {
   type: "sessionForked"
   sessionID: string
   forkedFromID: string
+}
+
+export interface SessionForkStateMessage {
+  type: "sessionForkState"
+  sessionID: string
+  afterMessageID?: string
+  state: "pending" | "slow" | "complete" | "error"
+  message?: string
 }
 
 export interface SessionUpdatedMessage {
@@ -522,6 +550,14 @@ export interface FilePickerResultMessage {
   requestId: string
 }
 
+export interface EditorReferenceResultMessage {
+  type: "editorReferenceResult"
+  requestId: string
+  path?: string
+  text?: string
+  error?: string
+}
+
 export interface TerminalContextResultMessage {
   type: "terminalContextResult"
   requestId: string
@@ -630,6 +666,8 @@ export interface ConfigUpdateFailedMessage {
   message: string
   details?: string
   requestId?: string
+  reason?: "timeout" | "request-failed" | "protocol-mismatch"
+  stage?: "drain-prompts" | "write-global" | "write-project" | "confirm"
 }
 
 export interface SettingUpdatedMessage {
@@ -656,6 +694,40 @@ export interface ChipmateServerTestResultMessage {
   type: "chipmateServerTestResult"
   requestId: string
   result: ChipmateServerTestResult
+}
+
+export interface PatentCenterSettingsLoadedMessage {
+  type: "patentCenterSettingsLoaded"
+  settings: PatentCenterSettings
+}
+
+export interface PatentServerTestResultMessage {
+  type: "patentServerTestResult"
+  requestId: string
+  result: PatentCenterTestResult
+}
+
+export interface PatentRadarActivityLoadedMessage {
+  type: "patentRadarActivityLoaded"
+  requestId: string
+  run: PatentRadarRun | null
+  error?: string
+}
+
+export interface PatentRadarActionCompletedMessage {
+  type: "patentRadarActionCompleted"
+  requestId: string
+  action: PatentCenterAction
+  run: PatentRadarRun | null
+  cancelled: boolean
+  error?: string
+}
+
+export interface PatentRadarCancelCompletedMessage {
+  type: "patentRadarCancelCompleted"
+  requestId: string
+  run: PatentRadarRun | null
+  error?: string
 }
 
 export interface ChipmateUpdateStateMessage {
@@ -805,113 +877,6 @@ export interface AgentManagerTerminalErrorMessage {
   type: "agentManager.terminal.error"
   terminalId?: string
   message: string
-}
-
-export interface AgentConsoleTerminalCreatedMessage {
-  type: "agentConsole.terminal.created"
-  terminalId: string
-  title: string
-  font: TerminalFont
-}
-
-export interface AgentConsoleTerminalConnectedMessage {
-  type: "agentConsole.terminal.connected"
-  terminalId: string
-}
-
-export interface AgentConsoleTerminalDataMessage {
-  type: "agentConsole.terminal.data"
-  terminalId: string
-  data: string
-}
-
-export interface AgentConsoleActivityEvent {
-  seq: number
-  time: number
-  kind: "idle" | "begin" | "data" | "end"
-  data?: string
-  cwd?: string
-  exitCode?: number
-  runId?: string
-  source?: "direct" | "agent"
-  callId?: string
-  command?: string
-}
-
-export interface AgentConsoleTerminalActivityMessage {
-  type: "agentConsole.terminal.activity"
-  terminalId: string
-  event: AgentConsoleActivityEvent
-}
-
-export interface AgentConsoleTerminalActivitySnapshotMessage {
-  type: "agentConsole.terminal.activitySnapshot"
-  terminalId: string
-  events: AgentConsoleActivityEvent[]
-  throughSeq: number
-}
-
-export interface AgentConsoleTerminalStateMessage {
-  type: "agentConsole.terminal.state"
-  terminalId: string
-  state:
-    | { status: "starting" }
-    | { status: "ready"; cwd: string }
-    | { status: "busy"; cwd: string }
-    | { status: "recovering"; cwd?: string }
-    | { status: "error"; message: string }
-}
-
-export interface AgentConsoleTerminalRecoveryMessage {
-  type: "agentConsole.terminal.recovery"
-  terminalId: string
-  success: boolean
-  message?: string
-}
-
-export interface AgentConsoleTerminalRelayErrorMessage {
-  type: "agentConsole.terminal.relayError"
-  terminalId: string
-  message: string
-}
-
-export interface AgentConsoleTerminalDisconnectedMessage {
-  type: "agentConsole.terminal.disconnected"
-  terminalId: string
-  code: number
-  reason: string
-}
-
-export interface AgentConsoleTerminalFontChangedMessage {
-  type: "agentConsole.terminal.fontChanged"
-  font: TerminalFont
-}
-
-export interface AgentConsoleTerminalClosedMessage {
-  type: "agentConsole.terminal.closed"
-  terminalId: string
-}
-
-export interface AgentConsoleTerminalErrorMessage {
-  type: "agentConsole.terminal.error"
-  terminalId?: string
-  message: string
-}
-
-export interface AgentConsoleInputRoutedMessage {
-  type: "agentConsole.input.routed"
-  requestId: string
-  route: "agent" | "shell"
-  input: string
-}
-
-export interface AgentConsoleInputErrorMessage {
-  type: "agentConsole.input.error"
-  requestId: string
-  message: string
-  stage: "capture" | "route" | "apply"
-  recovery: "retain" | "archive"
-  input?: string
 }
 
 export interface AgentManagerRunStatusMessage extends RunStatus {
@@ -1288,6 +1253,7 @@ export interface MarketplaceInstallResultMessage {
   type: "marketplaceInstallResult"
   success: boolean
   slug: string
+  errorCode?: "skill-identity-mismatch"
   error?: string
   filePath?: string
   line?: number
@@ -1382,11 +1348,19 @@ export interface PlantUmlRenderedMessage {
 }
 
 export type ExtensionMessage =
+  | DiagnosticResponse
+  | AppearanceMessage
+  | TurnChangesMessage
+  | CommandIntroductionResponse
+  | SessionSurfaceExtensionMessage
+  | DeepSeekHarnessExtensionMessage
+  | DeepSeekHarnessEventMessage
   | ReadyMessage
   | FontSizeChangedMessage
   | GitStatusMessage
   | ConnectionStateMessage
   | ErrorMessage
+  | SendMessageAcceptedMessage
   | SendMessageFailedMessage
   | SessionCommandCompletedMessage
   | PartUpdatedMessage
@@ -1401,6 +1375,7 @@ export type ExtensionMessage =
   | TodoUpdatedMessage
   | SessionCreatedMessage
   | SessionForkedMessage
+  | SessionForkStateMessage
   | SessionUpdatedMessage
   | SessionDeletedMessage
   | MessageRemovedMessage
@@ -1441,6 +1416,7 @@ export type ExtensionMessage =
   | FileSearchResultMessage
   | SessionSearchResultMessage
   | FilePickerResultMessage
+  | EditorReferenceResultMessage
   | TerminalContextResultMessage
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
@@ -1462,6 +1438,11 @@ export type ExtensionMessage =
   | SettingUpdateFailedMessage
   | ChipmateServerSettingsLoadedMessage
   | ChipmateServerTestResultMessage
+  | PatentCenterSettingsLoadedMessage
+  | PatentServerTestResultMessage
+  | PatentRadarActivityLoadedMessage
+  | PatentRadarActionCompletedMessage
+  | PatentRadarCancelCompletedMessage
   | ChipmateUpdateStateMessage
   | GlobalConfigLoadedMessage
   | NotificationSettingsLoadedMessage
@@ -1511,20 +1492,6 @@ export type ExtensionMessage =
   | AgentManagerLocalStatsMessage
   | AgentManagerPRStatusMessage
   | AgentManagerTerminalCreatedMessage
-  | AgentConsoleTerminalCreatedMessage
-  | AgentConsoleTerminalConnectedMessage
-  | AgentConsoleTerminalDataMessage
-  | AgentConsoleTerminalActivityMessage
-  | AgentConsoleTerminalActivitySnapshotMessage
-  | AgentConsoleTerminalStateMessage
-  | AgentConsoleTerminalRecoveryMessage
-  | AgentConsoleTerminalRelayErrorMessage
-  | AgentConsoleTerminalDisconnectedMessage
-  | AgentConsoleTerminalFontChangedMessage
-  | AgentConsoleTerminalClosedMessage
-  | AgentConsoleTerminalErrorMessage
-  | AgentConsoleInputRoutedMessage
-  | AgentConsoleInputErrorMessage
   | AgentManagerTerminalFontChangedMessage
   | AgentManagerTerminalClosedMessage
   | AgentManagerTerminalErrorMessage

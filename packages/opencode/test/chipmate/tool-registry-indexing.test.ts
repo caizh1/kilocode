@@ -20,6 +20,7 @@ import { Session } from "../../src/session/session"
 import { SessionSummary } from "../../src/session/summary"
 import { ToolRegistry } from "../../src/tool/registry"
 import type * as Tool from "../../src/tool/tool"
+import { Parameters as TaskParameters } from "../../src/tool/task"
 import { disposeAllInstances, provideTmpdirInstance } from "../fixture/fixture"
 import * as CrossSpawnSpawner from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
@@ -749,6 +750,7 @@ describe("chipmate tool registry indexing", () => {
     const deps = {
       agent: {} as Agent.Interface,
       truncate: {} as import("../../src/tool/truncate").Interface,
+      task: {} as Tool.Def<typeof TaskParameters>,
       internal: true,
     }
     const calls: string[] = []

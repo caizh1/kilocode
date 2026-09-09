@@ -221,8 +221,16 @@ img[data-motion="orbital"] {
   }
 }
 
+body.vscode-reduce-motion
+  [data-component="spinner"][data-spinner-variant]
+  > [data-slot="spinner-motion"] {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  [data-component="spinner"][data-spinner-variant] > [data-slot="spinner-motion"] {
+  body:not([data-vscode-theme-id])
+    [data-component="spinner"][data-spinner-variant]
+    > [data-slot="spinner-motion"] {
     display: none;
   }
 }

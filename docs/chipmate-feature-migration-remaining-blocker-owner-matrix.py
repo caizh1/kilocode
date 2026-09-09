@@ -89,14 +89,6 @@ BLOCKERS = [
         "Company template validation PASS or explicitly accepted PASS_WITH_LIMITS with documented style inheritance limits.",
     ),
     Blocker(
-        "Visible Agent Terminal UX",
-        "VS Code UX/manual operator",
-        "PENDING",
-        "docs/chipmate-feature-migration-validation-runs/20260709-080000-agent-terminal-acceptance-rollup/summary.md",
-        "Run visible installed VS Code UX checks for command-palette prompt, terminal pane opening, and dangerous-command confirmation.",
-        "Manual/automated UX evidence accepted in M11; local service/runtime rollup is already PASS_WITH_LIMITS but not enough for visible UX.",
-    ),
-    Blocker(
         "M11 final no-regression review",
         "Release reviewer",
         "NOT_READY_FOR_FINAL_SIGNOFF",

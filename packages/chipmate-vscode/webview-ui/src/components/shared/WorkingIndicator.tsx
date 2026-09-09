@@ -7,8 +7,6 @@
 import { type Component, Show, createSignal, createEffect, onCleanup } from "solid-js"
 import { Spinner, cycle } from "@chipmate/chipmate-ui/dynamic-spinner"
 import { Button } from "@chipmate/chipmate-ui/button"
-import { Icon } from "@chipmate/chipmate-ui/icon"
-import { Progress } from "@chipmate/chipmate-ui/progress"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
@@ -98,45 +96,29 @@ export const WorkingIndicator: Component = () => {
 
   return (
     <div class="working-indicator-slot">
-      <Show when={(session.submitting() || session.status() !== "idle") && !blocked()}>
-        <Show
-          when={compaction()}
-          fallback={
-            <div class="working-indicator">
-              <Spinner
-                variant={cycle(session.busySince(), "working-indicator")}
-                class="working-spinner"
-                style={{ width: "24px", height: "24px" }}
-              />
-              <span class="working-text">{statusText()}</span>
-              <Show when={elapsed() > 0}>
-                <span class="working-elapsed">{formatElapsed()}</span>
-              </Show>
-              <Show when={isRetrying()}>
-                <Button
-                  variant="secondary"
-                  size="small"
-                  onClick={handleCancelRetry}
-                  class="working-cancel"
-                  style={{ "font-weight": "600", color: "var(--vscode-errorForeground, #f85149)" }}
-                >
-                  {language.t("ui.sessionTurn.cancel") || "Cancel"}
-                </Button>
-              </Show>
-            </div>
-          }
-        >
-          <div class="working-compaction" role="status" aria-atomic="true">
-            <div class="working-compaction-title">
-              <Icon name="layers" size="small" />
-              <span>{language.t("session.compaction.active")}</span>
-            </div>
-            <div class="working-compaction-detail">{language.t("session.compaction.description")}</div>
-            <Progress class="working-compaction-progress" indeterminate hideLabel>
-              {language.t("session.compaction.active")}
-            </Progress>
-          </div>
-        </Show>
+      <Show when={(session.submitting() || session.status() !== "idle") && !blocked() && !compaction()}>
+        <div class="working-indicator">
+          <Spinner
+            variant={cycle(session.busySince(), "working-indicator")}
+            class="working-spinner"
+            style={{ width: "24px", height: "24px" }}
+          />
+          <span class="working-text">{statusText()}</span>
+          <Show when={elapsed() > 0}>
+            <span class="working-elapsed">{formatElapsed()}</span>
+          </Show>
+          <Show when={isRetrying()}>
+            <Button
+              variant="secondary"
+              size="small"
+              onClick={handleCancelRetry}
+              class="working-cancel"
+              style={{ "font-weight": "600", color: "var(--vscode-errorForeground, #f85149)" }}
+            >
+              {language.t("ui.sessionTurn.cancel") || "Cancel"}
+            </Button>
+          </Show>
+        </div>
       </Show>
     </div>
   )

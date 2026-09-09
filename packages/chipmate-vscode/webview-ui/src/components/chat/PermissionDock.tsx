@@ -291,7 +291,7 @@ export const PermissionDock: Component<{
         <Show when={cmdDescription()}>{(desc) => <div data-slot="permission-hint">{desc()}</div>}</Show>
         <Show when={command() && directory()}>
           <div data-slot="permission-workdir">
-            <span>{language.t("agentConsole.permission.directory")}</span>
+            <span>{language.t("permission.directory")}</span>
             <code>{directory()}</code>
           </div>
         </Show>

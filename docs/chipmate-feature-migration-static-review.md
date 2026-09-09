@@ -9,7 +9,6 @@ This review records the current source-level evidence for the ChipMate non-QA fe
 - Mermaid document tools
 - Source-backed detail-design skill
 - Document artifact UI
-- Agent Terminal
 - ChipMate native QA, Document RAG, autocomplete, terminal/session manager boundaries
 
 ## Static Evidence
@@ -90,21 +89,16 @@ Static conclusion:
 
 - Detailed design migration is skill/process migration, not ChipMate runtime-flow migration.
 
-### Agent Terminal is default-off and sidecar
 
 Evidence:
 
-- `chipmate.agentTerminal.enabled` default is `false`.
-- `registerAgentTerminal` only adds `chipmate.agentTerminal.open` and a terminal profile provider.
 - The terminal profile contribution keeps only `id` and `title`; the optional profile icon is intentionally omitted to avoid manifest-icon compatibility risk across the supported VS Code floor.
 - Opening through command or profile checks the setting and prompts before enabling for the workspace.
-- The Agent Terminal context helper includes package scripts, README/AGENTS excerpts, and common build-system files so build advice can be grounded in the current workspace.
 - Helper text says it does not replace ChipMate native shell/tool loop.
 - Existing Agent Manager and terminal action registration remain in `extension.ts`.
 
 Static conclusion:
 
-- Agent Terminal does not replace ChipMate terminal/session manager in source structure.
 
 ### Autocomplete is preserved
 
@@ -112,7 +106,6 @@ Evidence:
 
 - `extension.ts` still calls both `registerAutocompleteProvider(context)` and `registerQwenAutocompleteProvider(context)`.
 - `package.json` still exposes `chipmate.autocomplete.provider` with `qwen-direct`.
-- New document and Agent Terminal settings do not change autocomplete provider defaults.
 
 Static conclusion:
 
@@ -152,5 +145,4 @@ Then perform installed VS Code smoke for:
 - Word create/edit/render with a real `.docx`;
 - Mermaid PNG and Mermaid-to-Word;
 - source-backed detail-design on one internal embedded C module;
-- Agent Terminal open and dangerous-command confirmation;
 - autocomplete/Qwen direct smoke.

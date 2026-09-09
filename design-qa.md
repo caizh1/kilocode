@@ -1,691 +1,89 @@
-# Agent Console Design QA
+# ChipMate 最新轮次响应性能视觉验收
 
-Source visual truth path: `/var/folders/9s/q5y69fzj3b59lt103v6y4f4m0000gn/T/codex-clipboard-7a2bf21d-c868-43f5-a930-5c839bb78ccd.png`
+## 对照信息
 
-Implementation screenshot path: `/Users/archer/.codex/visualizations/2026/07/13/019f5940-4a1c-7f32-b790-8330ad6b5acd/agent-console-implementation.png`
+- 设计真源：`/Users/archer/.codex/generated_images/01a06701-3d52-7831-9258-ee5b3ae9db6e/exec-d8e3e139-40e9-497c-8b16-1cb383d5392e.png`
+- 420px 深色实现：`/Users/archer/Work/kilocode/.qa/response-performance/implementation-420x720-dark-final.png`
+- 200px 深色实现：`/Users/archer/Work/kilocode/.qa/response-performance/implementation-200x720-dark-final.png`
+- 浅色实现：`/Users/archer/Work/kilocode/.qa/response-performance/implementation-420x720-light-modern.png`
+- 高对比度实现：`/Users/archer/Work/kilocode/.qa/response-performance/implementation-420x720-hc-black.png`
+- 同图对照：`/Users/archer/Work/kilocode/.qa/response-performance/comparison-design-vs-implementation-final.png`
+- 状态：两轮成功回答，只有最新一轮显示 `28.7 t/s · 首词 0.82s`，操作按钮保留在第一行，完成状态与性能位于第二行。
+- 实现视口：420、340、300 CSS px；内置浏览器的 200px 视口会被夹到 240px，因此另用 200px 固定组件宽度完成等价窄宽验收。设备像素比 1。
+- 像素归一化：设计原图 887 × 1773 px 按高度等比缩放到 360 × 720 px；实现主对照为 420 × 720 px，未拉伸，左右并排比较。
 
-Viewport: browser capture `1447 × 600`; the source was cropped on the right from `1510 × 610` to the same `1447 × 600` content frame for comparison.
+## 全图与重点区域结论
 
-State: dark VS Code theme, console mode, mounted terminal, standard `df -h` bash permission, Agent input selected.
+- 操作按钮与元数据形成稳定的两行层级，没有和已有推理耗时、回答正文或输入区重叠。
+- 420、340、300、200px 均为零横向溢出、零越界、零元素重叠；200px 下完成耗时和性能指标自然分行。
+- 最新成功轮次显示速度与首词延时，上一条成功回答只保留原有本轮耗时，符合设计稿的信息优先级。
+- 重点区域无需额外放大图：420px 主对照和 200px 聚焦截图中的操作行、完成状态、速度与首词延时均清晰可读。
 
-Full-view comparison evidence: `/Users/archer/.codex/visualizations/2026/07/13/019f5940-4a1c-7f32-b790-8330ad6b5acd/agent-console-comparison.png`
+## 必查视觉面
 
-Focused region comparison evidence:
+- 字体与排版：继续使用 VS Code 字体、既有 11/12px 元数据层级和等宽数字；中文、数字与单位没有裁切。
+- 间距与节奏：按钮第一行、元数据第二行；使用 flex、flex-wrap、flex-basis 和 min-width 控制换行，没有绝对定位。
+- 色彩与 Token：完成状态保留最终 agent 色，性能指标使用弱化前景色；深色、浅色和高对比度主题均可读。
+- 图像与资源：本功能没有新增位图或装饰资源；完成图标继续使用项目既有图标组件。
+- 文案与内容：中文显示“已完成 · 本轮耗时… · 28.7 t/s · 首词 0.82s”，与修正版方案 2 一致。
 
-- High-risk modal: `/Users/archer/.codex/visualizations/2026/07/13/019f5940-4a1c-7f32-b790-8330ad6b5acd/agent-console-high-risk.png`
-- Narrow layout: `/Users/archer/.codex/visualizations/2026/07/13/019f5940-4a1c-7f32-b790-8330ad6b5acd/agent-console-narrow.png`
+## 对照迭代历史
 
-**Findings**
+1. 首次 200px 复核发现 P2：外层分隔点可能单独换行到行首。
+2. 修复：把分隔点与性能组绑定，并在元数据容器不超过 220px 时隐藏外层分隔点。
+3. 复核：200px 组件宽度为 200px，滚动宽度为 200px，越界和重叠均为 0；其余宽度及主题未出现新的 P0/P1/P2 问题。
 
-- No actionable P0/P1/P2 findings remain.
-- [P3] The implementation uses the extension's native VS Code typography density, while the reference capture is visibly zoomed and uses larger terminal and card text. This is acceptable because the production xterm and webview font sizes continue to follow existing VS Code/ChipMate settings rather than forcing a console-only scale.
-- [P3] The reference places approval actions in the card header; the implementation keeps the existing `PermissionDock` action order below the command. This preserves the project's established keyboard and permission interaction pattern while retaining the same command-first hierarchy.
+## 遗留项
 
-Required fidelity surfaces:
+- 无 P0、P1、P2 视觉问题。
+- Extension Development Host 的真实模型样本尚未执行，属于运行环境验收，不影响本次 Storybook 视觉结果。
 
-- Fonts and typography: project font families, weights, wrapping, and monospace command treatment remain consistent; long command wrapping is preserved. The smaller native density is an intentional constraint noted above.
-- Spacing and layout rhythm: terminal-first hierarchy, approval card, and input are clearly separated; glass surfaces, radii, borders, and shadows remain stable at desktop and narrow widths with no overlap or clipping.
-- Colors and visual tokens: VS Code theme tokens drive backgrounds, foregrounds, focus blue, danger red, contrast, and disabled states. Standard approval now uses the reference-like blue focus border; high-risk approval uses a red semantic modal treatment.
-- Image quality and asset fidelity: the source contains no required product imagery. All visible icons use the existing project icon library and `currentColor`; no custom SVG, emoji substitute, CSS drawing, or placeholder image was introduced.
-- Copy and content: dynamic permission purpose and command are preserved. Agent/Shell labels and the immediate-execution warning describe the actual routing behavior.
-- Accessibility: semantic tabs and dialog, focus trapping, Enter/Escape behavior, screen-reader labels, disabled responding states, reduced-motion handling, and normal-flow icon layout were checked.
-
-**Comparison History**
-
-- Pass 1 found a P2 semantic color mismatch: the standard approval card inherited the warning-yellow border instead of the reference's blue approval boundary.
-  Fix: added a `data-presentation="dock"` theme-token override with a valid transparent fallback in `permission-dock.css`.
-  Post-fix evidence: `agent-console-comparison.png` shows the standard card with a blue boundary; computed browser color is `color(srgb 0.0708235 0.343765 0.55302)`.
-
-**Primary Interactions Tested**
-
-- Agent and Shell tabs route to separate submit paths without double submission.
-- A missing PTY is requested before a queued Shell command is written.
-- Standard approval supports Run, Edit, Deny, Enter, and Escape.
-- High-risk approval opens the modal, traps focus, supports Edit prefill, and closes/rejects safely.
-- Pending permission state survives the existing state replay path.
-- Browser console was checked; only the expected Storybook warning about running outside VS Code was present, with no implementation errors.
-
-**Implementation Checklist**
-
-- [x] Match the terminal-over-activity composition.
-- [x] Keep standard approval inline and high-risk approval modal.
-- [x] Preserve VS Code theme, icon, keyboard, responsive, and reduced-motion behavior.
-- [x] Verify desktop, narrow, and high-risk states in the in-app browser.
-
-final result: passed
+最终结果：通过
 
 ---
 
-# ChipMate 插件市场 G10 无限批量上传 Design QA
+# Patent Radar 窄宽进度弹窗视觉验收
 
-Source visual truth paths:
+最终结果：通过
 
-- `/Users/archer/Work/chipmate/.runtime/design-qa/references/extension-market/06-upload-progress-corrected.png`
-- `/Users/archer/Work/chipmate/.runtime/design-qa/references/extension-market/05-upload-idle.png`
+## 对照信息
 
-Implementation screenshot paths:
+- 设计真源：`/Users/archer/.codex/generated_images/01a03c15-985e-7811-a6d8-3acc4053b984/exec-314e1ffe-e5b1-415f-a46d-c0016c8053ef.png`
+- 实现截图：`/Users/archer/Work/kilocode/.qa/patent-radar-narrow/implementation-700x820-final.png`
+- 同图对照：`/Users/archer/Work/kilocode/.qa/patent-radar-narrow/comparison-final-1400x820.png`
+- 状态：深色主题、跨文件组合发现进行中、进度 86%、存在最新跨文件候选。
+- 实现视口：700 × 820 CSS px，设备像素比 1，实现截图 700 × 820 px。
+- 设计原图：1196 × 1315 px；保持纵横比缩放后居中补边到 700 × 820 px，仅用于同尺寸构图对照，没有拉伸。
 
-- 41 项扫描清单，`1484 × 1060`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/10-extension-upload-many-review-1484x1060.png`
-- 41 项扫描清单，`1440 × 1024`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1440x1024.png`
-- 41 项扫描清单，`1050 × 1024`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/extension-upload-many-1050x1024.png`
-- 显著上传进度，`1484 × 1060`：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/09-extension-upload-progress-1484x1060.png`
+## 全图对照结论
 
-Comparison evidence:
+- 信息架构一致：标题、运行摘要、两列统计、独立进度条、扫描步骤、最新候选和固定操作栏均完整可见。
+- 窄宽正文没有横向溢出；详情区高度受控，底部操作栏始终可达。
+- 实现保留 VS Code 原生字体、按钮色和 Codicon，设计稿中的绿色进度语义保持不变。
+- 当前实现的步骤文字使用真实运行事件，而不是设计稿中的静态短标签；这是有意保留的产品信息，不构成视觉偏差。
 
-- 进度状态全视图并排：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-side-by-side.png`
-- 大清单全视图并排：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-many-side-by-side.png`
-- 进度区域聚焦对比：`/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/comparisons/extension-market/g10-progress-focus.png`
+## 重点区域对照
 
-**Findings**
+- 顶部统计：两列对齐、长模型名可换行，图标保持正常文档流，没有遮挡。
+- 扫描步骤：三条事件紧凑排列，窄宽隐藏时间戳以保证主要信息和候选卡同时可见；事件原文仍保留。
+- 候选卡：标题、问题描述、四个标签及跨文件证据链全部落在可视区域。
+- 底部栏：提示和三项操作在窄宽下分行，按钮全部可点击且未裁切。
 
-- No actionable P0/P1/P2 findings remain.
-- 批量页保留批准稿的 Liquid Glass 材质、蓝色强调层、柔和边界、高光和阴影；41 项清单按生产需求提升信息密度，但没有改变上传状态层级或主操作焦点。
-- 字体、间距、颜色、文案、图标、进度条、按钮与状态标签均逐项检查。图标位于正常 flex/grid 文档流中，没有使用绝对定位对齐。
-- 首轮 `1050 × 1024` 截图中第 5 个汇总卡发生换行；将汇总区稳定为五列后重新截图，三个批准视口均无遮挡、重叠或水平溢出。
-- 功能 Playwright 对 console error 进行断言并保持干净；视觉捕获仅在页面退出阶段看到已知分析发送失败警告，不影响页面状态或交互。
+## 必查视觉面
 
-**Primary States and Interactions Checked**
+- 字体与排版：使用现有 VS Code 字体和字号层级；标题、正文、弱化文字层级清楚，长文本可换行。
+- 间距与节奏：统计区、进度条、两张详情卡和底部栏间距稳定；没有原问题中的大块空白。
+- 色彩与 Token：继续使用 VS Code 主题变量；状态绿色、边框和弱化文字符合现有设置页体系。
+- 图像与资源：本界面没有位图资产；全部图标使用项目既有 Codicon，没有自制 SVG、字符图标或占位图。
+- 文案与内容：与确认设计一致，并使用真实阶段、批次、候选及跨文件证据数据。
 
-- 41 个 VSIX 自动拆分为 3 个逻辑批次，清单窗口化渲染且总数、大小和批次摘要保持正确。
-- ZIP、TAR.GZ、文件夹和无关文件混合输入只上传最终 VSIX；无关字节不进入网络请求。
-- 当前项真实 XHR 进度、批次总进度、速度、ETA、暂停、恢复、取消与终态汇总。
-- 会话失效后的页内重新登录保持当前路由和清单，并使用新 CSRF 继续。
-- `503` 自动退避重试、`507` 暂停待恢复，以及已进入校验/发布后的取消边界。
+## 对照迭代历史
 
-final result: passed
+1. 首次实现发现 P2：事件时间戳占用窄宽高度，最新候选卡底部需要滚动后才能完整看到；Story 固定 1440px 容器还制造了横向溢出假象。
+2. 修复：窄宽隐藏辅助时间戳、压缩步骤节奏、让 Story 使用真实视口宽度，并调整详情表面层与活动状态色。
+3. 复核：700 × 820 视口横向溢出为 0；候选卡底部 696.30px，小于详情区底部 711.30px；底部栏完整显示。
 
----
+## 遗留项
 
-# ChipMate VS Code 插件市场 Design QA
-
-Approved reference directory: `/Users/archer/Work/chipmate/.runtime/design-qa/references/extension-market/`
-
-Installed macOS Chrome evidence directory: `/Users/archer/Work/chipmate/server/chipmate-word-render/.runtime/design-qa/evidence/extension-market/`
-
-Primary `1484 × 1060` evidence:
-
-- `01-extension-home-1484x1060.png`
-- `02-extension-detail-1484x1060.png`
-- `03-extension-sha-conflict-1484x1060.png`
-- `04-extension-upload-idle-1484x1060.png`
-- `05-extension-analytics-1484x1060.png`
-- `06-extension-service-status-1484x1060.png`
-- `07-extension-center-1484x1060.png`
-- `08-extension-upload-progress-1484x1060.png`
-
-Supplemental directory evidence: `extension-home-1440x1024.png` and `extension-home-1050x1024.png`.
-
-**Findings**
-
-- No actionable P0/P1/P2 visual issue remains after the 1050px topbar containment correction.
-- Plugin surfaces consistently use “ChipMate Market”, “VS Code 插件”, “发布插件” and “上传 VS Code 插件”. No plugin page claims code, signature or virus auditing.
-- The upload state uses a 78px Liquid Glass progress track with percentage, transferred/total bytes, smoothed speed, ETA or phase, and a visible cancel action. The progress screenshot captures the active XHR state; functional tests exercise the real `XMLHttpRequest.upload.onprogress` path.
-- SHA conflicts remain hidden during normal browsing and appear only after explicit version and target selection. The modal shows uploader, source, time, full SHA, size and completed downloads; no build is preselected and download remains disabled until risk consent.
-- The service status page exposes the shared database plus scanner, `drop/`, `artifacts/` and `.tmp` runtime surfaces. Invalid imports are rendered as specific warnings without changing Word, Mermaid or Skill Market routes.
-- Icons remain in normal Flex/Grid flow. No extension-market icon layout uses `position: absolute`.
-- Automated Chrome geometry at `1484 × 1060`, `1440 × 1024` and `1050 × 1024` reports no horizontal overflow, clipped topbar control or out-of-bounds extension card.
-- WCAG 2 A/AA, 2.1 A/AA and 2.2 AA automated checks pass on the extension directory.
-
-**Accepted P3 Differences**
-
-- Real preview VSIX fixtures do not provide marketplace artwork, so the implementation uses the approved glass code glyph fallback instead of inventing plugin icons.
-- Seed data has no completed downloads, so the trend chart correctly renders its empty state while rankings, platform distribution and recent publication activity remain visible.
-- The captured active upload begins at 0% because the Playwright network interceptor does not emit incremental browser upload events before releasing the response. The production path is XHR-based and its progress geometry and metrics are separately asserted; the approved corrected progress reference remains the visual source for the intermediate-percent state.
-
-final result: passed
-
----
-
-# QA Composer Deterministic Three-State Layout
-
-Scope: Composer presentation only. Mode, Model, Thinking, indexing, sandbox, speech, enhancement, Send/Stop, events, state, Tooltip, ARIA, protocol, and service behavior remain unchanged.
-
-**Locked geometry**
-
-| Composer content width | Result |
-|---|---|
-| `<=300px` | Exactly two toolbar rows: labeled selectors followed by aggregate indexing, primary actions, conditional More, and Send/Stop fixed at the right edge. |
-| `301px` to density threshold | Existing two-row selector/action composition; indexing labels return at `560px`. |
-| No indexing at `>=620px` | All available direct controls share one centerline. |
-| Three indexes without optional Reset/Sandbox/Speech at `>=760px` | All available direct controls share one centerline. |
-| Indexing with any optional Reset/Sandbox/Speech at `>=860px` | All available direct controls share one centerline. |
-
-**Extreme-narrow behavior**
-
-- Code, Model, and Thinking remain readable rather than collapsing to icon-only controls. Long model labels use deterministic ellipsis.
-- CodeGraph, RAG, and Documents collapse into one upward-opening menu. Its persistent state priority is Error, In Progress, Warning, all-success, then neutral; the accessible label still enumerates all three pipelines and progress values.
-- Reset Model, Sandbox, and Speech move into a conditional More menu. Direct controls and menu items reuse the same production event and speech state paths.
-- All icons remain in Grid/Flex document flow. The layout uses no `position: absolute`, `display: contents`, `auto-fit`, or uncontrolled wrapping.
-
-**Verification**
-
-- Direct Composer-content-width coverage: `170, 200, 240, 280, 299, 300, 301, 340, 341, 559, 560, 619, 620, 621, 759, 760, 761, 859, 860, 861, 960, 1200, 1450px`.
-- Maximum-density and sparse fixtures verify two centerlines at extreme width, the existing medium layout, density-aware one-line entry, rightmost Send/Stop, preserved indexing state, no overlap, no escaped control, and no horizontal scrolling.
-- Manual captures at `170px`, `300px`, `560px`, and `860px` confirm the same geometry and Liquid Glass hierarchy.
-- Passed: six scoped Composer responsive/state tests, seven QA accessibility stories, Webview type checking, ESLint, Storybook, Knip, the ChipMate marker guard, and extension compile. The complete accessibility file reports `21 passed / 2 unrelated timed out`; only the pre-existing Marketplace skills/agents empty-state stories failed to mount.
-
-final result: passed
-
----
-
-# Historical QA Composer 0.0.67 Real VS Code Validation
-
-This section records the previously packaged `0.0.67` baseline. Its former `<=300px` three-row behavior is superseded in current source by the deterministic two-row layout documented above; no new VSIX was produced in this UI-only change.
-
-Real package: `chipmate.chipmate@0.0.67`, installed into an isolated profile of `/Applications/Visual Studio Code.app` before the main profile was upgraded.
-
-**Layout result**
-
-- Titanium Studio remains the final Composer geometry layer. At `301–380px`, selectors and actions use two deterministic rows with preserved indexing and utility groups; at `<=300px`, selectors, indexes, and utility actions use three semantic rows. No group is flattened through `display: contents`.
-- The real packaged Webview was measured at approximately `361px`, `394px`, and `441px`. Every case retained the expected selector row plus the index-left/action-right row, with zero control overlap and `scrollWidth === clientWidth`.
-- Exact isolated-profile zoom factors of `100%`, `125%`, and `150%` were exercised through `window.zoomLevel`. The measured Composer remained within the critical `360–440px` range and reported no overlap or horizontal overflow.
-- Index labels remain hidden in this compact range while their icons and state glyphs remain visible. Labeled modes at wider breakpoints retain the locked leading/trailing padding and cannot be compressed against the right border.
-
-**Real-package evidence**
-
-- `100%`: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/vscode-100-440.png`
-- `125%`: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/vscode-125-exact.png`
-- `150%`: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/vscode-150-exact.png`
-- Update manifest generated from the two delivered VSIX files: `/Users/archer/.codex/visualizations/2026/07/16/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-composer-0067-real-vscode/update-manifest-schema-v2.json`
-
-**Package and runtime checks**
-
-- The isolated VS Code Extension Host started the packaged `chipmate.chipmate-0.0.67` extension and its bundled CLI; the main VS Code profile was upgraded only after the isolated layout checks passed.
-- Both VSIX manifests keep `publisher=chipmate`, `name=chipmate`, version `0.0.67`, and their matching `chipmatePackageTarget`. Packaged ChipMate Server defaults resolve from the ignored local packaging configuration; tracked source defaults were restored after packaging.
-- The update service generated `schemaVersion: 2` with matching `latestByTarget` entries, SHA-256 values, and byte sizes for `darwin-arm64` and `linux-x64-baseline`.
-- Linux validation is static only: packaged CLI and Indexer are Linux x86-64 ELF files, the Linux LanceDB native runtime and required offline resources are present, and FFmpeg/source maps are absent. No Linux target-machine runtime claim is made.
-
-final result: passed
-
----
-
-# QA Composer Wide/Narrow Alignment Design QA
-
-Source visual truth: `/var/folders/9s/q5y69fzj3b59lt103v6y4f4m0000gn/T/codex-clipboard-e226639e-b58f-4c0d-9f6c-d1ae1577d98f.png`
-
-Before evidence:
-
-- Wide `960px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/before/composer-960.png`
-- Narrow `560px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/before/composer-560.png`
-- Thinking open: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/before/thinking-open-560.png`
-
-Final evidence:
-
-- Wide dark `960px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/composer-dark-960.png`
-- Narrow dark `560px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/composer-dark-560.png`
-- Compact dark `420px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/composer-dark-420.png`
-- Maximum-density single row `1200px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-multi-width/composer-1200.png`
-- Maximum-density labeled two-row layout `620px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-multi-width/composer-620.png`
-- Maximum-density fixed four-column matrix `200px`: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-multi-width/composer-200.png`
-- Thinking dark/light/high contrast: `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/thinking-dark-560.png`, `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/thinking-light-560.png`, `/Users/archer/.codex/visualizations/2026/07/15/qa-composer-wide-narrow/after/thinking-hc-560.png`
-
-**Findings**
-
-- No scoped P0/P1/P2 finding remains.
-- The Composer has an independent `1240px` maximum width, so widening the QA panel no longer leaves it capped by the `98ch` message-reading lane. Message content keeps its existing readable width.
-- Composer content below `940px` stays in the deliberate two-zone layout; at `940px` and above, selectors, indexes, utility actions, and Send/Stop share one centerline within `2px`.
-- From `560px` through `939px`, the second row keeps labeled indexes on the left and utility actions on the right. At `421–559px`, only the visible index labels are removed; icons, persistent status glyphs, Tooltip content, and ARIA remain.
-- At `<=420px`, every index and utility action participates in one fixed four-column matrix in DOM order, with Send/Stop pinned to the final column. At `<=300px`, selector labels are hidden and the selector grid uses only the number of tracks required by the controls that actually exist.
-- Labeled CodeGraph, RAG, and Documents controls use `10px` leading padding, `12px` trailing padding, a `7px` icon-to-label gap, and non-shrinking intrinsic widths. The visible label-to-right-border distance is at least `11px`.
-- Reset, Auto Approve, Sandbox, Enhance, Speech, Send, and Stop expose stable internal hooks. Send/Stop use normal-flow Codicons rather than inline custom SVGs.
-- The Thinking menu uses one Titanium surface, `40px` rows, a blue-gray selected fill, a normal-flow Codicon check, and an inset blue keyboard-focus ring. Normal dark and light no longer expose the browser-native orange rectangle; genuine High Contrast retains its strong system focus boundary.
-- All production controls, index state hooks, Tooltip content, ARIA, keyboard order, events, and server/configuration contracts remain unchanged.
-
-**Quality gates**
-
-- The five Composer-scoped QA Playwright checks pass across `200、240、280、300、301、320、420、421、479、480、519、520、559、560、720、939、940、960、1200、1450px`, including maximum-density and sparse controls, fixed matrices, label padding, index states, themes, Reduced Motion, Send, and Stop.
-- All six QA accessibility stories pass. The complete accessibility run reports `19 passed / 3 unrelated failed`; the remaining Marketplace and Agent Manager failures are outside Composer scope.
-- The complete QA responsive file still contains three unrelated reading/fixture drifts: a strict locator now matches two text wrappers, the user-message hover fixture no longer raises its action opacity, and the queued fixture no longer renders the user-message slot. No production Composer rule was changed to conceal these existing failures.
-- Webview typecheck, package lint, targeted ESLint, Storybook production build, Knip, ChipMate marker check, and extension compile pass. Storybook retains its existing unresolved package/font and large-chunk warnings.
-
-scoped result: passed
-
----
-
-# QA Task HUD and Message Flow Design QA
-
-Visual truth: `/Users/archer/.codex/generated_images/019f5e49-f6bc-77f0-8432-6a39e9928c99/exec-5a46c237-6065-47ce-9964-3fdd5737d4ce.png`
-
-Before evidence:
-
-- Dark `560px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/before/full-560.png`
-- Dark `1200px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/before/full-1200.png`
-
-Final evidence:
-
-- Dark narrow `560px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/dark-560.png`
-- Dark wide `1200px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/dark-1200.png`
-- Light `960px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/light-960.png`
-- High Contrast `960px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/hc-960.png`
-- Extreme narrow `300px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/full-300.png`
-- Todo two-column boundary `940px`: `/Users/archer/.codex/visualizations/2026/07/16/qa-hud-message-flow/after/full-940.png`
-
-**Container and material audit**
-
-- Task title, cost/context summary, timeline, Token bars, Token totals, Memory, Todo summary, Todo list, search, and every existing control remain in their original order and keep their original event bindings. A single static `qa-task-hud` wrapper now owns the outer glass boundary, blur, inner highlight, and shadow.
-- HUD child sections stay transparent and use only restrained horizontal separators. At `>=940px`, the existing graph/totals region and an expanded Todo list use deterministic Grid placement; below it, Todo items return to one column. At `<=300px`, title and statistics use explicit rows rather than free wrapping.
-- The conversation uses separate work and reading lanes: semantic tools and artifacts may use the wider work lane, while assistant text and reasoning remain within the `760px` reading measure.
-- User messages retain one right-aligned lightweight glass bubble. Assistant text and reasoning remain unboxed, with the Titanium text scale and `1.55` line height.
-- Each outer transcript part is now a borderless positioning shell. Skill, normal tool execution, Bash, Todo, Question, Permission, Error, Suggest, and Document Artifact continue to own their real semantic surface. Artifact output has one visible card boundary instead of inheriting a second parent boundary.
-- Collapsed tools use a quiet titanium rail; expanded tools receive the stronger raised surface. Skill is a compact capability rail. Semantic warning/error/success colors and non-color status cues remain unchanged.
-- Light mode uses pale Titanium surfaces. Genuine High Contrast removes blur and shadow, uses the editor background, and restores `contrastBorder`. Reduced Motion keeps existing state information while suppressing decorative motion.
-
-**Behavior and responsive guarantees**
-
-- Production changes are limited to one static Task Header layout wrapper, one static transcript-part style hook, Storybook fixtures, tests, and Titanium CSS. `MessageList`, Transcript processing, Session Context, QA state, CLI, SDK, configuration schema, indexing protocol, extension messages, and user storage were not changed.
-- Composer remains owned exclusively by the existing `prompt-input` Container Query. Its `940/560/420/300px` single-row, grouped-row, four-column, and compact-selector geometry is unchanged.
-- New HUD/message assertions cover `200、240、280、300、301、320、420、421、479、480、519、520、559、560、720、939、940、960、1200、1450px`: no horizontal overflow, escaped HUD, duplicate parent border, or nondeterministic Todo columns were observed.
-- The complete visual fixture now includes a user prompt, Skill, historical Todo, normal tools, expanded Bash, Artifact, running state, current Task Header Todo data, and the full existing Composer through the same production data interfaces.
-
-**Quality gates**
-
-- Passed: eight scoped QA responsive tests, including all existing dense/sparse Composer geometry and the new HUD/message checks. The remaining queued-message test times out before CSS assertions because its existing Story no longer renders `user-message-text`; no production transcript logic was changed to hide that unrelated Fixture drift.
-- Passed: the new full-conversation WCAG story, Webview and extension typecheck, package lint, targeted ESLint, Storybook production build, Knip, and ChipMate marker check.
-- The complete accessibility run retains three unrelated failures: two removed Marketplace story IDs and one existing Agent Manager sidebar-search finding. The new QA full-conversation scan passes with no automated WCAG violation.
-- Storybook retains its existing unresolved-package/font and large-chunk warnings. These warnings do not block the successful production build.
-
-scoped result: passed
-
----
-
-# Titanium Studio UI Alignment Design QA
-
-Source visual truth: `/var/folders/9s/q5y69fzj3b59lt103v6y4f4m0000gn/T/codex-clipboard-b01fb5ba-fa5e-4c17-b252-36742129f523.png`
-
-Final evidence:
-
-- QA and Settings dark review: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/review-dark.png`
-- QA full conversation, dark `600 × 1100`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/qa-full-dark-600.png`
-- QA full conversation, light `600 × 1100`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/qa-full-light-600.png`
-- Settings models, dark `1200 × 900`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/settings-dark-1200.png`
-- Settings models, dark narrow `480 × 900`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/settings-dark-480.png`
-- Settings light `1450 × 1086`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/settings-light-1450.png`
-- Settings high contrast `1450 × 1086`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/titanium-studio/settings-hc-1450.png`
-
-**Container audit**
-
-- Q01–Q08: the QA canvas now uses the locked titanium scale. Task title, total token count, token bars, input/output statistics, todo state, welcome content, user messages, and borderless assistant reading flow remain present.
-- Q09–Q13 and Q20: Skill and execution surfaces use restrained titanium hierarchy; tool headers, contents, output rows, busy state, semantic cards, and the return-to-bottom action retain their behavior and non-color status cues.
-- Q14–Q19: Composer uses a `12px` titanium glass dock, weak idle boundaries, a blue focus ring, stable `36–38px` controls, persistent indexing status, labels above `560px`, and deterministic icon grids below it. No icon layout uses absolute positioning.
-- S01–S07: Settings header and navigation use a `216–232px` desktop rail and a deterministic `56px` icon rail below `720px`, with `16px` labels and `18–20px` Codicons.
-- S08–S18: content, settings groups, rows, controls, ChipMate Server, every tab, and the save layer share the same titanium surfaces. Light uses opaque pale titanium layers; genuine High Contrast removes transparency, blur, and shadows and restores `contrastBorder`.
-
-**Responsive and interaction results**
-
-- QA passed deterministic width checks at `200、240、280、300、301、320、420、421、480、560、561、600、720、850px` with no overlap, horizontal overflow, random wrapping, or inaccessible action.
-- Settings passed at `360、480、560、720、900、1200、1450px`; every navigation tab remained reachable and each panel stayed within the visible container.
-- Hover, focus, expanded, disabled, busy, complete, warning, error, Light, High Contrast, no-blur, and Reduced Motion paths retain explicit visual or semantic feedback.
-- The implementation preserves existing events, ARIA labels, `aria-busy`, tool behavior, indexing protocol, save protocol, configuration schema, server communication, and settings navigation.
-
-**Quality gates**
-
-- Passed: QA and Settings Playwright (`8 passed`), accessibility Playwright (`15 passed`), Settings alignment unit tests, Webview typecheck, targeted ESLint, Storybook production build, Knip, ChipMate marker check, extension esbuild, package lint, package compile, and repository lint.
-- Repository lint completed with its existing warning inventory and `0 errors`.
-- Storybook initially encountered an incomplete local dependency cache for a bundled font. A normal `bun install` restored the dependency, and the clean production build then passed.
-- VSIX packaging, upload, and Linux target runtime verification were intentionally not run because they are outside this plan.
-
-final result: passed
-
----
-
-# QA UI Alignment Design QA
-
-Structural source visual truth: `/Users/archer/.codex/generated_images/019f5e49-f6bc-77f0-8432-6a39e9928c99/exec-71edd784-b134-4ca6-b951-fa231777aacf.png`
-
-User-confirmed default dark visual truth: `/var/folders/9s/q5y69fzj3b59lt103v6y4f4m0000gn/T/codex-clipboard-de282fe6-c6d1-403e-918f-27b56196f377.png`
-
-Viewport and state: `420 × 720`, empty QA session, disconnected placeholder, Claude Sonnet 4.6, auto-approve off, enhancement disabled, and send unavailable. The follow-up hc-black capture supersedes the original concept for the default dark palette and material, while the original concept remains the structural and scale reference.
-
-Primary implementation evidence:
-
-- Target/default side-by-side: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-target-vs-default.png`
-- Default hc-black `420 × 720`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-hc-idle-420.png`
-- Idle width matrix at `200/300/420/560/720px`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-hc-idle-width-matrix.png`
-- Dense control width matrix at `200/300/420/560/720px`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-hc-dense-width-matrix.png`
-- Conversation/tool/dock surface: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-hc-conversation-560.png`
-- Question state: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-hc-question-560.png`
-- Light fallback: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-light-idle-420.png`
-- Native hc-black theme: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/approved-native-hc-idle-420.png`
-
-Index-state and border-simplification follow-up:
-
-- Follow-up visual truth: `/var/folders/9s/q5y69fzj3b59lt103v6y4f4m0000gn/T/codex-clipboard-3e688968-ffd8-4322-abae-2e22a7a1b2d3.png`
-- Persistent-state concept: `/Users/archer/.codex/generated_images/019f5e49-f6bc-77f0-8432-6a39e9928c99/exec-5007a34a-67fe-41ea-b355-5472198de5f4.png`
-- Mixed Complete/In Progress/Error state: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-states-default-420.png`
-- State comparison montage (mixed, warning, standby): `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-states-review.png`
-- Complete-with-warning state: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-warning-default-420.png`
-- Standby/Disabled state: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-standby-default-420.png`
-- Narrow `280px` state layout: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-states-default-280.png`
-- Light and native high-contrast themes: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-states-light-420.png`, `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/index-states-native-hc-420.png`
-- Border-simplified conversation: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/qa-ui-alignment/borderless-conversation-560.png`
-
-**Findings**
-
-- No actionable P0/P1/P2 findings remain.
-- The former `data-state="complete"` versus CSS `ready` mismatch is removed. Every pipeline now exposes one tone calculation to rendering, CSS, accessibility text, and deterministic test hooks.
-- Complete at 100% is green with a check; In Progress is orange with partial fill and sync; Complete with errors, stale files, or incomplete progress is amber with a warning; Error is red; Standby and Disabled retain the neutral cyan treatment and hollow-circle marker.
-- Task Header title/graph/todo sections and ordinary text/reasoning wrappers no longer form cyan cards. The final visible header section uses one neutral divider, while Question, Permission, Error, Document Artifact, real tool execution, and Composer retain semantic boundaries.
-- [P3] Default dark intentionally removes blur, transparency, decorative highlight, and shadow to match the user-confirmed hc-black reference. Light mode retains the planned Liquid Glass material instead of forcing the black treatment into every theme.
-- [P3] The target/default SSIM is `1.000000`. Acceptance still used direct visual inspection, edge-color sampling, responsive geometry assertions, and accessibility checks so the black canvas was not allowed to hide a local mismatch.
-
-**C01–C12 Container Audit**
-
-| Container | Final comparison |
-|---|---|
-| C01 root canvas | Pure black QA-scoped canvas; Settings and other webviews remain on their selected VS Code theme. |
-| C02 task header | Borderless title/stat/graph flow, one neutral final divider, normal-flow tools, and stable collapsed/expanded geometry. |
-| C03 welcome state | Identity asset, `16px` guidance text, support action, spacing, and centered hierarchy match the `420 × 720` reference. |
-| C04 message plane | Reading width, side padding, scroll region, and composer separation stay stable from `200` through `720px`. |
-| C05 message identity | User and assistant text/reasoning read directly in the page flow without a generic cyan wrapper; identity, rhythm, and actions remain intact. |
-| C06 tool/code/artifact surfaces | Only real tool, code, error, and artifact surfaces retain semantic material and legible expanded/collapsed states. |
-| C07 question/permission/error docks | Warm-orange active shell, blue selected option, red risk/error treatment, and icon-plus-text semantics. |
-| C08 session actions | Cyan secondary boundary and centered action grouping remain visually subordinate to the composer. |
-| C09 composer shell | Warm-gold outer boundary is distinct from the orange input/focus boundary; radius and nested hierarchy match the reference. |
-| C10 input/attachments/review chips | `92px` input minimum, inner boundary, wrapping, removal actions, and long-content containment remain intact. |
-| C11 selectors | Codicon package/lightbulb/mode mapping, enlarged icon slots and text, single-line ellipsis, and deterministic compact labels. |
-| C12 actions/popovers | Cyan utility boundaries, persistent icon-plus-color indexing states, blue primary send/stop treatment, normal-flow icons, and themed popup surfaces. |
-
-**Responsive, Theme, and Accessibility Evidence**
-
-- Automated geometry covers `200, 240, 280, 300, 301, 320, 420, 421, 480, 560, 720px`: no horizontal scroll, rectangle overlap, out-of-bounds control, unstable row placement, or long-model overflow was detected.
-- At `≤300px`, selector labels and chevrons are hidden while fixed icon slots remain; actions use four deterministic grid columns and send/stop stays last. At `301–420px`, selectors and actions use stable separate rows. Above `420px`, they share one row with selectors owning truncation.
-- Default dark uses black fills with four visible semantic layers: warm-gold composer shell, orange input/focus state, cyan ordinary controls, and blue primary action. Green indexing success and red danger/error states remain distinct.
-- Light mode restores translucent gray-blue fill, `22px` backdrop blur, restrained highlights, and soft shadows. Native high contrast remains solid and reduced-motion mode disables material movement/transition.
-- Five QA accessibility fixtures pass automated WCAG checks, including mixed, warning, standby, and disabled indexing states. Controls retain accessible names, pressed/busy state, keyboard order, Enter/Shift+Enter behavior, and visible focus boundaries.
-- Index controls expose `data-state`, `data-tone`, and `data-progress` for deterministic regression checks. Their accessible names include pipeline, runtime state, progress, and issue counts without duplicating the decorative status glyph.
-- No icon layout in the QA alignment layer uses `position: absolute`; selector and action placement use normal-flow Grid/Flex.
-
-**Behavior and Scope**
-
-- Existing send/stop, mode, model, thinking, indexing, auto-approve, enhancement, speech, attachment, review, mention, slash-command, question, permission, and session-action event paths are unchanged.
-- The implementation is scoped to `ChatView[data-ui="qa-shell"]`; it does not force the global VS Code theme, alter Settings, change backend APIs, modify SDK/schema, or change session protocols.
-
-**Quality Gates**
-
-- Passed: QA responsive and accessibility Playwright set (`9 passed`), `bun run check-types:webview`, targeted ESLint for all QA-touched TypeScript/TSX files, `bun run build-storybook`, `bun run knip`, `bun run check-chipmate-change`, and direct `node esbuild.js` extension bundling.
-- Repository-level `bun run lint` passed in the current working tree. The previously recorded Agent Manager max-lines result did not reproduce in this final run.
-- `bun run compile` rebuilt and smoke-tested the current macOS CLI, regenerated the SDK, passed extension/webview typechecks and lint, and completed the final esbuild step.
-- No QA-specific warning or failure remains. This scoped visual change did not alter CLI, server, SDK, schema, indexing protocol, or settings behavior.
-
-final result: passed
-
----
-
-# ChipMate Server Settings Design QA
-
-Source visual truth path: `/Users/archer/.codex/generated_images/019f5e49-f6bc-77f0-8432-6a39e9928c99/exec-bd6329eb-ced6-4bb5-bfe3-80086941f7f1.png`
-
-Implementation screenshot paths:
-
-- Full Settings shell: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/chipmate-server-settings-panel.png`
-- Successful connection state: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/chipmate-server-success.png`
-- Side-by-side comparison: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/chipmate-server-comparison.png`
-
-Viewport: desktop browser capture `1200 × 900`; responsive geometry also checked at `420 × 760` and with the story constrained to `360px`.
-
-State: dark VS Code theme, ChipMate Server selected immediately after Providers, default `http://127.0.0.1:6001`, and successful service health response.
-
-**Findings**
-
-- No actionable P0/P1/P2 findings remain.
-- [P3] The implementation retains the production Settings shell and VS Code-native typography instead of reproducing the concept image's custom modal chrome. This is intentional: the separate UI-alignment plan owns whole-page shell convergence, while this feature adds only the new tab and content surface.
-- [P3] The in-app browser produced a distorted narrow screenshot after changing its global viewport. DOM geometry independently confirmed `scrollWidth === clientWidth`, a `282px` stacked control row, and a full-width test button; no product overflow was detected.
-
-Required fidelity surfaces:
-
-- Layout: the tab is placed directly after Providers; the page uses a single glass card with address, test action, status, and reload hint. Existing Local Config and Global Config actions remain unchanged.
-- Material and color: the card uses VS Code theme tokens, translucent layered surfaces, a restrained border, inner highlight, soft shadow, and green/warning/error semantic states.
-- Typography and copy: labels, helper copy, placeholder, status, and reload guidance are localized through the existing language system.
-- Icons: existing project icons inherit `currentColor`; no custom SVG, CSS-drawn icon, emoji, or absolute-positioned icon layout was introduced.
-- Responsive behavior: the address field and test action stack below `520px`; measurements showed no horizontal overflow or overlap.
-- Accessibility: the field has a programmatic label and descriptions, invalid state is exposed, status uses `role=status`/`alert` with `aria-live`, Enter triggers testing, and disabled states prevent invalid or duplicate requests.
-
-**Primary States Checked**
-
-- Default loaded value.
-- Editing and protocol normalization stories.
-- Testing, success, degraded warning, and network failure stories.
-- Full Settings shell and constrained narrow layout.
-- Isolated Extension Development Host: tab order, default value, unsaved draft bar, timeout status, normalized save result, reload notice, and post-reload persistence.
-- Post-reload runtime: Marketplace reported `http://127.0.0.1:6001/marketplace`; with explicit renderer environment overrides removed, the spawned CLI received the matching Word and Mermaid endpoints.
-
-final result: passed
-
----
-
-# Settings UI Alignment Design QA
-
-Source visual truth path: `/Users/archer/.codex/generated_images/019f5e49-f6bc-77f0-8432-6a39e9928c99/exec-bd6329eb-ced6-4bb5-bfe3-80086941f7f1.png`
-
-Implementation screenshot paths:
-
-- Dark desktop, stitched from two unscaled in-app Browser captures to preserve the full `1450 × 1086` CSS viewport under the browser's high-DPI capture limit: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/final-dark-1450x1086.png`
-- Dark narrow `480 × 900`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/final-dark-480x900.png`
-- Light desktop: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/final-light-1450x1086.png`
-- High contrast desktop: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/final-hc-1450x1086.png`
-- Navigation scale follow-up, dark desktop `1450 × 916`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/nav-scale-final-dark-1450x916.png`
-- Navigation scale follow-up, dark narrow `480 × 900`: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/nav-scale-final-dark-480x900.png`
-
-Viewport and state: `1450 × 1086`, dark VS Code theme, Simplified Chinese, ChipMate Server selected, default `http://127.0.0.1:6001`, successful connection, and dirty save bar. Responsive evidence also covered `900 × 800`, `480 × 900`, and the logical viewports corresponding to 80%, 100%, 125%, and 150% VS Code zoom.
-
-Full-view side-by-side comparison evidence: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-full-final.png`
-
-Navigation scale follow-up full-view comparison evidence: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-navigation-scale-full-final.png`
-
-Focused comparison evidence:
-
-- Header: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-header-final.png`
-- Navigation: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-navigation-final.png`
-- Navigation scale follow-up: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-navigation-scale-final.png`
-- Content and title: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-content-final.png`
-- Form group: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-form-final.png`
-- Save bar: `/Users/archer/.codex/visualizations/2026/07/14/019f5e49-f6bc-77f0-8432-6a39e9928c99/settings-ui-alignment/comparison-save-bar-final.png`
-
-**Findings**
-
-- No actionable P0/P1/P2 findings remain.
-- [P3] The implementation retains “打开项目配置” and “打开全局配置” in the header, while the concept image only shows Close. This is an explicit product requirement and the actions remain visually secondary.
-- [P3] The reference uses a circled success mark. The implementation uses the repository-required monochrome Codicon plus semantic text without a colored circular badge.
-- [P3] The implementation uses project font-size tokens and VS Code theme tokens, so exact glyph metrics and material color vary with the user's configured webview font size and theme. The locked geometry, hierarchy, spacing, and contrast remain stable.
-
-**Container Audit**
-
-- C01–C03: shell, header, and left panel match the low-saturation blue-gray composition, 16px outer inset, 296px navigation width, glass hierarchy, and restrained shadow.
-- C04–C05: normal, hover, focus, and active navigation states use the locked Codicon mapping, normal-flow 28px icon slots, 26px optical icon size, stable 54px rows, 20px labels, visible left highlight, and no position shift.
-- C06–C08: content panel, title block, and form group align to the source geometry; the measured form is `1034 × 174` at `x=364`, with the title starting at `x=389`.
-- C09–C12: input, test action, state slot, and reload hint retain fixed desktop geometry and stack without horizontal overflow at narrow widths.
-- C13–C14: the dirty save bar remains independent of content scrolling, preserves error expansion, and keeps fixed-size discard/save actions.
-- All eight audit dimensions were checked for every container: geometry, spacing, color, contrast, material, typography, icon, and state.
-
-**Accessibility and Interaction Evidence**
-
-- Dark contrast ratios: normal navigation `5.61:1`, active text `7.55:1`, page title `9.47:1`, description `5.61:1`, input text `7.18:1`, status `7.60:1`, reload hint `5.61:1`, primary save text `4.53:1`, active border `3.50:1`, and input border `3.07:1`.
-- Light input and panel borders measure `3.05:1` and `3.08:1`; high-contrast text reaches `21:1`, and blur is disabled on panels and cards.
-- Kobalte Tabs preserve `tablist`, `tab`, and `tabpanel` semantics. ArrowDown moved selection and focus from ChipMate Server to 智能体行为. DOM focus order places the active tab before the server input, test button, discard, and save actions.
-- Hover, focus, testing, warning, error, saving, and save-failed states were rendered in the in-app Browser. The focus outline resolves to `--vscode-focusBorder`, saving keeps the button size while disabling it, and all semantic states include icon plus text.
-- All checked responsive and zoom-equivalent logical viewports reported `scrollWidth === clientWidth`; no horizontal page, shell, or content overflow remains.
-
-**Iteration History**
-
-- Pass 1 found the old 180px flat sidebar, ungrouped content, mixed icon system, and missing whole-page material hierarchy. Rebuilt the shell, navigation descriptor, title/group structure, save bar, and scoped Liquid Glass token system.
-- Pass 2 found the ChipMate form geometry and desktop spacing below the source scale. Aligned the `296px` navigation, `56px` content inset, `1034 × 174` form group, `558px` input, `132px` test action, and `230px` stable status slot.
-- Pass 3 found raw pixel typography violating the webview font-size architecture. Replaced every Settings font size with ChipMate tokens while preserving the designed scale.
-- Pass 4 found dark and light control borders below the plan's `3:1` non-text threshold and a specificity leak that left blur enabled in high contrast. Strengthened token-derived borders and added high-specificity high-contrast material fallbacks.
-- Pass 5 compared the source and final implementation in one full-view image plus five focused pairs. No P0/P1/P2 mismatch remained.
-- Pass 6 responded to the navigation scale follow-up. The first `18px` label/`24px` icon pass remained visibly lighter than the source, so the final pass uses `20px` labels, an optical `26px` Codicon size inside a `28px` normal-flow slot, and `54px` rows. The source and implementation were re-compared in full-view and focused navigation pairs; desktop and narrow views have no horizontal overflow, and no P0/P1/P2 mismatch remains.
-
-final result: passed
-
----
-
-# ChipMate 完成态耗时 Design QA
-
-Source visual truth path: `/Users/archer/.codex/generated_images/019fb632-1de3-74e0-9fba-fb67d59b397c/exec-263b0948-039d-41d0-a5ef-bde8bf935440.png`
-
-Implementation screenshot path: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-420.png`
-
-Full-view comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-420-comparison.png`
-
-Focused completion-row comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-420-focus-comparison.png`
-
-Viewport and normalization:
-
-- Implementation: Playwright Chromium, dark `dark-modern` theme, `420 × 720` CSS px, `deviceScaleFactor: 1`, output `420 × 720` px.
-- Source: ImageGen raster `932 × 1687` px, without declared CSS viewport or density metadata. The full-view comparison normalizes its width to `420` px (`420 × 760` px); the focused comparison normalizes the lower response/duration region to the same `420` px width. This comparison therefore evaluates the requested completion row, not a claim of whole-screen pixel identity.
-
-State: Simplified Chinese, idle completed session, final assistant message has `finish: "stop"`, one completed tool section, visible copy action, and the designed `已完成 · 本轮耗时 2分38秒` label. The source and implementation are both dark, completed-answer states; their broader shell differs intentionally because the implementation preserves ChipMate's existing VS Code-native chat surface. Playwright additionally checked `200px` dark plus `420px` dark, light, and high-contrast themes for bounds and non-overlap.
-
-**Findings**
-
-- No actionable P0/P1/P2 visual differences remain in the selected completion-duration scope.
-- [P3] The source concept encloses the full answer in a large glass card and shows a custom product header; the implementation retains the existing borderless reading flow, tool presentation, and composer. This is an intentional product constraint from the request to follow the existing interface, not a duration-row mismatch.
-- [P3] The source concept includes feedback actions that are not always enabled in the current fixture. The production duration row correctly follows the existing copy/action row when those controls are present.
-
-**Required Fidelity Surfaces**
-
-- Fonts and typography: Both comparison regions use small muted metadata below the answer. The implementation uses the existing webview sans-serif and `--chipmate-font-size-12` token, tabular numerals, normal wrapping, and Chinese copy matching the selected design state. The exact font family remains intentionally the installed VS Code/webview font rather than the ImageGen raster's inferred typeface.
-- Spacing and layout rhythm: The row is in normal flex flow immediately after the assistant content/actions, keeps the shared readable width, and has no extra card, border, or detached overlay. The final `20px` icon and `10px` gap match the source's visual weight and left-to-right rhythm at `420px`.
-- Colors and visual tokens: The label uses the existing muted VS Code description foreground; the check uses `--chipmate-agent-ultra-foreground`, including its existing light/high-contrast fallback. No hard-coded theme color or gradient was introduced.
-- Image quality and asset fidelity: The completion mark uses the repository's existing `circle-check` icon component rather than a handcrafted SVG, CSS drawing, emoji, or generated raster. The comparison source is a concept image only; no logo, illustration, or other image asset was added or substituted in the production UI.
-- Copy and content: The source-selected Chinese content is implemented exactly as `已完成 · 本轮耗时 2分38秒` in the QA state. English fallbacks are localized as `Completed · This turn took 2m 38s`.
-
-**Comparison History**
-
-1. P2 found in the first normalized comparison: the `16px` completion mark read noticeably lighter and tighter than the selected source row. Fix: changed the existing icon component to its normal `20px` size and increased the normal-flow gap from `7px` to `10px`.
-2. Post-fix evidence: the final full-view and focused side-by-side images above show the check, label weight, muted color, and below-answer placement aligned with the selected design while retaining the production chat shell. No P0/P1/P2 issue remains.
-
-**Open Questions**
-
-- The final visual evidence is Storybook/webview rendering. An installed VS Code Extension Host with a live Ultra response was not started in this task, so that deployment surface remains unverified; the data path is covered by unit tests for successful completion, tool phases, errors, partial turns, invalid timestamps, and compaction replay safeguards.
-
-**Implementation Checklist**
-
-- [x] Render one completion-duration row only on the final assistant chunk.
-- [x] Compute elapsed wall time from original user submission through final successful `stop` response.
-- [x] Hide uncertain, interrupted, errored, incomplete, and internal compaction/replay cases.
-- [x] Verify `200px` dark plus `420px` dark/light/high-contrast bounds and action non-overlap with Playwright.
-- [x] Compare source and implementation in the same full-view and focused images.
-
-**Follow-up Polish**
-
-- [P3] If the broader chat shell is later redesigned, re-evaluate the full-card source concept separately; it is intentionally outside this narrowly scoped completion-duration change.
-
-final result: passed
-
----
-
-# ChipMate 完成态动作列与 Agent 色彩 Design QA（最新）
-
-Source visual truth path: `/Users/archer/.codex/generated_images/019fb632-1de3-74e0-9fba-fb67d59b397c/exec-79abeeab-e246-476d-9db3-1d6c3d965d7e.png`
-
-Implementation screenshot path: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-modes-420.png`
-
-Full-view comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-modes-420-comparison.png`
-
-Focused completion-action-row comparison evidence: `/Users/archer/Work/chipmate/packages/chipmate-vscode/qa/artifacts/turn-completion-duration-modes-420-focus-comparison.png`
-
-Viewport, density, and state:
-
-- The approved source is `958 × 1642` px with no declared CSS density; it was proportionally normalized to `420 × 720` px.
-- The implementation is a Chromium `420 × 720` CSS-px capture at `deviceScaleFactor: 1`, outputting `420 × 720` px. The full comparison is equal-density side by side at `840 × 720` px; the focused action-row comparison is `840 × 310` px.
-- Both views are dark completed-answer states. The implementation fixture is Simplified Chinese and enables feedback only for the QA state so copy / thumbs-up / thumbs-down are visible; production consent behavior is unchanged.
-
-**Findings**
-
-- No actionable P0/P1/P2 difference remains in the requested action-row scope.
-- [P3] The approved concept also contains tool cards and agent labels; the implementation deliberately retains the existing denser VS Code transcript surface. This does not affect the requested action order, completion copy, or agent-color behavior.
-
-**Required Fidelity Surfaces**
-
-- Fonts and typography: Existing `--chipmate-font-size-12`, sans-serif metadata, tabular numerals, and normal wrapping keep the completion copy compact and readable.
-- Spacing and layout rhythm: The completed state is in the normal-flow copy / feedback rail after a vertical divider. It aligns on one baseline at `420px` and wraps safely without overlap at `200px`.
-- Colors and visual tokens: `ultra` resolves to `--chipmate-agent-ultra-foreground`; every other persisted final agent resolves to `--vscode-foreground`. The check inherits `currentColor`, so icon and label stay synchronized in dark, light, and high-contrast themes.
-- Image quality and asset fidelity: The existing `circle-check` icon is used; no generated production asset, custom SVG, CSS drawing, emoji, or placeholder was introduced.
-- Copy and content: The capture shows the approved `已完成 · 本轮耗时 18秒` and `已完成 · 本轮耗时 2分38秒` states, with existing English localization retained.
-
-**Comparison History**
-
-1. P2: the earlier completion row was detached below the answer and colored every agent as Ultra. Fix: move a semantic completion slot through the existing action-row component chain, add the divider, and derive tone from the persisted final successful assistant agent.
-2. P2 edge case: a textless final `stop` reply had no action row. Fix: assign elapsed metadata to the row that owns the copied text while preserving the terminal reply's agent for color; targeted unit coverage verifies Code text followed by an `Ultra` terminal reply.
-3. Post-fix comparison: full and focused side-by-side evidence confirms `复制 / 赞 / 踩 | 勾选完成态`, foreground Code, purple Ultra, and no duplicate below-answer row. No P0/P1/P2 mismatch remains.
-
-**Implementation Checklist**
-
-- [x] Completion state is a descendant of the existing assistant action rail, not a sibling below the response.
-- [x] Ultra is purple; all other agents use the theme foreground.
-- [x] `77` targeted unit tests (`349` assertions) pass for timing and transcript edge cases.
-- [x] Two action-row Playwright checks pass: dark/light/high-contrast `420px`, dark `200px`, and the no-empty-divider regression; no browser `console.error` or `pageerror` was observed.
-- [x] Source and implementation were reviewed in one full-view image and one focused action-row image.
-
-**Follow-up Polish**
-
-- [P3] Revisit visible Code/Ultra identity labels only if the existing transcript itself later adds agent identity to assistant messages.
-
-final result: passed
-
----
-
-# C/C++ 批量注释进度 Design QA（最新）
-
-Source visual truth path: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/source-design.png`
-
-Implementation screenshot path: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/implementation-progress-clean.png`
-
-Full-view comparison evidence: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/design-qa-comparison.png`
-
-Focused progress comparison evidence: `/Users/archer/.codex/visualizations/2026/08/05/019fd142-52fc-7de3-a073-c6d8e642caed/design-qa-progress-focus.png`
-
-Viewport, density, and state:
-
-- 设计图为 Chrome `1440 × 720` CSS px、`deviceScaleFactor: 1`，输出 `1440 × 720` px。
-- 实现为真实 VS Code 1.131 Extension Host `1440 × 719` CSS px、`deviceScaleFactor: 1`，输出 `1440 × 719` px；比较时未进行密度缩放。
-- 两侧均为深色主题、编辑器选中多个 C 函数、生成任务正在运行的状态。真实实现使用 4 路并发，并显示完成数、运行数、排队数、失败数、耗时、进度条、取消动作和状态栏进度。
-
-**Findings**
-
-- [P1] 原生通知无法 1:1 呈现设计图的多行卡片结构与“查看详情”按钮。
-  Location: VS Code 右下角通知，`packages/chipmate-vscode/src/services/code-comments/register.ts`。
-  Evidence: 设计图把标题、完成数、耗时、进度条、运行/排队/失败、恢复说明和两个动作分成五行；真实实现受 `vscode.window.withProgress` 的稳定 API 限制，只能显示单行标题加消息、原生进度条和 Cancel。完成数、运行数、排队数、失败数、恢复状态与耗时的信息均存在，但视觉层级明显不同。
-  Impact: 用户能够可靠判断任务仍在运行，也能取消，但未达到用户要求的设计图 100% 视觉还原，且通知内没有独立的“查看详情”动作。
-  Fix: 若必须像素级还原，只能改为自有 Webview 进度面板，或采用不受支持的 VS Code 工作台 DOM 注入。前者不能作为编辑器右下角浮动通知，后者存在版本兼容与安全风险，因此当前稳定扩展 API 下没有可接受的 1:1 修复路径。
-
-- [P3] 状态栏背景跟随当前 VS Code 主题，而不是设计稿中的固定蓝色。
-  Location: VS Code 底部状态栏。
-  Evidence: 设计图使用蓝色全宽状态栏；真实 Extension Host 的当前主题使用深色状态栏，但旋转同步图标、`注释 0/4 · 00:00` 文案、位置和紧凑密度均已实现。
-  Impact: 不影响可读性与等待反馈；强制修改全局状态栏颜色不属于扩展可控范围。
-
-**Required Fidelity Surfaces**
-
-- Fonts and typography: 实现使用 VS Code 原生 UI 字体、字号、行高和通知排版；文本清晰、没有溢出，但受原生通知单行布局影响发生换行，未复刻设计图的多级字重。
-- Spacing and layout rhythm: 进度通知和状态栏均位于设计指定区域，没有遮挡持久控件；原生通知高度更紧凑，构成当前 P1 差异。
-- Colors and visual tokens: 实现完全使用当前 VS Code 主题 token、原生信息色与进度色；固定蓝色状态栏未强制覆盖。
-- Image quality and asset fidelity: 此界面没有产品图片；所有图标均由 VS Code Codicon 和原生控件提供，没有自制 SVG、CSS 图标、表情符号或占位图片。
-- Copy and content: 标题、完成/总数、运行中、排队、失败、耗时、恢复与取消语义均已覆盖；通知内缺少设计图的独立“查看详情”按钮。
-- Accessibility: 原生通知、原生 Quick Pick、原生取消动作和状态栏项目保留 VS Code 的键盘与读屏行为；没有创建不可访问的自定义浮层。
-
-**Comparison History**
-
-1. 首次真实截图包含两个与本功能无关的启动通知，影响右下角密度对照。修复：清除无关通知，在同一 Extension Host、同一视口重新触发批量注释并捕获 `implementation-progress-clean.png`。
-2. 第二次对照确认通知位置、实时数字、进度条、取消动作与状态栏进度均生效；仍存在上述 P1 原生通知结构差异。没有采用不受支持的工作台 DOM 注入。
-
-**Primary Interactions Tested**
-
-- 命令面板可进入“为选中函数批量生成高可信注释”。
-- 真实 C 文件识别出 5 个函数；4 个无函数说明的项目默认选中，1 个已有函数说明的项目默认不选，选中后明确标记为修订原说明。
-- 任务以 4 路并发启动；通知和状态栏同时显示实时进度，原生 Cancel 可见。
-- 真实模型请求已发起，但干净 Extension Host 没有登录态，5 个请求均以 `401 PAID_MODEL_AUTH_REQUIRED` 结束；成功候选选择、统一 Diff 和应用闭环由目标单测覆盖，未在该干净 Extension Host 中完成真实模型成功态验收。
-
-**Implementation Checklist**
-
-- [x] 批量入口与最多 10 个函数限制。
-- [x] 已有函数说明默认不选，用户显式选择后才修订。
-- [x] 4 路并发、单项失败隔离、恢复状态和取消传播。
-- [x] 通知进度条与状态栏每秒更新。
-- [x] 成功候选二次选择、统一 Diff、快照校验和原子应用实现并通过目标测试。
-- [ ] 设计图多行通知卡片和“查看详情”按钮的 1:1 还原；被 VS Code 稳定扩展 API 阻塞。
-
-**Follow-up Polish**
-
-- [P3] 若产品接受侧边栏或编辑器标签页而不是右下角浮动通知，可另行设计自有 Webview 进度中心；这属于交互形态变更，不应在本次“简单方案”中自动替换。
-
-final result: blocked
+- 无 P0、P1、P2 视觉问题。
+- 不追加 P3 装饰性调整，避免偏离 VS Code 原生设计体系。

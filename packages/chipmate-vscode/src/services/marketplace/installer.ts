@@ -3,7 +3,12 @@ import * as path from "path"
 import * as os from "os"
 import { createHash, randomUUID } from "crypto"
 import { isSkillId, validateSkillIdentity } from "@opencode-ai/core/chipmate/skill-identity"
-import { readPortableMetadata } from "@chipmate/skill-spec"
+import {
+  readPortableMetadata,
+  readSkillArchive,
+  validateSkillArchive,
+  type SkillInputFile,
+} from "@chipmate/skill-spec"
 import * as yaml from "yaml"
 import { exec } from "../../util/process"
 import type {
@@ -18,9 +23,59 @@ import type {
   RemoveResult,
 } from "./types"
 import { MarketplacePaths } from "./paths"
+import {
+  SkillAlreadyInstalledError,
+  commitWindowsSkillByCopy,
+  recoverWindowsSkillTransactions,
+  verifyInstalledSkillSnapshot,
+  type SkillCopyCommitOptions,
+} from "./windows-skill-commit"
+
+export interface MarketplaceInstallerOptions {
+  platform?: NodeJS.Platform
+  rename?: (source: string, target: string) => Promise<void>
+  wait?: (milliseconds: number) => Promise<void>
+  writeFile?: SkillCopyCommitOptions["writeFile"]
+  onTransactionPhase?: SkillCopyCommitOptions["onPhase"]
+}
 
 export class MarketplaceInstaller {
-  constructor(private paths: MarketplacePaths) {}
+  constructor(
+    private paths: MarketplacePaths,
+    private options: MarketplaceInstallerOptions = {},
+  ) {}
+
+  private rename(source: string, target: string): Promise<void> {
+    return renameDirectoryWithRetry(source, target, this.options)
+  }
+
+  private removeDirectory(dir: string, force = true): Promise<void> {
+    const windows = (this.options.platform ?? process.platform) === "win32"
+    return fs.rm(dir, {
+      recursive: true,
+      force,
+      maxRetries: windows ? 8 : 0,
+      retryDelay: 50,
+    })
+  }
+
+  private windows(): boolean {
+    return (this.options.platform ?? process.platform) === "win32"
+  }
+
+  private copyOptions(): SkillCopyCommitOptions {
+    return {
+      ...(this.options.wait ? { wait: this.options.wait } : {}),
+      ...(this.options.writeFile ? { writeFile: this.options.writeFile } : {}),
+      ...(this.options.onTransactionPhase ? { onPhase: this.options.onTransactionPhase } : {}),
+    }
+  }
+
+  async recoverSkillTransactions(scope: "project" | "global", workspace?: string): Promise<void> {
+    if (!this.windows()) return
+    if (scope === "project" && !workspace) return
+    await recoverWindowsSkillTransactions(this.paths.skillsDir(scope, workspace), this.copyOptions())
+  }
 
   async install(
     item: MarketplaceItem,
@@ -198,10 +253,9 @@ export class MarketplaceInstaller {
       return { success: false, slug: item.id, error: "Skill already installed. Uninstall it before installing again." }
     }
 
-    // Stage under `base` (not os.tmpdir()) so fs.rename() never crosses filesystems (EXDEV).
     await fs.mkdir(base, { recursive: true })
-    const staging = await fs.mkdtemp(path.join(base, `.staging-${item.id}-`))
     const tarball = path.join(os.tmpdir(), `chipmate-skill-${item.id}-${randomUUID()}.tar.gz`)
+    let staging: string | undefined
 
     try {
       const response = await fetch(item.content)
@@ -211,41 +265,52 @@ export class MarketplaceInstaller {
 
       const buffer = Buffer.from(await response.arrayBuffer())
       await fs.writeFile(tarball, buffer)
-      await exec("tar", ["-xzf", tarball, "--strip-components=1", "-C", staging])
-
-      const escaped = await findEscapedPaths(staging)
-      if (escaped.length > 0) {
-        console.warn(`Skill archive ${item.id} contains escaped paths:`, escaped)
-        return { success: false, slug: item.id, error: "Skill archive contains unsafe paths" }
+      const listing = await exec("tar", ["-tzf", tarball])
+      const entries = listing.stdout.split(/\r?\n/).filter(Boolean)
+      if (!safeArchive(entries, item.id)) {
+        return { success: false, slug: item.id, error: "Skill archive contains unsafe paths or an unexpected root" }
       }
-
-      try {
-        await fs.access(path.join(staging, "SKILL.md"))
-      } catch {
-        console.warn(`Extracted skill ${item.id} missing SKILL.md, rolling back`)
-        return { success: false, slug: item.id, error: "Extracted archive missing SKILL.md" }
+      const prepared = prepareSkillArchive(buffer, item.id)
+      if (this.windows()) {
+        await commitWindowsSkillByCopy(
+          {
+            base,
+            id: item.id,
+            scope,
+            sourceSha256: prepared.sourceSha256,
+            snapshotSha256: prepared.snapshotSha256,
+            files: prepared.files,
+            allowUpdate: false,
+          },
+          this.copyOptions(),
+        )
+      } else {
+        // Keep non-Windows staging on the target filesystem for its atomic directory rename.
+        staging = await fs.mkdtemp(path.join(base, `.staging-${item.id}-`))
+        await writeSkillFiles(staging, prepared.files)
+        await verifyInstalledSkillSnapshot(staging, item.id, prepared.snapshotSha256)
+        await this.rename(staging, dir)
+        staging = undefined
+        await verifyInstalledSkillSnapshot(dir, item.id, prepared.snapshotSha256)
       }
-
-      await validateSkillIdentityAt(staging, item.id)
-
-      await fs.rename(staging, dir)
 
       return { success: true, slug: item.id, filePath: path.join(dir, "SKILL.md"), line: 1 }
     } catch (err) {
-      if (await exists(dir)) {
-        return {
-          success: false,
-          slug: item.id,
-          error: "Skill already installed. Uninstall it before installing again.",
-        }
+      if (err instanceof SkillAlreadyInstalledError) return { success: false, slug: item.id, error: err.message }
+      if (!this.windows() && (await exists(dir))) {
+        return { success: false, slug: item.id, error: "Skill already installed. Uninstall it before installing again." }
       }
+      const failure = knownInstallFailure(item.id, err)
+      if (failure) return failure
       console.warn(`Failed to install skill ${item.id}:`, err)
       return { success: false, slug: item.id, error: String(err) }
     } finally {
       await Promise.all([
-        fs.rm(staging, { recursive: true, force: true }).catch((err) => {
-          console.warn(`Failed to clean up staging directory ${staging}:`, err)
-        }),
+        staging
+          ? this.removeDirectory(staging).catch((err) => {
+              console.warn(`Failed to clean up staging directory ${staging}:`, err)
+            })
+          : Promise.resolve(),
         fs.rm(tarball, { force: true }).catch((err) => {
           console.warn(`Failed to clean up temp file ${tarball}:`, err)
         }),
@@ -279,7 +344,7 @@ export class MarketplaceInstaller {
     const dir = path.join(base, item.id)
     if (!contains(base, dir)) return { success: false, slug: item.id, error: "Invalid skill id" }
     await fs.mkdir(base, { recursive: true })
-    const staging = await fs.mkdtemp(path.join(base, `.staging-${item.id}-`))
+    let staging: string | undefined
     const backup = path.join(base, `.backup-${item.id}-${randomUUID()}`)
     const tarball = path.join(os.tmpdir(), `chipmate-skill-${item.id}-${randomUUID()}.tar.gz`)
     const state = { backedUp: false, installed: false }
@@ -293,35 +358,58 @@ export class MarketplaceInstaller {
       const entries = listing.stdout.split(/\r?\n/).filter(Boolean)
       if (!safeArchive(entries, item.id))
         return { success: false, slug: item.id, error: "Skill archive contains unsafe paths or an unexpected root" }
-      await exec("tar", ["-xzf", tarball, "--strip-components=1", "-C", staging])
-      const escaped = await findEscapedPaths(staging)
-      if (escaped.length > 0) return { success: false, slug: item.id, error: "Skill archive contains unsafe links" }
-      if (!(await exists(path.join(staging, "SKILL.md")))) {
-        return { success: false, slug: item.id, error: "Extracted archive missing SKILL.md" }
+      const prepared = prepareSkillArchive(buffer, item.id)
+      if (this.windows()) {
+        await commitWindowsSkillByCopy(
+          {
+            base,
+            id: item.id,
+            scope,
+            sourceSha256: item.sha256,
+            snapshotSha256: prepared.snapshotSha256,
+            files: prepared.files,
+            allowUpdate: true,
+          },
+          this.copyOptions(),
+        )
+        return { success: true, slug: item.id, filePath: path.join(dir, "SKILL.md"), line: 1 }
       }
-      await validateSkillIdentityAt(staging, item.id)
+
+      staging = await fs.mkdtemp(path.join(base, `.staging-${item.id}-`))
+      await writeSkillFiles(staging, prepared.files)
+      await verifyInstalledSkillSnapshot(staging, item.id, prepared.snapshotSha256)
       if (await exists(dir)) {
-        await fs.rename(dir, backup)
+        await this.rename(dir, backup)
         state.backedUp = true
       }
-      await fs.rename(staging, dir)
+      await this.rename(staging, dir)
+      staging = undefined
       state.installed = true
-      if (state.backedUp) await fs.rm(backup, { recursive: true, force: true })
+      await verifyInstalledSkillSnapshot(dir, item.id, prepared.snapshotSha256)
+      if (state.backedUp) await this.removeDirectory(backup)
+      state.backedUp = false
       return { success: true, slug: item.id, filePath: path.join(dir, "SKILL.md"), line: 1 }
     } catch (err) {
-      if (state.backedUp && !state.installed && !(await exists(dir))) await fs.rename(backup, dir)
+      if (state.installed) {
+        await this.removeDirectory(dir)
+        state.installed = false
+      }
+      if (state.backedUp && !(await exists(dir))) {
+        await this.rename(backup, dir)
+        state.backedUp = false
+      }
+      const failure = knownInstallFailure(item.id, err)
+      if (failure) return failure
       console.warn(`Failed to install verified skill ${item.id}:`, err)
       return { success: false, slug: item.id, error: String(err) }
     } finally {
       await Promise.all([
-        fs
-          .rm(staging, { recursive: true, force: true })
-          .catch((err) => console.warn(`Failed to clean ${staging}:`, err)),
+        staging
+          ? this.removeDirectory(staging).catch((err) => console.warn(`Failed to clean ${staging}:`, err))
+          : Promise.resolve(),
         fs.rm(tarball, { force: true }).catch((err) => console.warn(`Failed to clean ${tarball}:`, err)),
-        state.installed
-          ? fs
-              .rm(backup, { recursive: true, force: true })
-              .catch((err) => console.warn(`Failed to clean ${backup}:`, err))
+        !state.backedUp
+          ? this.removeDirectory(backup).catch((err) => console.warn(`Failed to clean ${backup}:`, err))
           : Promise.resolve(),
       ])
     }
@@ -388,12 +476,12 @@ export class MarketplaceInstaller {
       await validateRoot(base)
       await validateSkillDirectory(dir)
       await validateSkillIdentityAt(dir, item.id)
-      await fs.rename(dir, tomb)
+      await this.rename(dir, tomb)
       try {
-        await fs.rm(tomb, { recursive: true, force: false })
+        await this.removeDirectory(tomb, false)
       } catch (err) {
         try {
-          await fs.rename(tomb, dir)
+          await this.rename(tomb, dir)
         } catch (cause) {
           console.warn(`Failed to remove skill ${item.id} and restore ${dir}:`, err, cause)
           return {
@@ -447,6 +535,68 @@ export class MarketplaceInstaller {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+function prepareSkillArchive(buffer: Buffer, expected: string): {
+  sourceSha256: string
+  snapshotSha256: string
+  files: SkillInputFile[]
+} {
+  const source = readSkillArchive(buffer)
+  validateSkillIdentityFiles(source, expected)
+  const snapshot = validateSkillArchive(buffer)
+  if (snapshot.spec.id !== expected) {
+    throw new SkillIdentityMismatchError(
+      expected,
+      snapshot.spec.id,
+      `Skill snapshot id "${snapshot.spec.id}" does not match expected id "${expected}"`,
+    )
+  }
+  if (!snapshot.valid) {
+    const issue = snapshot.issues.find((item) => item.severity === "error")
+    throw new Error(issue?.message ?? "Skill archive failed shared Skill Spec validation")
+  }
+  return {
+    sourceSha256: snapshot.sourceSha256,
+    snapshotSha256: snapshot.snapshotSha256,
+    files: readSkillArchive(snapshot.archive),
+  }
+}
+
+function validateSkillIdentityFiles(files: SkillInputFile[], expected: string): void {
+  const manifests = files.filter((file) => file.path.toLocaleLowerCase() === "skill.md")
+  if (manifests.length !== 1 || manifests[0]?.path !== "SKILL.md") {
+    throw new SkillIdentityMismatchError(expected, "missing", "Archive must contain one root SKILL.md")
+  }
+  const metadata = readPortableMetadata(manifests[0].data.toString("utf8"))
+  if (!metadata.name) {
+    throw new SkillIdentityMismatchError(expected, "missing", "SKILL.md frontmatter must contain name")
+  }
+  const json = files.find((file) => file.path === "skill.json")
+  if (!json) throw new SkillIdentityMismatchError(expected, "missing", "Archive must contain root skill.json")
+  const value = JSON.parse(json.data.toString("utf8")) as unknown
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new SkillIdentityMismatchError(expected, "invalid", "skill.json must be an object")
+  }
+  const id = (value as { id?: unknown }).id
+  if (typeof id !== "string") {
+    throw new SkillIdentityMismatchError(expected, "missing", "skill.json id must be a string")
+  }
+  const identity = validateSkillIdentity({ name: metadata.name, directory: expected, metadataId: id })
+  if (!identity.valid) {
+    throw new SkillIdentityMismatchError(expected, id || metadata.name, identity.message)
+  }
+  if (identity.id !== expected) {
+    throw new SkillIdentityMismatchError(expected, identity.id, `Skill id "${identity.id}" does not match "${expected}"`)
+  }
+}
+
+async function writeSkillFiles(root: string, files: SkillInputFile[]): Promise<void> {
+  for (const file of files) {
+    const target = path.join(root, ...file.path.split("/"))
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, file.data, { mode: file.mode ?? 0o644 })
+  }
+}
+
 async function exists(filepath: string): Promise<boolean> {
   try {
     await fs.access(filepath)
@@ -454,6 +604,53 @@ async function exists(filepath: string): Promise<boolean> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return false
     throw err
+  }
+}
+
+async function renameDirectoryWithRetry(
+  source: string,
+  target: string,
+  options: MarketplaceInstallerOptions,
+): Promise<void> {
+  const platform = options.platform ?? process.platform
+  const rename = options.rename ?? fs.rename
+  const wait = options.wait ?? ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
+  const attempts = platform === "win32" ? 8 : 1
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await rename(source, target)
+      return
+    } catch (err) {
+      if (!isLockedRenameError(err) || (await exists(target))) throw err
+      if (attempt === attempts) throw new SkillDirectoryBusyError(err)
+      await wait(50 * attempt)
+    }
+  }
+}
+
+function isLockedRenameError(err: unknown): boolean {
+  if (!err || typeof err !== "object" || !("code" in err)) return false
+  return ["EBUSY", "EACCES", "EPERM"].includes(String((err as NodeJS.ErrnoException).code))
+}
+
+function directoryBusyFailure(slug: string): InstallResult {
+  return {
+    success: false,
+    slug,
+    error: "Windows 暂时占用 Skill 目录，重试后仍无法完成安装，未安装任何文件。请关闭正在查看该目录的程序后重试。",
+  }
+}
+
+function knownInstallFailure(slug: string, err: unknown): InstallResult | undefined {
+  if (err instanceof SkillIdentityMismatchError) return identityFailure(slug, err)
+  if (err instanceof SkillDirectoryBusyError) return directoryBusyFailure(slug)
+  return undefined
+}
+
+class SkillDirectoryBusyError extends Error {
+  constructor(cause: unknown) {
+    super("Windows 暂时占用 Skill 目录", { cause })
+    this.name = "SkillDirectoryBusyError"
   }
 }
 
@@ -497,8 +694,35 @@ async function validateSkillIdentityAt(dir: string, expected: string): Promise<v
     return id
   })()
   const identity = validateSkillIdentity({ name: metadata.name, directory: expected, metadataId: id })
-  if (!identity.valid) throw new Error(identity.message)
-  if (identity.id !== expected) throw new Error(`Skill id "${identity.id}" does not match expected id "${expected}"`)
+  if (!identity.valid) {
+    const actual = identity.code === "metadata-mismatch" ? (id ?? metadata.name) : metadata.name
+    throw new SkillIdentityMismatchError(expected, actual, identity.message)
+  }
+  if (identity.id !== expected) {
+    throw new SkillIdentityMismatchError(
+      expected,
+      identity.id,
+      `Skill id "${identity.id}" does not match expected id "${expected}"`,
+    )
+  }
+}
+
+class SkillIdentityMismatchError extends Error {
+  constructor(
+    readonly expected: string,
+    readonly actual: string,
+    readonly detail: string,
+  ) {
+    super(
+      `市场 Skill 身份不一致：条目 ID “${expected}”与包内身份“${actual}”不一致。未安装任何文件，请联系发布者修复市场条目。`,
+    )
+    this.name = "SkillIdentityMismatchError"
+  }
+}
+
+function identityFailure(slug: string, err: SkillIdentityMismatchError): InstallResult {
+  console.warn(`Rejected marketplace skill ${slug} because its identity is inconsistent:`, err.detail)
+  return { success: false, slug, errorCode: "skill-identity-mismatch", error: err.message }
 }
 
 async function validateRoot(root: string): Promise<void> {

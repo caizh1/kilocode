@@ -335,4 +335,220 @@ describe("Session", () => {
     }),
   )
   // chipmate_change end
+
+  // chipmate_change start
+  it.instance("afterMessageID includes the selected assistant answer and excludes later turns", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const source = yield* Effect.acquireRelease(session.create({ title: "inclusive-source" }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const user = (text: string) =>
+        Effect.gen(function* () {
+          const info = yield* session.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: source.id,
+            role: "user",
+            time: { created: Date.now() },
+            agent: "code",
+            model: { providerID: "test-provider", modelID: "test-model" },
+            tools: {},
+          } as MessageV2.User)
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            sessionID: source.id,
+            messageID: info.id,
+            type: "text",
+            text,
+          } as MessageV2.TextPart)
+          return info
+        })
+      const assistant = (parentID: MessageID, text: string) =>
+        Effect.gen(function* () {
+          const info = yield* session.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: source.id,
+            role: "assistant",
+            time: { created: Date.now(), completed: Date.now() },
+            parentID,
+            modelID: "test-model",
+            providerID: "test-provider",
+            agent: "code",
+            mode: "",
+            path: { cwd: "/tmp", root: "/tmp" },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          } as MessageV2.Assistant)
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            sessionID: source.id,
+            messageID: info.id,
+            type: "text",
+            text,
+          } as MessageV2.TextPart)
+          return info
+        })
+      const u1 = yield* user("U1")
+      const a1 = yield* assistant(u1.id, "A1")
+      const u2 = yield* user("U2")
+      yield* assistant(u2.id, "A2")
+
+      const forked = yield* Effect.acquireRelease(
+        session.fork({ sessionID: source.id, afterMessageID: a1.id, operationID: crypto.randomUUID() }),
+        (info) => session.remove(info.id).pipe(Effect.ignore),
+      )
+      const copied = yield* session.messages({ sessionID: forked.id })
+      expect(copied).toHaveLength(2)
+      expect(copied.map((item) => item.info.role)).toEqual(["user", "assistant"])
+      expect(copied.flatMap((item) => item.parts).filter((part) => part.type === "text").map((part) => part.text)).toEqual([
+        "U1",
+        "A1",
+      ])
+    }),
+  )
+
+  it.instance("twenty concurrent retries with one operationID create one target", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const source = yield* Effect.acquireRelease(session.create({ title: "single-flight-source" }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const operationID = crypto.randomUUID()
+      const results = yield* Effect.all(
+        Array.from({ length: 20 }, () => session.fork({ sessionID: source.id, operationID })),
+        { concurrency: "unbounded" },
+      )
+      expect(new Set(results.map((item) => item.id)).size).toBe(1)
+      const target = results[0]!
+      const durable = yield* session.fork({ sessionID: source.id, operationID })
+      expect(durable.id).toBe(target.id)
+      const listed = yield* session.list()
+      expect(listed.filter((item) => item.metadata?.["chipmate.sessionFork"])).toHaveLength(1)
+      yield* session.remove(target.id)
+    }),
+  )
+
+  it.instance("does not remove an incomplete durable fork that contains later user output", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const source = yield* Effect.acquireRelease(session.create({ title: "source" }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const operationID = crypto.randomUUID()
+      const target = yield* session.create({
+        title: "incomplete target",
+        metadata: {
+          "chipmate.sessionFork": {
+            version: 1,
+            operationID,
+            sourceSessionID: source.id,
+            boundary: { mode: "full" },
+            state: "copying",
+            expectedMessages: 200,
+          },
+        },
+      })
+      yield* session.updateMessage({
+        id: MessageID.ascending(),
+        sessionID: target.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "code",
+        model: { providerID: "test-provider", modelID: "test-model" },
+        tools: {},
+      } as MessageV2.User)
+
+      const error = yield* session.fork({ sessionID: source.id, operationID }).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(SessionNs.ForkError)
+      if (!(error instanceof SessionNs.ForkError)) return
+      expect(error.kind).toBe("recovery-conflict")
+      expect((yield* session.get(target.id)).id).toBe(target.id)
+      yield* session.remove(target.id)
+    }),
+  )
+
+  it.instance(
+    "forks the 200-message and 2000-part QA sample below the ten-second p95 gate",
+    () =>
+      Effect.gen(function* () {
+        const session = yield* SessionNs.Service
+        const source = yield* Effect.acquireRelease(session.create({ title: "fork-performance-source" }), (info) =>
+          session.remove(info.id).pipe(Effect.ignore),
+        )
+        const children: SessionNs.Info[] = []
+        for (let child = 0; child < 10; child += 1) {
+          children.push(yield* session.create({ parentID: source.id, title: `fork-performance-child-${child}` }))
+        }
+        for (let turn = 0; turn < 100; turn += 1) {
+          const user = yield* session.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: source.id,
+            role: "user",
+            time: { created: Date.now() },
+            agent: "code",
+            model: { providerID: "test-provider", modelID: "test-model" },
+            tools: {},
+          } as MessageV2.User)
+          const assistant = yield* session.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: source.id,
+            role: "assistant",
+            time: { created: Date.now(), completed: Date.now() },
+            parentID: user.id,
+            modelID: "test-model",
+            providerID: "test-provider",
+            agent: "code",
+            mode: "",
+            path: { cwd: "/tmp", root: "/tmp" },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          } as MessageV2.Assistant)
+          for (const message of [user, assistant]) {
+            for (let part = 0; part < 10; part += 1) {
+              const child = message.role === "assistant" && part === 0 ? children[turn] : undefined
+              if (child) {
+                yield* session.updatePart({
+                  id: PartID.ascending(),
+                  sessionID: source.id,
+                  messageID: message.id,
+                  type: "tool",
+                  callID: `fork-performance-task-${turn}`,
+                  tool: "task",
+                  metadata: { sessionId: child.id },
+                  state: {
+                    status: "completed",
+                    input: { task_id: child.id },
+                    output: `task_id: ${child.id}`,
+                    title: child.title,
+                    metadata: { sessionId: child.id },
+                    time: { start: Date.now(), end: Date.now() },
+                  },
+                } as MessageV2.ToolPart)
+                continue
+              }
+              yield* session.updatePart({
+                id: PartID.ascending(),
+                sessionID: source.id,
+                messageID: message.id,
+                type: "text",
+                text: `${turn}:${message.role}:${part}`,
+              } as MessageV2.TextPart)
+            }
+          }
+        }
+
+        const elapsed: number[] = []
+        for (let sample = 0; sample < 5; sample += 1) {
+          const started = performance.now()
+          const forked = yield* session.fork({ sessionID: source.id, operationID: crypto.randomUUID() })
+          elapsed.push(performance.now() - started)
+          if (sample === 0) expect(yield* session.children(forked.id)).toHaveLength(10)
+          yield* session.remove(forked.id)
+        }
+        elapsed.sort((left, right) => left - right)
+        expect(elapsed[4]!).toBeLessThan(10_000)
+      }),
+    { timeout: 30_000 },
+  )
+  // chipmate_change end
 })

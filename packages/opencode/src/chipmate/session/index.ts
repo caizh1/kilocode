@@ -1,4 +1,8 @@
-import { prepareForkedPart as _prepareForkedPart, remapChildren as _remapChildren } from "./fork"
+import {
+  freezeChildren as _freezeChildren,
+  prepareForkedPart as _prepareForkedPart,
+  remapChildren as _remapChildren,
+} from "./fork"
 import z from "zod"
 import { Cause, Effect, Schema } from "effect"
 import { Bus } from "@/bus"
@@ -438,6 +442,7 @@ export namespace ChipMateSession {
   }
 
   export const prepareForkedPart = _prepareForkedPart
+  export const freezeChildren = _freezeChildren
   export const remapChildren = _remapChildren
 }
 

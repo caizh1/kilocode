@@ -6,7 +6,7 @@ import {
   confirmPendingUpdateActivation,
   markPendingUpdateReloadRequested,
   recordUpdateWebviewReady,
-  shouldRetryFirstReload,
+  LAST_SUPERSEDED_KEY,
   writePendingUpdateActivation,
   type PendingUpdateActivation,
 } from "../../src/services/update-check/activation"
@@ -40,7 +40,7 @@ describe("ChipMate update activation receipt", () => {
     })
   })
 
-  it("counts reload requests so only the first failed reload can be retried automatically", async () => {
+  it("记录手动重载次数，不推断仍在注册", async () => {
     const state = memento()
     const old = context("0.0.16", state)
     await writePendingUpdateActivation(old, receipt())
@@ -51,18 +51,38 @@ describe("ChipMate update activation receipt", () => {
     expect(second).toMatchObject({ reloadRequestedAt: 3_000, reloadAttempts: 2 })
   })
 
-  it("allows an automatic retry only for the first explicit Reload mismatch", async () => {
+  it("手动安装更高版本后将旧事务标记为已替代，不伪造原目标激活记录", async () => {
     const state = memento()
-    const old = context("0.0.16", state)
-    await writePendingUpdateActivation(old, receipt())
+    await writePendingUpdateActivation(context("0.0.16", state), receipt())
+    expect(await confirmPendingUpdateActivation(context("0.0.18", state), 4_000)).toMatchObject({ status: "superseded" })
+    expect(state.get(PENDING_ACTIVATION_KEY)).toBeUndefined()
+    expect(state.get(LAST_ACTIVATION_KEY)).toBeUndefined()
+    expect(state.get(LAST_SUPERSEDED_KEY)).toMatchObject({
+      pending: { expectedVersion: "0.0.17" }, actual: { version: "0.0.18" }, supersededAt: 4_000,
+    })
+  })
 
-    expect(shouldRetryFirstReload(await confirmPendingUpdateActivation(old, 2_000))).toBe(false)
+  it("更高版本但平台或身份不同不能终止旧事务", async () => {
+    for (const changed of [context("0.0.18", memento(), "linux-x64-baseline"), context("0.0.18", memento())]) {
+      if (changed.extension.packageJSON.chipmatePackageTarget === TARGET) changed.extension.packageJSON.name = "other"
+      await writePendingUpdateActivation(changed, receipt())
+      expect(await confirmPendingUpdateActivation(changed)).toMatchObject({ status: "mismatch" })
+      expect(changed.globalState.get(LAST_SUPERSEDED_KEY)).toBeUndefined()
+    }
+  })
 
-    await markPendingUpdateReloadRequested(old, 3_000)
-    expect(shouldRetryFirstReload(await confirmPendingUpdateActivation(old, 4_000))).toBe(true)
-
-    await markPendingUpdateReloadRequested(old, 5_000)
-    expect(shouldRetryFirstReload(await confirmPendingUpdateActivation(old, 6_000))).toBe(false)
+  it("预发布版本按数值顺序判断替代关系，忽略构建元数据", async () => {
+    for (const [actual, expected, status] of [
+      ["1.2.15-beta.2", "1.2.15-beta.10", "mismatch"],
+      ["1.2.15-beta.10", "1.2.15-beta.2", "superseded"],
+      ["1.2.15-beta.10", "1.2.15", "mismatch"],
+      ["1.2.15", "1.2.15-beta.10", "superseded"],
+      ["1.2.15+build2", "1.2.15+build1", "mismatch"],
+    ]) {
+      const current = context(actual, memento())
+      await writePendingUpdateActivation(current, { ...receipt(), expectedVersion: expected })
+      expect(await confirmPendingUpdateActivation(current)).toMatchObject({ status })
+    }
   })
 
   it("retains a pending receipt when the first Reload starts the old version", async () => {

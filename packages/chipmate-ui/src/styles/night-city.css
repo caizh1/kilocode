@@ -1,0 +1,1362 @@
+/* 未来风仅覆盖插件文档，原皮肤与 VS Code 宿主保持原有样式。 */
+:root:not([data-chipmate-skin="night-city"])
+  :is(
+    .night-city-reference-actions,
+    .night-city-reference-summary,
+    .night-city-tab-icon,
+    .night-city-tab-add,
+    .night-city-send-icon,
+    .night-city-send-hint
+  ) {
+  display: none !important;
+}
+.night-city-reference-actions,
+.night-city-reference-summary,
+.night-city-tab-icon,
+.night-city-tab-add,
+.night-city-send-icon,
+.night-city-send-hint {
+  display: none;
+}
+
+:root[data-chipmate-skin="night-city"] {
+  --night-cyan: #00efff;
+  --night-magenta: #ff20cc;
+  --night-border: #244e76;
+  --night-glow: 0 0 5px #00efff70, 0 0 16px #00efff30;
+  color-scheme: dark !important;
+  --vscode-editor-background: #050918 !important;
+  --vscode-sideBar-background: #050918 !important;
+  --vscode-editorWidget-background: #0b1730 !important;
+  --vscode-editorGroupHeader-tabsBackground: #0c1022 !important;
+  --vscode-panel-background: #050918 !important;
+  --vscode-foreground: #e7e9f5 !important;
+  --vscode-editor-foreground: #e7e9f5 !important;
+  --vscode-descriptionForeground: #a4adc7 !important;
+  --vscode-disabledForeground: #77819d !important;
+  --vscode-focusBorder: #00efff !important;
+  --vscode-widget-border: #244e76 !important;
+  --vscode-panel-border: #183552 !important;
+  --vscode-editorWidget-border: #244e76 !important;
+  --vscode-editorGroup-border: #183552 !important;
+  --vscode-icon-foreground: #bceeff !important;
+  --vscode-editor-inactiveSelectionBackground: #221c38 !important;
+  --vscode-editorHoverWidget-statusBarBackground: #151b32 !important;
+  --vscode-editorStickyScrollHover-background: #201d38 !important;
+  --vscode-editorMarkerNavigationError-headerBackground: #341927 !important;
+  --vscode-editorMarkerNavigationInfo-headerBackground: #12342e !important;
+  --vscode-editorMarkerNavigationWarning-headerBackground: #302918 !important;
+  --vscode-textCodeBlock-background: #0b1020 !important;
+  --vscode-textPreformat-background: #141b30 !important;
+  --vscode-textPreformat-foreground: #c4b6ff !important;
+  --vscode-progressBar-background: #ff20cc !important;
+  --vscode-toolbar-activeBackground: #321335 !important;
+  --vscode-toolbar-hoverBackground: #201d38 !important;
+  --vscode-notifications-background: #0b1730 !important;
+  --vscode-notifications-foreground: #e7e9f5 !important;
+  --vscode-notifications-border: #244e76 !important;
+  --vscode-input-background: #08142b !important;
+  --vscode-input-foreground: #e7e9f5 !important;
+  --vscode-input-border: #244e76 !important;
+  --vscode-input-placeholderForeground: #9c9bb9 !important;
+  --vscode-button-background: #7e136d !important;
+  --vscode-button-hoverBackground: #a01a86 !important;
+  --vscode-button-foreground: #ffffff !important;
+  --vscode-button-secondaryBackground: #151b32 !important;
+  --vscode-button-secondaryForeground: #ded9f5 !important;
+  --vscode-button-secondaryHoverBackground: #28233f !important;
+  --vscode-list-activeSelectionBackground: #321335 !important;
+  --vscode-list-activeSelectionForeground: #f0e8ff !important;
+  --vscode-list-inactiveSelectionBackground: #221c38 !important;
+  --vscode-list-inactiveSelectionForeground: #dcd6ec !important;
+  --vscode-list-hoverBackground: #201d38 !important;
+  --vscode-list-focusBackground: #321335 !important;
+  --vscode-list-focusForeground: #f0e8ff !important;
+  --vscode-list-focusOutline: #00efff !important;
+  --vscode-textLink-foreground: #6bdff6 !important;
+  --vscode-textLink-activeForeground: #a7efff !important;
+  --vscode-errorForeground: #ff8092 !important;
+  --vscode-inputValidation-errorBackground: #341927 !important;
+  --vscode-inputValidation-errorBorder: #ff8092 !important;
+  --vscode-inputValidation-warningBackground: #302918 !important;
+  --vscode-inputValidation-warningBorder: #e9c365 !important;
+  --vscode-charts-green: #49dbaa !important;
+  --vscode-charts-red: #ff8092 !important;
+  --vscode-charts-yellow: #e9c365 !important;
+  --vscode-charts-blue: #00efff !important;
+  --vscode-charts-purple: #ff20cc !important;
+  --vscode-charts-orange: #efac70 !important;
+  --vscode-menu-background: #11172b !important;
+  --vscode-menu-foreground: #e7e9f5 !important;
+  --vscode-menu-selectionBackground: #321335 !important;
+  --vscode-menu-selectionForeground: #ffffff !important;
+  --vscode-dropdown-background: #0b1730 !important;
+  --vscode-dropdown-foreground: #e7e9f5 !important;
+  --vscode-dropdown-border: #244e76 !important;
+  --vscode-scrollbarSlider-background: #51416680 !important;
+  --vscode-scrollbarSlider-hoverBackground: #77529fa0 !important;
+  --vscode-scrollbarSlider-activeBackground: #9c67c4 !important;
+  --vscode-badge-background: #392154 !important;
+  --vscode-badge-foreground: #f0e8ff !important;
+  --vscode-terminal-background: #050918 !important;
+  --vscode-terminal-foreground: #e7e9f5 !important;
+  --vscode-terminalCursor-foreground: #00efff !important;
+  --vscode-terminalCursor-background: #050918 !important;
+  --vscode-terminal-selectionBackground: #463761 !important;
+  --vscode-diffEditor-insertedLineBackground: #12342e !important;
+  --vscode-diffEditor-insertedTextBackground: #24503e !important;
+  --vscode-diffEditor-removedLineBackground: #391f2b !important;
+  --vscode-diffEditor-removedTextBackground: #5b2e3a !important;
+  --vscode-diffEditorGutter-insertedLineBackground: #24503e !important;
+  --vscode-diffEditorGutter-removedLineBackground: #5b2e3a !important;
+  --vscode-terminal-ansiBlack: #13182c !important;
+  --vscode-terminal-ansiRed: #ff8092 !important;
+  --vscode-terminal-ansiGreen: #49dbaa !important;
+  --vscode-terminal-ansiYellow: #e9c365 !important;
+  --vscode-terminal-ansiBlue: #77a6ff !important;
+  --vscode-terminal-ansiMagenta: #ff74db !important;
+  --vscode-terminal-ansiCyan: #00efff !important;
+  --vscode-terminal-ansiWhite: #c8d0e5 !important;
+  --vscode-terminal-ansiBrightBlack: #8390ad !important;
+  --vscode-terminal-ansiBrightRed: #ffb0ba !important;
+  --vscode-terminal-ansiBrightGreen: #89efd1 !important;
+  --vscode-terminal-ansiBrightYellow: #ffe49c !important;
+  --vscode-terminal-ansiBrightBlue: #b4cbff !important;
+  --vscode-terminal-ansiBrightMagenta: #dfbcff !important;
+  --vscode-terminal-ansiBrightCyan: #a1f1ff !important;
+  --vscode-terminal-ansiBrightWhite: #ffffff !important;
+  --vscode-editorLineNumber-foreground: #8995b3 !important;
+  --vscode-editorLineNumber-activeForeground: #e7e9f5 !important;
+  --vscode-diffEditor-unchangedRegionBackground: #141b30 !important;
+  --vscode-diffEditor-unchangedRegionForeground: #a4adc7 !important;
+  --vscode-gitDecoration-addedResourceForeground: #49dbaa !important;
+  --vscode-gitDecoration-deletedResourceForeground: #ff8092 !important;
+  --vscode-gitDecoration-modifiedResourceForeground: #00efff !important;
+  --syntax-comment: #94a0bd !important;
+  --syntax-regexp: #efbb86 !important;
+  --syntax-string: #e9c365 !important;
+  --syntax-keyword: #d99cfa !important;
+  --syntax-primitive: #a8c8ff !important;
+  --syntax-operator: #e7e9f5 !important;
+  --syntax-variable: #e7e9f5 !important;
+  --syntax-property: #c4b6ff !important;
+  --syntax-type: #9de0ff !important;
+  --syntax-constant: #a8c8ff !important;
+  --syntax-punctuation: #cad1e5 !important;
+  --syntax-object: #e7e9f5 !important;
+  --syntax-diff-add: #49dbaa !important;
+  --syntax-diff-delete: #ff8092 !important;
+  --syntax-diff-unknown: #00efff !important;
+  --surface-diff-skip-base: #141b30 !important;
+  --background-base: #050918 !important;
+  --surface-base: #050918 !important;
+  --surface-raised-base: #0b1730 !important;
+  --surface-float-base: #11172b !important;
+  --surface-brand-base: #7e136d !important;
+  --surface-brand-hover: #a01a86 !important;
+  --text-base: #e7e9f5 !important;
+  --text-strong: #e7e9f5 !important;
+  --text-weak: #a4adc7 !important;
+  --text-on-brand-base: #fff !important;
+  --border-base: #244e76 !important;
+  --border-weak-base: #183552 !important;
+  --border-selected: #ff20cc !important;
+  --icon-base: #bceeff !important;
+  --icon-strong: #e7e9f5 !important;
+}
+
+:root[data-chipmate-skin="night-city"] :is(body, .chat-view, .settings-shell) {
+  --titanium-deep: #050918 !important;
+  --titanium-canvas: #050918 !important;
+  --titanium-panel: #0b1730 !important;
+  --titanium-glass: #10152a !important;
+  --titanium-raised: #141b30 !important;
+  --titanium-inset: #0a0f1d !important;
+  --titanium-active: #321335 !important;
+  --titanium-line: #183552 !important;
+  --titanium-line-strong: #244e76 !important;
+  --titanium-text: #e7e9f5 !important;
+  --titanium-muted: #a4adc7 !important;
+  --titanium-faint: #9299b5 !important;
+  --titanium-accent: #ff20cc !important;
+  --titanium-accent-strong: #c399ff !important;
+  --titanium-focus: #00efff !important;
+  --titanium-focus-ring: #00efff30 !important;
+  --titanium-success: #49dbaa !important;
+  --titanium-warning: #e9c365 !important;
+  --titanium-danger: #ff8092 !important;
+  --titanium-blur: none !important;
+  --titanium-radius-shell: 4px !important;
+  --titanium-radius-card: 4px !important;
+  --titanium-radius-control: 4px !important;
+  --qa-shell-ambient:
+    radial-gradient(ellipse at 0 0, #00efff12, transparent 48%),
+    radial-gradient(ellipse at 100% 100%, #ff20cc10, transparent 50%) !important;
+}
+
+:root[data-chipmate-skin="night-city"],
+:root[data-chipmate-skin="night-city"] body {
+  /* 外层不参与焦点滚动，正文由各页面自己的滚动容器承载。 */
+  overflow: clip;
+}
+
+:root[data-chipmate-skin="night-city"] body {
+  display: flex;
+  container: future-surface / inline-size;
+  flex-direction: column;
+  background: #050918 !important;
+  color: #e7e9f5 !important;
+}
+#chipmate-appearance-header {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+:root[data-chipmate-skin="night-city"] #root {
+  height: 0 !important;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+:root[data-chipmate-skin="night-city"] #root > .container {
+  height: 100%;
+  min-height: 0;
+}
+.night-city-header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 28px;
+  border-bottom: 1px solid #24517e;
+  background: #061026;
+  color: #e7e9f5;
+  min-width: 0;
+}
+.night-city-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: 0.28em;
+  font-weight: 600;
+}
+.night-city-brand > .codicon {
+  color: #ff20cc;
+  font-size: 26px;
+}
+.night-city-header nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.night-city-header nav [data-component="button"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  height: auto;
+  padding: 6px 10px;
+}
+.night-city-header nav .codicon {
+  font-size: 22px;
+  color: #bceeff;
+}
+.night-city-nav-label {
+  color: #e7e9f5;
+  font-size: 12px;
+}
+
+:root[data-chipmate-skin="night-city"]
+  :is(
+    .chat-view,
+    .settings-shell,
+    .am-layout,
+    .am-detail,
+    .am-sidebar,
+    .design-doc-shell,
+    .patent-radar-shell,
+    .chipmateclaw-root,
+    .chipmateclaw-layout
+  ) {
+  background: #050918 !important;
+  color: #e7e9f5;
+}
+:root[data-chipmate-skin="night-city"] :is(.chat-view, .settings-shell, .am-layout) {
+  box-sizing: border-box;
+  border: 12px solid transparent;
+  border-image-source: var(--future-page-frame);
+  border-image-slice: var(--future-page-slice, 64);
+  border-image-width: 18px;
+  border-image-repeat: stretch;
+}
+:root[data-chipmate-skin="night-city"] .am-layout .chat-view {
+  border-width: 0;
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-conversation"] {
+  background: #050918 !important;
+}
+:root[data-chipmate-skin="night-city"] :is(.session-tab-bar, .am-tab-bar) {
+  background: #0b1022;
+  border-bottom: 1px solid #244e76;
+}
+:root[data-chipmate-skin="night-city"] :is(.am-tab-active, .am-local-item-active, .am-worktree-item-active) {
+  background: #321335 !important;
+  color: #e8d7ff !important;
+  border-color: #ff20cc !important;
+  box-shadow: inset 0 -2px #ff20cc;
+}
+:root[data-chipmate-skin="night-city"] :is(.am-sidebar, .settings-sidebar) {
+  border-right: 1px solid #24517e;
+}
+:root[data-chipmate-skin="night-city"] :is([data-component="task-header"], .chipmateclaw-chat-header) {
+  background: #0c1123 !important;
+  border-bottom: 1px solid #183552;
+}
+:root[data-chipmate-skin="night-city"] .message-list {
+  padding: 20px clamp(12px, 3vw, 36px);
+}
+:root[data-chipmate-skin="night-city"] :is([data-component="card"], .glass, .glass-surface, .chipmateclaw-card) {
+  background: #11162a !important;
+  color: #e7e9f5;
+  border-color: #244b72 !important;
+  border-radius: 4px;
+  backdrop-filter: none !important;
+}
+:root[data-chipmate-skin="night-city"] :is(.prompt-input-container, .chipmateclaw-input-wrap) {
+  box-sizing: border-box;
+  background: #08142b !important;
+  border: 1px solid #9a63d8 !important;
+  border-radius: 5px !important;
+  box-shadow:
+    0 0 12px #ff20cc25,
+    inset 0 0 14px #ff20cc0a;
+  margin-bottom: 8px;
+}
+:root[data-chipmate-skin="night-city"] .prompt-input-container:focus-within {
+  border-color: #00efff !important;
+}
+:root[data-chipmate-skin="night-city"]
+  :is(.prompt-input-container textarea, .prompt-input-container [contenteditable], .chipmateclaw-input) {
+  background: transparent !important;
+  color: #e7e9f5;
+}
+:root[data-chipmate-skin="night-city"]
+  :is([data-component="button"], [data-component="icon-button"], input, select, textarea) {
+  border-radius: 4px;
+}
+:root[data-chipmate-skin="night-city"] [data-component="button"][data-variant="primary"] {
+  background: #7e136d;
+  color: white;
+  border: 1px solid #af7cfa;
+}
+:root[data-chipmate-skin="night-city"] :is([data-component="code"], [data-component="diff"]) {
+  background: #0b1020;
+  text-shadow: none;
+}
+:root[data-chipmate-skin="night-city"] :is(.settings-page-header, .design-doc-header) {
+  border-bottom: 1px solid #24517e;
+}
+:root[data-chipmate-skin="night-city"] :focus-visible {
+  outline: 2px solid #00efff;
+  outline-offset: 2px;
+}
+
+/* 预览独立于已保存皮肤，草稿不会改变整个文档。 */
+.appearance-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.appearance-preview {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.4fr);
+  gap: 24px;
+  padding: 22px;
+  border: 1px solid var(--vscode-widget-border, #555);
+  border-radius: 4px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+}
+.appearance-preview[data-preview-skin="night-city"] {
+  background: #050918;
+  color: #e7e9f5;
+  border: 12px solid transparent;
+  border-image: var(--night-city-frame) 240 / 32px stretch;
+}
+.appearance-preview-caption {
+  align-self: center;
+  min-width: 0;
+}
+.appearance-preview-caption h3 {
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+.appearance-preview-caption p {
+  margin: 0 0 12px;
+}
+.appearance-preview-caption > span {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.appearance-preview-chat {
+  min-width: 0;
+  border: 1px solid #675080;
+  border-radius: 4px;
+  padding: 14px;
+  background: #0b1730;
+  color: #e7e9f5;
+}
+.appearance-preview-tab {
+  border-bottom: 2px solid #ff20cc;
+  padding-bottom: 8px;
+  color: #cda9ff;
+}
+.appearance-preview-chat p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.appearance-preview-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: #192037;
+}
+.appearance-preview-status .codicon {
+  color: #49dbaa;
+}
+.appearance-preview-input {
+  border: 1px solid #ff20cc;
+  padding: 12px;
+  margin-top: 14px;
+  color: #a4adc7;
+}
+
+/* 只驱动装饰边缘，不覆盖或停用原有业务动画。 */
+@keyframes night-city-edge {
+  0%,
+  100% {
+    box-shadow: 0 0 8px #ff20cc20;
+  }
+  50% {
+    box-shadow: 0 0 16px #00efff35;
+  }
+}
+:root[data-chipmate-skin="night-city"][data-chipmate-motion="immersive"]
+  body:not(.vscode-reduce-motion)
+  :is(.prompt-input-container, .chipmateclaw-input-wrap) {
+  animation: night-city-edge 5s ease-in-out infinite;
+}
+:root[data-chipmate-skin="night-city"][data-chipmate-motion="subtle"] :is(button, input, select) {
+  transition:
+    border-color 160ms,
+    background-color 160ms;
+}
+:root[data-chipmate-skin="night-city"][data-chipmate-motion="off"] :is(button, input, select) {
+  transition: none;
+}
+:root[data-chipmate-visible="false"] :is(.prompt-input-container, .chipmateclaw-input-wrap),
+:root[data-chipmate-skin="night-city"]
+  body.vscode-reduce-motion
+  :is(.prompt-input-container, .chipmateclaw-input-wrap) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-chipmate-skin="night-city"]
+    body:not([data-vscode-theme-id])
+    :is(.prompt-input-container, .chipmateclaw-input-wrap) {
+    animation: none !important;
+  }
+}
+:root[data-chipmate-skin="night-city"] :is(body.vscode-high-contrast, body.vscode-high-contrast-light) {
+  --vscode-contrastBorder: #c2b2ec;
+  --vscode-contrastActiveBorder: #00efff;
+}
+
+@media (max-width: 760px) {
+  .night-city-header {
+    padding: 10px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .night-city-brand {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+  }
+  .night-city-brand > .codicon {
+    font-size: 20px;
+  }
+  .night-city-header nav {
+    gap: 4px;
+  }
+  .night-city-header nav [data-component="button"] {
+    padding: 6px;
+  }
+  .night-city-header nav .codicon {
+    font-size: 18px;
+  }
+  .night-city-nav-label {
+    display: none;
+  }
+  .appearance-preview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px;
+  }
+  :root[data-chipmate-skin="night-city"] :is(.chat-view, .settings-shell, .am-layout) {
+    border-width: 6px;
+    border-image-width: 6px;
+  }
+}
+@media (max-width: 420px) {
+  .night-city-header {
+    justify-content: center;
+  }
+  .night-city-header nav {
+    justify-content: center;
+    flex: 1 1 100%;
+  }
+  .appearance-preview-caption h3 {
+    font-size: 17px;
+  }
+  :root[data-chipmate-skin="night-city"] .message-list {
+    padding: 12px 8px;
+  }
+}
+
+/* 扫描材质仅位于导航下方的留白；装饰在正常流中，不盖住正文。 */
+:root[data-chipmate-skin="night-city"] #chipmate-appearance-header::after {
+  content: "";
+  display: block;
+  height: 3px;
+  pointer-events: none;
+  background-image: var(--night-city-frame);
+  background-size: 180% auto;
+  background-position: 0 0;
+  opacity: 0.6;
+}
+@keyframes night-city-scan {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+@keyframes night-city-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+:root[data-chipmate-skin="night-city"][data-chipmate-motion="immersive"] #chipmate-appearance-header::after {
+  animation: night-city-scan 18s linear infinite alternate;
+}
+:root[data-chipmate-skin="night-city"][data-chipmate-motion="immersive"] .prompt-stop-button {
+  animation: night-city-pulse 3s ease-in-out infinite;
+}
+:root[data-chipmate-visible="false"] #chipmate-appearance-header::after,
+:root[data-chipmate-visible="false"] .prompt-stop-button,
+:root[data-chipmate-skin="night-city"] body.vscode-reduce-motion #chipmate-appearance-header::after,
+:root[data-chipmate-skin="night-city"] body.vscode-reduce-motion .prompt-stop-button {
+  animation: none !important;
+}
+:root[data-chipmate-skin="night-city"] body.vscode-reduce-motion :is(button, input, select) {
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-chipmate-skin="night-city"] body:not([data-vscode-theme-id]) #chipmate-appearance-header::after,
+  :root[data-chipmate-skin="night-city"] body:not([data-vscode-theme-id]) .prompt-stop-button {
+    animation: none !important;
+  }
+  :root[data-chipmate-skin="night-city"] body:not([data-vscode-theme-id]) :is(button, input, select) {
+    transition: none !important;
+  }
+}
+.appearance-preview[data-preview-skin="default"]
+  :is(.appearance-preview-chat, .appearance-preview-status, .appearance-preview-input, .appearance-preview-tab) {
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  border-color: var(--vscode-widget-border, #555);
+}
+
+/* 核心页面的排版与确认稿对齐，保留所有原有设置项。 */
+:root[data-chipmate-skin="night-city"] .night-city-brand {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  gap: 16px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-brand > .codicon {
+  font-size: 32px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-header nav {
+  gap: clamp(12px, 2vw, 32px);
+}
+:root[data-chipmate-skin="night-city"] .night-city-header nav .codicon {
+  font-size: 26px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-nav-label {
+  font-size: 14px;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell {
+  padding: 12px 18px;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell :is(.settings-navigation, [data-slot="tabs-content"]) {
+  background: #080d1d !important;
+  border-color: #24517e !important;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell .settings-brand-icon {
+  display: none;
+}
+:root[data-chipmate-skin="night-city"]
+  .settings-shell
+  [data-slot="tabs-content"]:has(.appearance-settings)
+  > .settings-page-header {
+  display: none;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell [data-component="card"] {
+  padding-block: 0;
+  background: transparent !important;
+  border-inline: 0;
+  border-radius: 0;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell [data-slot="settings-row"] {
+  padding-block: 14px;
+  align-items: center;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell [data-slot="settings-row-label-title"] {
+  font-size: var(--chipmate-font-size-16);
+}
+:root[data-chipmate-skin="night-city"] .settings-shell [data-slot="settings-row-label-subtitle"] {
+  font-size: var(--chipmate-font-size-13);
+}
+:root[data-chipmate-skin="night-city"] .appearance-preview {
+  min-height: 240px;
+  border-image-width: 20px;
+  padding: 22px;
+}
+.appearance-preview-caption h3 {
+  font-size: clamp(22px, 2.1vw, 30px);
+  line-height: 1.35;
+  font-weight: 600;
+}
+.appearance-preview-caption p {
+  font-size: 17px;
+  color: #b2a2d0;
+}
+.appearance-preview-user {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #24517e;
+  border-radius: 4px;
+}
+.appearance-preview-user > div,
+.appearance-preview-assistant {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #ff74db;
+}
+.appearance-preview-user > div > span:last-child,
+.appearance-preview-assistant > span:last-child {
+  color: #939cbd;
+  font-size: 12px;
+}
+.appearance-preview-user p {
+  margin: 8px 0 0;
+}
+.appearance-preview-assistant {
+  margin: 12px 0;
+}
+.appearance-preview-assistant .codicon {
+  color: #00efff;
+}
+:root[data-chipmate-skin="night-city"] [data-slot="radio-group-item"]:has(:checked) {
+  color: #f3e8ff;
+  background: #7e136d;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 1px #af7cfa,
+    0 0 10px #ff20cc40;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell .settings-save-bar {
+  background: #08142b !important;
+  border-color: #244e76 !important;
+}
+@media (max-width: 760px) {
+  :root[data-chipmate-skin="night-city"] .night-city-brand {
+    font-size: 14px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-brand > .codicon {
+    font-size: 24px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-header nav {
+    gap: 8px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-header nav .codicon {
+    font-size: 20px;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell {
+    padding: 8px;
+  }
+  .appearance-preview-chat {
+    padding: 10px;
+  }
+}
+
+/* 导航占用真实高度，工作台与正文只使用剩余空间。 */
+:root[data-chipmate-skin="night-city"] .am-layout {
+  height: 100%;
+  min-height: 0;
+}
+:root[data-chipmate-skin="night-city"] .settings-shell {
+  min-height: 0;
+}
+:root[data-chipmate-skin="night-city"] .design-doc-grid {
+  min-height: 0;
+}
+/* 固定基准页面沿用与实际 Webview 相同的导航和剩余空间。 */
+:root[data-chipmate-skin="night-city"] body.sb-show-main {
+  height: 100vh;
+}
+:root[data-chipmate-skin="night-city"] #storybook-root {
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+:root[data-chipmate-skin="night-city"] #storybook-root [style*="100vh"] {
+  height: 100% !important;
+}
+
+/* 宽屏聊天按设计稿使用完整阅读面，身份与时间来自实际消息。 */
+.night-city-message-identity {
+  display: none;
+}
+:root[data-chipmate-skin="night-city"] .chat-view {
+  --chat-readable-width: 100%;
+  --qa-composer-max-width: 100%;
+  --qa-work-width: 100%;
+  --qa-reading-width: 100%;
+}
+:root[data-chipmate-skin="night-city"] .night-city-message-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 12px;
+  color: #ff8fe5;
+  font-size: 14px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-message-identity .codicon {
+  font-size: 20px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-message-identity[data-role="assistant"] .codicon {
+  color: #00efff;
+}
+:root[data-chipmate-skin="night-city"] .night-city-message-identity time {
+  font-size: 12px;
+  color: #a4adc7;
+}
+:root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-user {
+  padding: 16px 18px;
+  border: 1px solid #244e76;
+  border-radius: 8px;
+  background: #101329;
+}
+:root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-user [data-component="user-message"] {
+  align-items: stretch;
+}
+:root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-user [data-slot="user-message-body"] {
+  width: 100%;
+  max-width: none;
+  align-items: stretch;
+}
+:root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-user [data-slot="user-message-text"] {
+  max-width: none;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-slot="task-header-title-label"] {
+  font-size: clamp(14px, 1.5vw, 22px);
+  line-height: 1.5;
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-component="task-header"] {
+  padding-block: 12px;
+}
+:root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-assistant {
+  padding: 8px 18px;
+}
+
+/* 分开使用页面、输入与标签素材，边框不再重复叠画。 */
+:root[data-chipmate-skin="night-city"] .night-city-header {
+  min-height: 72px;
+  padding: 12px 24px;
+  background: #061127;
+  box-shadow: inset 0 -1px #9742b8;
+}
+:root[data-chipmate-skin="night-city"] .night-city-header nav button {
+  color: #efd6ff;
+}
+:root[data-chipmate-skin="night-city"] .night-city-brand {
+  color: #8ff6ff;
+  text-shadow: 0 0 10px #00caff88;
+}
+:root[data-chipmate-skin="night-city"] .am-chat-wrapper {
+  container: future-surface / inline-size;
+}
+:root[data-chipmate-skin="night-city"] :is(.prompt-input-container, .chipmateclaw-input-wrap) {
+  isolation: isolate;
+  flex: 0 0 auto;
+  margin: 12px 18px 16px !important;
+  padding: 8px !important;
+  border: 1px solid transparent !important;
+  border-image: var(--future-composer-frame) var(--future-composer-slice, 64) / 70px 18px / 60px 8px stretch !important;
+  border-radius: 8px !important;
+  background: #071127 !important;
+  box-shadow:
+    -4px 0 18px #00dfff35,
+    4px 0 18px #ff20cc35 !important;
+  backdrop-filter: none !important;
+  animation: none !important;
+}
+:root[data-chipmate-skin="night-city"] .prompt-input-container::before {
+  content: none;
+}
+:root[data-chipmate-skin="night-city"] .prompt-input-container:focus-within {
+  box-shadow:
+    -4px 0 22px #00dfff55,
+    4px 0 22px #ff20cc55 !important;
+}
+:root[data-chipmate-skin="night-city"] .chat-view .prompt-input-wrapper[data-ui="qa-composer-input"] {
+  padding: 8px !important;
+  min-height: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+:root[data-chipmate-skin="night-city"] .chat-view :is(.prompt-input, .prompt-input-highlight-overlay) {
+  box-sizing: border-box !important;
+  min-height: 60px !important;
+  max-height: 200px !important;
+  padding: 6px 4px !important;
+  font-size: var(--chipmate-font-size-14);
+  line-height: 1.5;
+  outline: none !important;
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-footer"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  padding: 4px 8px 8px !important;
+  min-width: 0 !important;
+}
+:root[data-chipmate-skin="night-city"] .night-city-reference-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  order: 0;
+}
+:root[data-chipmate-skin="night-city"] .night-city-reference-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #bfffff;
+}
+:root[data-chipmate-skin="night-city"] .night-city-reference-actions .codicon {
+  font-size: 24px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-reference-actions button:hover:not(:disabled) {
+  color: #fff;
+  border-color: #00efff;
+  background: #063548;
+  box-shadow: var(--night-glow);
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-selectors"] {
+  display: flex !important;
+  flex: 1 1 0 !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  width: auto !important;
+  order: 1;
+}
+:root[data-chipmate-skin="night-city"] [data-ui="qa-composer-selectors"] > * {
+  min-width: 0;
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-selectors"] .prompt-selector-trigger {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 240px !important;
+  height: 36px !important;
+  padding: 0 10px !important;
+  border: 1px solid #6150ae !important;
+  background: #10142e !important;
+  color: #e9deff !important;
+  border-radius: 5px !important;
+}
+:root[data-chipmate-skin="night-city"]
+  [data-ui="qa-composer-selectors"]
+  :is(.model-selector-trigger-label, .mode-switcher-trigger-label) {
+  display: block !important;
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-chipmate-skin="night-city"] .prompt-selector-reset {
+  display: none !important;
+}
+:root[data-chipmate-skin="night-city"] .night-city-thinking {
+  display: inline-flex !important;
+}
+:root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-actions"] {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  margin-left: auto;
+  order: 2;
+}
+:root[data-chipmate-skin="night-city"] .night-city-reference-summary {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+:root[data-chipmate-skin="night-city"] .night-city-context-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 32px !important;
+  height: 36px !important;
+  padding: 0 4px !important;
+  color: #bfffff !important;
+}
+:root[data-chipmate-skin="night-city"] .night-city-context-trigger .codicon {
+  font-size: 20px;
+}
+.night-city-context-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-chipmate-skin="night-city"] [data-ui="qa-utility-actions"] {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+:root[data-chipmate-skin="night-city"] [data-ui="qa-utility-actions"] > [data-component="tooltip-trigger"] {
+  display: none !important;
+}
+:root[data-chipmate-skin="night-city"]
+  [data-ui="qa-utility-actions"]
+  > [data-component="tooltip-trigger"]:has(:is(.prompt-overflow-button, .prompt-send-button, .prompt-stop-button)),
+:root[data-chipmate-skin="night-city"]
+  [data-night-auto-approve="true"]
+  > [data-component="tooltip-trigger"]:has([data-ui="qa-action-auto-approve"]),
+:root[data-chipmate-skin="night-city"]
+  [data-night-sandbox="true"]
+  > [data-component="tooltip-trigger"]:has([data-ui="qa-action-sandbox"]),
+:root[data-chipmate-skin="night-city"]
+  [data-night-speech="true"]
+  > [data-component="tooltip-trigger"]:has(.prompt-speech-button) {
+  display: inline-flex !important;
+  width: auto !important;
+  flex: 0 0 auto !important;
+}
+:root[data-chipmate-skin="night-city"] .prompt-overflow-button {
+  display: inline-flex !important;
+}
+:root[data-chipmate-skin="night-city"] [data-ui="qa-indexing-actions"] {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  gap: 4px !important;
+}
+:root[data-chipmate-skin="night-city"] [data-ui="qa-indexing-actions"] > [data-component="tooltip-trigger"] {
+  display: none !important;
+}
+:root[data-chipmate-skin="night-city"]
+  [data-ui="qa-indexing-actions"]
+  > [data-component="tooltip-trigger"]:has([data-state="indexing"], [data-state="error"], [data-tone="warning"]) {
+  display: inline-flex !important;
+}
+:root[data-chipmate-skin="night-city"]
+  .chat-view
+  [data-ui="qa-utility-actions"]
+  :is(.prompt-send-button, .prompt-stop-button) {
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  color: #fff !important;
+  border: 1px solid #ff9eec !important;
+  background: #86116e !important;
+  box-shadow:
+    0 0 5px #ff20ccc0,
+    0 0 16px #ff20cc70 !important;
+  border-radius: 5px !important;
+}
+:root[data-chipmate-skin="night-city"]
+  .chat-view
+  [data-ui="qa-utility-actions"]
+  .prompt-send-button[aria-disabled="true"] {
+  opacity: 0.45 !important;
+  box-shadow: none !important;
+}
+:root[data-chipmate-skin="night-city"] .prompt-send-button[aria-disabled="false"] {
+  opacity: 1 !important;
+}
+:root[data-chipmate-skin="night-city"] .prompt-send-button > .codicon-send {
+  display: none;
+}
+:root[data-chipmate-skin="night-city"] .night-city-send-icon {
+  display: inline-block;
+  font-size: 24px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-send-hint {
+  display: none;
+}
+.night-city-context-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow: auto;
+  max-height: min(240px, 50vh);
+}
+.night-city-context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.night-city-context-item > button:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  justify-content: flex-start;
+}
+.night-city-context-item > button:last-child {
+  flex: 0 0 28px;
+}
+:root[data-chipmate-skin="night-city"] .image-attachment {
+  display: flex;
+  flex-direction: column;
+}
+:root[data-chipmate-skin="night-city"] .image-attachment-remove {
+  position: static;
+  align-self: flex-end;
+}
+
+/* Tab 保持正常流，选中状态只消费自己的细框素材。 */
+:root[data-chipmate-skin="night-city"] .am-tab-bar {
+  height: 52px;
+  padding: 2px 8px;
+  gap: 6px;
+  background: #080e23;
+  border-bottom-color: #274460;
+}
+:root[data-chipmate-skin="night-city"] .am-tab-list {
+  --am-tab-max-width: 380px;
+  padding: 2px;
+  gap: 4px;
+}
+:root[data-chipmate-skin="night-city"] .am-tab {
+  padding: 0 12px;
+  gap: 8px;
+  border: 1px solid #283555;
+  color: #aab5cf;
+  font-size: 14px;
+  background: #091027;
+}
+:root[data-chipmate-skin="night-city"] .am-tab-active {
+  border: 1px solid transparent !important;
+  border-image: var(--future-tab-frame) var(--future-tab-slice, 48) / 70px 12px / 60px 3px stretch !important;
+  background: #20132d !important;
+  color: #ffd2f3 !important;
+  box-shadow: 0 0 8px #ff20cc25;
+}
+:root[data-chipmate-skin="night-city"] .am-tab:hover {
+  color: #fff;
+  background-color: #251838;
+}
+:root[data-chipmate-skin="night-city"] .am-tab:has(.am-tab-target:focus-visible) {
+  outline: 2px solid #00efff;
+  outline-offset: -3px;
+}
+:root[data-chipmate-skin="night-city"] .am-tab-icon {
+  width: 20px;
+  height: 20px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-tab-icon {
+  display: inline-flex;
+}
+:root[data-chipmate-skin="night-city"] .night-city-tab-icon .codicon {
+  font-size: 20px;
+}
+:root[data-chipmate-skin="night-city"] .am-tab-close-wrap {
+  opacity: 1;
+  pointer-events: auto;
+  flex: 0 0 24px;
+}
+:root[data-chipmate-skin="night-city"] .night-city-tab-add {
+  display: flex;
+  align-items: center;
+  flex: 0 0 32px;
+  order: 1;
+}
+:root[data-chipmate-skin="night-city"] .night-city-tab-add button {
+  width: 32px;
+  height: 32px;
+  color: #f490e4;
+}
+:root[data-chipmate-skin="night-city"] .session-tab-switcher-wrap {
+  order: 2;
+}
+:root[data-chipmate-skin="night-city"] .vscode-session-turn-user {
+  border-color: #df28b0 !important;
+  box-shadow: -2px 0 10px #ff20cc20;
+  background: #10132c !important;
+}
+:root[data-chipmate-skin="night-city"] .night-city-message-identity[data-role="assistant"] {
+  color: #00efff;
+}
+:root[data-chipmate-skin="night-city"]
+  :is([data-component="popover-content"], [data-component="dropdown-menu-content"], [data-component="dialog-content"]) {
+  background: #09142a;
+  border-color: #5964b2;
+}
+.appearance-preview[data-preview-skin="night-city"] {
+  border-image-source: var(--future-page-frame);
+  border-image-slice: var(--future-page-slice, 64);
+  border-image-width: 16px;
+  background: #071329;
+}
+.appearance-preview[data-preview-skin="night-city"] .appearance-preview-tab {
+  color: #ffb5ee;
+  border-color: #00efff;
+  box-shadow: 0 2px 8px #ff20cc55;
+}
+.appearance-preview[data-preview-skin="night-city"] .appearance-preview-input {
+  border-color: #00efff;
+  box-shadow:
+    -3px 0 12px #00efff40,
+    3px 0 12px #ff20cc40;
+}
+
+/* 容器断点：分栏中的设置与独立窗口具有相同布局规则。 */
+@container settings (min-width: 600px) {
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-tabs [data-slot="tabs-trigger"] .label {
+    display: block;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell {
+    display: grid;
+    grid-template-columns: var(--future-settings-nav, 144px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 0 12px;
+    padding: 10px 12px;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-header {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 54px;
+    padding: 0 4px;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell :is(.settings-main, .settings-tabs[data-component="tabs"]) {
+    display: contents;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-navigation {
+    display: flex !important;
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 8px 4px;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-mobile-navigation {
+    display: none !important;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell [data-slot="tabs-content"] {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    width: auto;
+    padding: 0 4px 12px;
+    border: 0;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-save-bar-wrap {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell [data-slot="settings-row"] {
+    flex-wrap: wrap;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-header-actions {
+    flex-wrap: wrap;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-nav-heading {
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+  :root[data-chipmate-skin="night-city"] .settings-shell .settings-nav-list [data-slot="tabs-trigger"] {
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+}
+@container settings (min-width: 1000px) {
+  :root[data-chipmate-skin="night-city"] .settings-shell {
+    --future-settings-nav: 220px;
+    gap: 0 20px;
+  }
+}
+:root[data-chipmate-skin="night-city"] .settings-nav-popup[data-component="popover-content"] {
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: 50vh;
+  backdrop-filter: none;
+}
+:root[data-chipmate-skin="night-city"] .settings-mobile-menu {
+  max-height: calc(50vh - 18px) !important;
+}
+:root[data-chipmate-skin="night-city"] .settings-mobile-option {
+  min-height: 36px;
+  padding-block: 6px;
+  font-size: 14px;
+}
+
+@container future-surface (max-width: 999px) {
+  :root[data-chipmate-skin="night-city"] .night-city-reference-actions {
+    gap: 4px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-reference-actions button {
+    width: 30px;
+    min-width: 30px;
+    height: 32px;
+    flex-basis: 30px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-reference-actions .codicon {
+    font-size: 20px;
+  }
+  :root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-footer"] {
+    gap: 6px !important;
+    padding-inline: 2px !important;
+  }
+  :root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-selectors"] {
+    gap: 4px !important;
+  }
+  :root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-selectors"] .prompt-selector-trigger {
+    height: 32px !important;
+    padding-inline: 6px !important;
+    gap: 4px !important;
+  }
+  :root[data-chipmate-skin="night-city"] .model-selector-trigger-label {
+    max-width: 120px !important;
+  }
+  :root[data-chipmate-skin="night-city"] [data-ui="qa-utility-actions"] {
+    gap: 4px !important;
+  }
+  :root[data-chipmate-skin="night-city"] .prompt-input-container {
+    margin: 12px 12px 16px !important;
+  }
+}
+@container future-surface (max-width: 719px) {
+  :root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-footer"] {
+    flex-wrap: wrap !important;
+    row-gap: 8px !important;
+  }
+  :root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-selectors"] {
+    order: 0;
+    flex: 1 1 100% !important;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-reference-actions {
+    order: 1;
+  }
+  :root[data-chipmate-skin="night-city"] .chat-view [data-ui="qa-composer-actions"] {
+    order: 2;
+    margin-left: auto;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-context-trigger {
+    min-width: 28px !important;
+    height: 30px !important;
+    padding-inline: 2px !important;
+  }
+  :root[data-chipmate-skin="night-city"]
+    .chat-view
+    [data-ui="qa-utility-actions"]
+    :is(.prompt-send-button, .prompt-stop-button) {
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+  }
+}
+@container future-surface (max-width: 999px) {
+  :root[data-chipmate-skin="night-city"] .night-city-header {
+    min-height: 54px;
+    padding: 8px 12px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-nav-label {
+    display: none;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-header nav {
+    gap: 8px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-header nav .codicon {
+    font-size: 22px;
+  }
+  :root[data-chipmate-skin="night-city"] .night-city-brand {
+    font-size: 14px;
+    gap: 8px;
+  }
+  :root[data-chipmate-skin="night-city"] .am-tab-bar {
+    height: 46px;
+    padding-inline: 3px;
+  }
+  :root[data-chipmate-skin="night-city"] .am-tab-list {
+    --am-tab-max-width: 260px;
+  }
+  :root[data-chipmate-skin="night-city"] .am-tab {
+    min-width: 140px;
+    font-size: 13px;
+  }
+}
+@media (max-width: 480px) {
+  :root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-user,
+  :root[data-chipmate-skin="night-city"] .chat-view .vscode-session-turn-assistant {
+    padding: 10px;
+  }
+}

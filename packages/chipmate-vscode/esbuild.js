@@ -234,6 +234,26 @@ const cssPackageResolvePlugin = {
   },
 }
 
+/**
+ * The official Cordis Loader keeps its Node fallback in the same published
+ * module as the browser `internal` seam. ChipMate always supplies the official
+ * DSH ClientModuleSystem before creating any entry, so the fallback is
+ * unreachable in the QA webview; this shim prevents a Node builtin from being
+ * bundled into that browser-only transport adapter.
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const cordisBrowserNodeModulePlugin = {
+  name: "cordis-browser-node-module",
+  setup(build) {
+    build.onResolve({ filter: /^node:module$/ }, () => ({ path: "node:module", namespace: "cordis-browser-shim" }))
+    build.onLoad({ filter: /.*/, namespace: "cordis-browser-shim" }, () => ({
+      contents: "export const createRequire = () => { throw new Error('Cordis Node fallback is unavailable in the ChipMate QA webview') }",
+      loader: "js",
+    }))
+  },
+}
+
 function createBrowserWebviewContext(entryPoint, outfile) {
   return esbuild.context({
     entryPoints: [entryPoint],
@@ -245,7 +265,12 @@ function createBrowserWebviewContext(entryPoint, outfile) {
     platform: "browser",
     outfile,
     logLevel: "silent",
-    define,
+    define: {
+      ...define,
+      "process.env.CORDIS_SHARED": "undefined",
+      "process.execArgv": "[]",
+      "process.versions.node": '"0"',
+    },
     loader: {
       ".woff": "file",
       ".woff2": "file",
@@ -257,6 +282,7 @@ function createBrowserWebviewContext(entryPoint, outfile) {
       markdownWorkerUrlPlugin,
       svgSpritePlugin,
       cssPackageResolvePlugin,
+      cordisBrowserNodeModulePlugin,
       internalLocalePrunePlugin,
       solidPlugin(),
       esbuildProblemMatcherPlugin,
@@ -340,12 +366,6 @@ async function main() {
     "dist/agent-manager.js",
   )
 
-  // Build Agent Console webview (standalone Agent/Shell hybrid terminal)
-  const agentConsoleCtx = await createBrowserWebviewContext(
-    "webview-ui/agent-console/index.tsx",
-    "dist/agent-console.js",
-  )
-
   // Build ChipMateClaw webview (SolidJS, standalone chat panel)
   const chipmateClawCtx = await createBrowserWebviewContext("webview-ui/chipmateclaw/index.tsx", "dist/chipmateclaw.js")
 
@@ -354,6 +374,12 @@ async function main() {
 
   // Build source-backed detailed design webview.
   const designDocCtx = await createBrowserWebviewContext("webview-ui/design-doc/index.tsx", "dist/design-doc.js")
+
+  // Build Patent Radar 本地证据评审面板。
+  const patentRadarCtx = await createBrowserWebviewContext(
+    "webview-ui/patent-radar/index.tsx",
+    "dist/patent-radar.js",
+  )
 
   // Build Diff Viewer webview (SolidJS, reuses Agent Manager diff components)
   const diffViewerCtx = await createBrowserWebviewContext("webview-ui/diff-viewer/index.tsx", "dist/diff-viewer.js")
@@ -373,12 +399,12 @@ async function main() {
       extensionCtx.watch(),
       webviewCtx.watch(),
       agentManagerCtx.watch(),
-      agentConsoleCtx.watch(),
       diffViewerCtx.watch(),
       diffVirtualCtx.watch(),
       chipmateClawCtx.watch(),
       marketplaceCtx.watch(),
       designDocCtx.watch(),
+      patentRadarCtx.watch(),
       shikiWorkerCtx.watch(),
       markdownShikiWorkerCtx.watch(),
     ])
@@ -387,10 +413,10 @@ async function main() {
       extensionCtx.rebuild(),
       webviewCtx.rebuild(),
       agentManagerCtx.rebuild(),
-      agentConsoleCtx.rebuild(),
       chipmateClawCtx.rebuild(),
       marketplaceCtx.rebuild(),
       designDocCtx.rebuild(),
+      patentRadarCtx.rebuild(),
       diffViewerCtx.rebuild(),
       diffVirtualCtx.rebuild(),
       shikiWorkerCtx.rebuild(),
@@ -401,12 +427,12 @@ async function main() {
       extensionCtx.dispose(),
       webviewCtx.dispose(),
       agentManagerCtx.dispose(),
-      agentConsoleCtx.dispose(),
       diffViewerCtx.dispose(),
       diffVirtualCtx.dispose(),
       chipmateClawCtx.dispose(),
       marketplaceCtx.dispose(),
       designDocCtx.dispose(),
+      patentRadarCtx.dispose(),
       shikiWorkerCtx.dispose(),
       markdownShikiWorkerCtx.dispose(),
     ])

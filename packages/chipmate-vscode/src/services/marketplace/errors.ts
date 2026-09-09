@@ -33,23 +33,20 @@ export function marketplaceIdentityErrorMessage(err: unknown): string {
   const reason = err instanceof MarketplaceApiError ? err.reason : undefined
   const mapped = reasonMessage(reason, message)
   if (mapped) return mapped
-  if (/token-resolver-disabled/i.test(message)) {
-    return "ChipMate Server 未启用 New API token resolver，请检查服务端 NEW_API_BASE_URL、NEW_API_ADMIN_ACCESS_TOKEN 和 NEW_API_USER_ID。"
-  }
-  if (/token-not-found/i.test(message)) return "当前 API Key 没有匹配到 @chipmate 用户。"
-  if (/invalid-api-key/i.test(message)) return "API Key 格式无效。"
-  if (/^HTTP 404/i.test(message)) return "ChipMate Server 未找到用户反查接口。"
-  if ((err instanceof MarketplaceApiError && err.status && err.status >= 500) || /^HTTP 5\d\d/i.test(message) || /new-api-error/i.test(message)) {
-    return "ChipMate Server 调用 New API 失败，请检查服务端日志和 admin token 配置。"
+  if (/marketplace-login-required|session-expired/i.test(message)) return "市场登录已过期，请重新使用 LDAP 登录。"
+  if (/client-upgrade-required/i.test(message)) return "当前插件版本不再受服务器支持，请升级 ChipMate 插件。"
+  if (/^HTTP 404/i.test(message)) return "ChipMate Server 未找到市场身份接口，请检查服务端版本。"
+  if ((err instanceof MarketplaceApiError && err.status && err.status >= 500) || /^HTTP 5\d\d/i.test(message)) {
+    return "ChipMate Server 认证服务暂时不可用，请检查 LDAP 与服务端状态。"
   }
   return safeMarketplaceErrorText(message) || "未知错误。"
 }
 
 function reasonMessage(reason: MarketplaceErrorReason | undefined, message: string): string | undefined {
   if (reason === "invalid-url" || /invalid[ -]?url|err_invalid_url/i.test(message)) {
-    return "New API 地址格式无效，请检查 NEW_API_BASE_URL 是否包含 http:// 或 https://，并移除多余引号、空格。"
+    return "ChipMate Server 地址格式无效，请检查市场 baseUrl 是否包含 http:// 或 https://，并移除多余引号、空格。"
   }
-  if (reason === "rate-limited" || /new-api-rate-limited/i.test(message)) return "New API 请求过于频繁，请稍后重试。"
+  if (reason === "rate-limited" || /rate-limited/i.test(message)) return "认证请求过于频繁，请稍后重试。"
   if (reason === "timeout" || /aborted|aborterror|operation was aborted|timed? ?out/i.test(message)) {
     return "连接 ChipMate Server 超时或被中止。"
   }
