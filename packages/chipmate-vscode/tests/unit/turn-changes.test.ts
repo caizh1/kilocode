@@ -44,7 +44,13 @@ function setup(current = () => "会话") {
   return {
     bodies,
     messages,
-    opts: { client, directory: "/工作区", current, post: (message: TurnChangesMessage) => messages.push(message) },
+    opts: {
+      client,
+      directory: "/工作区",
+      current,
+      authorize: () => true,
+      post: (message: TurnChangesMessage) => messages.push(message),
+    },
   }
 }
 test("差异块操作通过正式 SDK 并携带会话、版本和关联标识", async () => {

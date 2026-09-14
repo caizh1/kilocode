@@ -11,6 +11,7 @@ import {
 } from "solid-js"
 import { useVSCode } from "./vscode"
 import { useSession } from "./session"
+import { useServer } from "./server"
 import { activeUserMessageID, messageTurns } from "./session-queue"
 
 import { createTurnRecord } from "./turn-changes-record"
@@ -24,22 +25,39 @@ const Context = createContext<{
 }>()
 
 export const TurnChangesProvider: ParentComponent<{ enabled?: boolean }> = (props) => {
+  // 正式入口由稳定外层持有；独立聊天与 Story 仍可按需创建上下文。
+  if (useContext(Context)) return <>{props.children}</>
   const session = useSession()
   const vscode = useVSCode()
+  const server = useServer()
   const records = new Map<string, RecordState>()
-  const disposals: (() => void)[] = []
+  const disposals = new Map<string, () => void>()
   const record = (sessionID: string, messageID: string) => {
     const key = `${sessionID}:${messageID}`
     const existing = records.get(key)
     if (existing) return existing
     const value = createRoot((dispose) => {
-      disposals.push(dispose)
-      return createTurnRecord(vscode, sessionID, messageID)
+      disposals.set(key, dispose)
+      return createTurnRecord(vscode, sessionID, messageID, {
+        active: props.enabled !== false && sessionID === session.currentSessionID(),
+        connected: server.isConnected(),
+      })
     })
     records.set(key, value)
     return value
   }
   onCleanup(() => disposals.forEach((dispose) => dispose()))
+  const unsubscribe = vscode.onMessage((message) => {
+    if (message.type !== "sessionDeleted" && message.type !== "messageRemoved") return
+    for (const [key, dispose] of disposals) {
+      if (!key.startsWith(`${message.sessionID}:`)) continue
+      if (message.type === "messageRemoved" && key !== `${message.sessionID}:${message.messageID}`) continue
+      dispose()
+      disposals.delete(key)
+      records.delete(key)
+    }
+  })
+  onCleanup(unsubscribe)
   const executing = createMemo(() =>
     activeUserMessageID(session.messages(), session.statusInfo(), (msg) => session.getParts(msg.id)),
   )
@@ -66,15 +84,22 @@ export const TurnChangesProvider: ParentComponent<{ enabled?: boolean }> = (prop
     const target = held()
     return target?.sessionID === session.currentSessionID() ? target : undefined
   })
+  let previous: { sessionID: string | undefined; status: string } | undefined
   createEffect(() => {
-    if (props.enabled === false) return
     const target = active()
-    session.status()
+    const status = session.status()
     const sessionID = session.currentSessionID()
+    const connected = server.isConnected()
+    const enabled = props.enabled !== false
     untrack(() => {
-      if (target) record(target.sessionID, target.messageID)
-      for (const [key, value] of records) if (sessionID && key.startsWith(`${sessionID}:`)) value.load()
+      if (enabled && target) record(target.sessionID, target.messageID)
+      for (const [key, value] of records) {
+        const current = !!sessionID && key.startsWith(`${sessionID}:`)
+        value.setAvailability(enabled && current, connected)
+        if (enabled && current && previous?.sessionID === sessionID && previous.status !== status) value.load()
+      }
     })
+    previous = { sessionID, status }
   })
   // 更新时不推断当前轮归属，防止历史撤销事件抢占输入框控件。
   const running = (sessionID: string, messageID: string) =>

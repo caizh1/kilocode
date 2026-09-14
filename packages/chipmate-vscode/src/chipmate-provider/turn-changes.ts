@@ -4,18 +4,41 @@ import type { ChipMateClient } from "@chipmate/sdk/v2/client"
 import type { ChipMateConnectionService } from "../services/cli-backend"
 import type { TurnChangesMessage, TurnChangesRequest, TurnChangesResult } from "../shared/turn-changes"
 
+// 只合并正在进行的元数据读取；工作树迁移后不复用旧目录。
+const directories = new WeakMap<ChipMateClient, Map<string, Promise<string>>>()
+export function resolveTurnChangesDirectory(client: ChipMateClient, sessionID: string, directory: string) {
+  const pending = directories.get(client) ?? new Map<string, Promise<string>>()
+  directories.set(client, pending)
+  const key = JSON.stringify([sessionID, directory])
+  const existing = pending.get(key)
+  if (existing) return existing
+  const request = client.session
+    .get({ sessionID, directory }, { throwOnError: true })
+    .then(({ data }) => {
+      if (data.id !== sessionID || !data.directory) throw new Error("无法确定修改记录所属的工作目录")
+      return data.directory
+    })
+    .finally(() => pending.delete(key))
+  pending.set(key, request)
+  return request
+}
+
 export async function handleTurnChanges(
   request: TurnChangesRequest,
   opts: {
     client: ChipMateClient
-    directory: string
+    directory: string | (() => Promise<string>)
     current: () => string | undefined
+    authorize: () => boolean
     post: (message: TurnChangesMessage) => void
   },
 ) {
-  const target = { sessionID: request.sessionID, messageID: request.messageID, directory: opts.directory }
   const result = await (async (): Promise<TurnChangesResult> => {
-    if (opts.current() !== request.sessionID) return { ok: false, message: "会话已切换，请重新打开本轮修改" }
+    const writable = () => opts.current() === request.sessionID && opts.authorize()
+    if (request.type === "turnChangesMutate" && !writable())
+      return { ok: false, message: "会话或操作权已切换，操作未执行" }
+    const directory = typeof opts.directory === "string" ? opts.directory : await opts.directory()
+    const target = { sessionID: request.sessionID, messageID: request.messageID, directory }
     if (request.type === "turnChangesRequest") {
       if (request.fileID)
         return (await opts.client.turnChanges.detail({ ...target, fileID: request.fileID }, { throwOnError: true }))
@@ -38,7 +61,7 @@ export async function handleTurnChanges(
       (document) => document.isDirty && paths.has(path.resolve(document.uri.fsPath)),
     )
     if (dirty) return { ok: false, message: `请先保存或关闭未保存的编辑：${path.basename(dirty.uri.fsPath)}` }
-    if (opts.current() !== request.sessionID) return { ok: false, message: "会话已切换，操作未执行" }
+    if (!writable()) return { ok: false, message: "会话或操作权已切换，操作未执行" }
     return (
       await opts.client.turnChanges.mutate(
         {

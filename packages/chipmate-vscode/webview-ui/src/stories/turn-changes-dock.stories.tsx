@@ -1,4 +1,4 @@
-import { createMemo, createSignal, onCleanup } from "solid-js"
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
 import { StoryProviders, defaultMockData } from "./StoryProviders"
 import { ChatView } from "../components/chat/ChatView"
@@ -11,6 +11,15 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 function Fixture() {
+  onMount(() =>
+    queueMicrotask(() =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "connectionState", state: "connected" },
+        }),
+      ),
+    ),
+  )
   const sessionID = "ses_伸缩验收"
   const messageID = "msg_当前用户"
   const assistantID = "msg_当前回答"

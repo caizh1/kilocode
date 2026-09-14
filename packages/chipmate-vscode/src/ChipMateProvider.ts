@@ -1,6 +1,6 @@
 import { diagnosticsService } from "./services/diagnostics/service"
 import { saveAppearance, bindAppearance } from "./appearance"
-import { handleTurnChanges, rejectTurnChanges } from "./chipmate-provider/turn-changes"
+import { handleTurnChanges, rejectTurnChanges, resolveTurnChangesDirectory } from "./chipmate-provider/turn-changes"
 import { introductionStore } from "./chipmate-provider/command-introduction"
 import * as path from "path"
 import { realpath } from "fs/promises"
@@ -1175,7 +1175,16 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           this.postMessage({ type: "turnChangesResult", sessionID: message.sessionID, messageID: message.messageID, requestID: message.requestID, result: { ok: false, message: "后端尚未连接" } })
           return
         }
-        await handleTurnChanges(message, { client: this.client, directory: this.getWorkspaceDirectory(message.sessionID), current: () => this.currentSession?.id, post: (reply) => this.postMessage(reply) })
+        const client = this.client
+        const generation = this.connectionGeneration
+        await handleTurnChanges(message, {
+          client,
+          directory: () => resolveTurnChangesDirectory(client, message.sessionID, this.getWorkspaceDirectory(message.sessionID)),
+          current: () => this.contextSessionID ?? this.currentSession?.id,
+          authorize: () => this.client === client && this.connectionGeneration === generation &&
+            (!surface || surface.coordinator.authorize(surface.id, message)),
+          post: (reply) => this.postMessage(reply),
+        })
         return
       }
       if (this.handleEditorOpenMessage(message)) return

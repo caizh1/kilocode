@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, For, Show } from "solid-js"
 import { Button } from "@chipmate/chipmate-ui/button"
 import { Diff } from "@chipmate/chipmate-ui/diff"
 import { Icon } from "@chipmate/chipmate-ui/icon"
@@ -22,21 +22,16 @@ export function TurnChangesCard(props: {
   const detail = () => record().detail()
   const selected = () => record().selected()
   const setSelected = (value: string | undefined) => record().setSelected(value)
-  const setDetail = (value: undefined) => record().setDetail(value)
   const error = () => record().error()
-  const setError = (value: string | undefined) => record().setError(value)
   const busy = () => record().busy()
   const loading = () => record().loading()
   const load = (fileID?: string) => record().load(fileID)
   const mutate = (action: "revert" | "restore", fileID?: string, hunkID?: string) =>
     record().mutate(action, fileID, hunkID)
-  const [expanded, setExpanded] = createSignal(false)
-  createEffect(() => {
-    props.sessionID
-    props.messageID
-    setExpanded(false)
-  })
-  const disabled = () => props.readonly || busy() || session.status() !== "idle"
+  const expanded = () => record().expanded()
+  const setExpanded = (value: boolean) => record().setExpanded(value)
+  const disabled = () =>
+    props.readonly || !record().ready() || session.status() !== "idle" || session.currentSessionID() !== props.sessionID
   const label = createMemo(() => {
     const value = summary()
     if (!value) return "本轮修改"
@@ -50,13 +45,9 @@ export function TurnChangesCard(props: {
   const open = (fileID: string) => {
     if (selected() === fileID) {
       setSelected(undefined)
-      setDetail(undefined)
       return
     }
     setSelected(fileID)
-    setDetail(undefined)
-    setError(undefined)
-    load(fileID)
   }
   const files = () => summary()?.files ?? []
   const reason = () => summary()?.reason
@@ -88,7 +79,6 @@ export function TurnChangesCard(props: {
               variant="ghost"
               onClick={() => {
                 setExpanded(!expanded())
-                load()
               }}
             >
               {expanded() ? "收起审阅" : "审阅"}
@@ -214,7 +204,6 @@ export function TurnChangesCard(props: {
               variant="ghost"
               disabled={busy()}
               onClick={() => {
-                setError(undefined)
                 load()
               }}
             >

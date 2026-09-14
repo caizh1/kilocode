@@ -26,6 +26,7 @@ import { ManualCompactionProvider } from "./context/manual-compaction"
 import { LocalTabsProvider, useLocalTabs } from "./context/local-tabs"
 import { SessionSurfaceProvider, useSessionSurface } from "./context/session-surface"
 import { LanguageBridge } from "./context/language-bridge"
+import { TurnChangesProvider } from "./context/turn-changes"
 import { ChatView } from "./components/chat"
 import { SidebarEmptyState } from "./components/chat/SidebarEmptyState"
 import { registerExpandedTaskTool } from "./components/chat/TaskToolExpanded"
@@ -76,6 +77,7 @@ export const DataBridge: Component<{ children: any }> = (props) => {
   const prov = useProvider()
   const server = useServer()
   const surface = useSessionSurface()
+  const harness = useDeepSeekHarness()
 
   // Memos for fields that change infrequently (not per-token) — cheap and
   // avoids allocating a fresh array/object on every consumer read.
@@ -220,7 +222,7 @@ export const DataBridge: Component<{ children: any }> = (props) => {
         session.selectSession(id)
       }}
     >
-      {props.children}
+      <TurnChangesProvider enabled={!harness.active()}>{props.children}</TurnChangesProvider>
     </DataProvider>
   )
 }

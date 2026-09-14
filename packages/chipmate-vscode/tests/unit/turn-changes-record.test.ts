@@ -11,7 +11,7 @@ const summary = (revision: number, phase: TurnChangesSummary["phase"] = "running
   phase,
   outcome: "completed",
   files: [],
-  canRevert: false,
+  canRevert: phase === "ready",
   canRestore: false,
 })
 function setup() {
