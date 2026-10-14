@@ -1,3 +1,5 @@
+import type { ChipmateUpdateStateMessage } from "../../../../src/shared/update-check"
+export type { ChipmateUpdateStateMessage } from "../../../../src/shared/update-check"
 import type { DiagnosticResponse } from "../../../../src/shared/diagnostics"
 import type { AppearanceMessage } from "../../../../src/shared/appearance"
 import type { TurnChangesMessage } from "../../../../src/shared/turn-changes"
@@ -44,7 +46,11 @@ import type {
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { SessionSurfaceExtensionMessage } from "../../../../src/shared/session-surface"
-import type { PatentCenterAction, PatentCenterSettings, PatentCenterTestResult } from "../../../../src/shared/patent-center"
+import type {
+  PatentCenterAction,
+  PatentCenterSettings,
+  PatentCenterTestResult,
+} from "../../../../src/shared/patent-center"
 import type { PatentRadarRun } from "../../../../src/patent-radar/types"
 import type { QuestionRequest, SuggestionRequest, TodoItem } from "./questions"
 import type { ModelSelection, Provider, ProviderAuthState } from "./providers"
@@ -728,12 +734,6 @@ export interface PatentRadarCancelCompletedMessage {
   requestId: string
   run: PatentRadarRun | null
   error?: string
-}
-
-export interface ChipmateUpdateStateMessage {
-  type: "chipmateUpdateState"
-  requestId: string
-  result: ChipmateUpdateResult
 }
 
 export interface GlobalConfigLoadedMessage {

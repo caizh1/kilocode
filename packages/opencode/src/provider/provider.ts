@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { observeFetch } from "@/chipmate/provider/request-diagnostics" // chipmate_change
 import os from "os"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import fuzzysort from "fuzzysort"
@@ -20,6 +21,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema, Types } from "effect"
 import { EffectBridge } from "@/effect/bridge"
+import { mismatchedProviderCredentials } from "@opencode-ai/core/chipmate/provider-auth" // chipmate_change
 import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -51,6 +53,7 @@ import { isInternalOffline } from "@/chipmate/internal-offline"
 import * as ModelsRefresh from "@/chipmate/provider/models-refresh"
 // chipmate_change end
 import { ProviderError } from "./error"
+import { replacePackagedModelID, replacePackagedConfigModels } from "@/chipmate/provider/model-replacements" // chipmate_change
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
 
@@ -1365,7 +1368,8 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
         const bridge = yield* EffectBridge.make()
-        const cfg = yield* config.get()
+        const cfg = replacePackagedConfigModels(yield* config.get()) // chipmate_change
+        const auths = yield* auth.all().pipe(Effect.orDie) // chipmate_change - 同一实例使用一致的 API 密钥快照
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
         const database = mapValues(catalog, toPublicInfo)
@@ -1383,8 +1387,12 @@ const layer = Layer.effect(
           [providerID: string]: CustomDiscoverModels
         } = {}
         const dep = {
-          auth: (id: string) => auth.get(id).pipe(Effect.orDie),
-          config: () => config.get(),
+          // chipmate_change start - API 密钥不可跨配置快照；OAuth 仍支持刷新令牌
+          auth: (id: string) => auths[id]?.type === "oauth"
+            ? auth.get(id).pipe(Effect.orDie, Effect.map((current) => current?.type === "oauth" ? current : auths[id]))
+            : Effect.succeed(auths[id]),
+          config: () => Effect.succeed(cfg),
+          // chipmate_change end
           env: () => env.all(),
           get: (key: string) => env.get(key),
         }
@@ -1412,7 +1420,7 @@ const layer = Layer.effect(
           ([id, item]) => !offline || (item?.npm === "@ai-sdk/openai-compatible" && id !== "apertis"),
         )
         // chipmate_change end
-        const disabled = new Set(cfg.disabled_providers ?? [])
+        const disabled = new Set([...(cfg.disabled_providers ?? []), ...mismatchedProviderCredentials(cfg.provider, auths)]) // chipmate_change
         const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : null
 
         function isProviderAllowed(providerID: ProviderV2.ID): boolean {
@@ -1431,7 +1439,7 @@ const layer = Layer.effect(
 
           const provider = database[providerID]
           if (!provider) continue
-          const pluginAuth = yield* auth.get(providerID).pipe(Effect.orDie)
+          const pluginAuth = auths[providerID] // chipmate_change
 
           provider.models = yield* Effect.promise(async () => {
             const next = await models(toPublicInfo(provider), { auth: pluginAuth })
@@ -1559,8 +1567,6 @@ const layer = Layer.effect(
           database[providerID] = parsed
         }
 
-        // chipmate_change start - load auths before env so OAuth plugins can override inherited credentials
-        const auths = yield* auth.all().pipe(Effect.orDie)
         // load env
         const envs = yield* env.all()
         for (const [id, provider] of Object.entries(database)) {
@@ -1600,7 +1606,7 @@ const layer = Layer.effect(
           const providerID = ProviderV2.ID.make(plugin.auth.provider)
           if (disabled.has(providerID)) continue
 
-          const stored = yield* auth.get(providerID).pipe(Effect.orDie)
+          const stored = auths[providerID] // chipmate_change
           if (!stored) continue
           if (!plugin.auth.loader) continue
 
@@ -1610,7 +1616,7 @@ const layer = Layer.effect(
           // chipmate_change end
           const options = yield* Effect.promise(() =>
             plugin.auth!.loader!(
-              () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
+              () => bridge.promise(dep.auth(providerID)) as any, // chipmate_change
               toPublicInfo(info), // chipmate_change
             ),
           )
@@ -1685,7 +1691,13 @@ const layer = Layer.effect(
           const configProvider = cfg.provider?.[providerID]
 
           for (const [modelID, model] of Object.entries(provider.models)) {
-            model.api.id = model.api.id ?? model.id ?? modelID
+            // chipmate_change start - retired internal models stay resolvable for old sessions but are not offered again
+            if (replacePackagedModelID(providerID, modelID) !== modelID) {
+              delete provider.models[modelID]
+              continue
+            }
+            model.api.id = replacePackagedModelID(providerID, model.api.id ?? model.id ?? modelID)
+            // chipmate_change end
             if (
               // These chat aliases are invalid for the special handling in the
               // built-in providers below, but custom providers may support them.
@@ -1803,12 +1815,13 @@ const layer = Layer.effect(
         if (existing) return existing
 
         const customFetch = options["fetch"]
+        delete options["chipmateCredentialGuard"] // chipmate_change - 内部校验信息不传给第三方 SDK
         const chunkTimeout = options["chunkTimeout"]
         const headerTimeout = options["headerTimeout"]
         delete options["chunkTimeout"]
         delete options["headerTimeout"]
 
-        options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
+        options["fetch"] = observeFetch(async (input: any, init?: BunFetchRequestInit) => { // chipmate_change
           const fetchFn = customFetch ?? fetch
           const request = consumeLongRunningTaskHeader(init) // chipmate_change - Patent Radar requests remain cancellable without a wall-clock deadline
           const opts = request.init ?? {}
@@ -1852,7 +1865,11 @@ const layer = Layer.effect(
             throw err
           }
           // chipmate_change end
-        }
+        }, (init) => consumeLongRunningTaskHeader(init).longRunning ? [{ stage: "长任务", enabled: false }] : [ // chipmate_change start - record the effective timeout guards, never the provider options
+          { stage: "连接与首字节", budget: requestTimeout(options), enabled: requestTimeout(options) !== undefined },
+          { stage: "响应头", budget: typeof headerTimeout === "number" ? headerTimeout : undefined, enabled: typeof headerTimeout === "number" },
+          { stage: "流空闲", budget: typeof chunkTimeout === "number" ? chunkTimeout : undefined, enabled: typeof chunkTimeout === "number" && chunkTimeout > 0 },
+        ]) // chipmate_change end
 
         const bundledLoader = BUNDLED_PROVIDERS[model.api.npm]
         if (bundledLoader) {
@@ -1896,6 +1913,7 @@ const layer = Layer.effect(
     )
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ModelV2.ID) {
+      modelID = ModelV2.ID.make(replacePackagedModelID(providerID, modelID)) // chipmate_change
       const s = yield* InstanceState.get(state)
       const provider = s.providers[providerID]
       if (!provider) {

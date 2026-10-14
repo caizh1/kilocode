@@ -70,11 +70,17 @@ const PatentCenterTab: Component = () => {
   })
   const analysisModel = createMemo(() => {
     const configured = setting<PatentCenterSettings["analysisModel"]>("analysisModel", null)
-    if (configured && availableModels().some((model) => model.providerID === configured.providerID && model.id === configured.modelID)) {
+    if (
+      configured &&
+      availableModels().some((model) => model.providerID === configured.providerID && model.id === configured.modelID)
+    ) {
       return configured
     }
     const fallback = provider.defaultSelection()
-    if (fallback && availableModels().some((model) => model.providerID === fallback.providerID && model.id === fallback.modelID)) {
+    if (
+      fallback &&
+      availableModels().some((model) => model.providerID === fallback.providerID && model.id === fallback.modelID)
+    ) {
       return fallback
     }
     const first = availableModels()[0]
@@ -197,7 +203,7 @@ const PatentCenterTab: Component = () => {
           setActivityError(undefined)
           vscode.postMessage({ type: "cancelPatentRadarRun", requestId, runId })
         }}
-        onRestart={() => startScan()}
+        onRestart={() => startScan(activity()?.id)}
         onRetry={() => retryActivity()}
         onOpenCandidates={() => {
           dialog.close()
@@ -205,7 +211,7 @@ const PatentCenterTab: Component = () => {
         }}
       />
     ))
-  const startScan = () => {
+  const startScan = (restartRunId?: string) => {
     if (!analysisModel() || scanActionLoading()) return
     appliedActivitySequence = ++activitySequence
     setActivity(null)
@@ -218,6 +224,7 @@ const PatentCenterTab: Component = () => {
       type: "runPatentCenterAction",
       requestId,
       action: "scan",
+      ...(restartRunId ? { restartRunId } : {}),
       ...(analysisModel() ? { analysisModel: analysisModel()! } : {}),
     })
     poll()
@@ -283,15 +290,26 @@ const PatentCenterTab: Component = () => {
               if (event.key === "Enter") test()
             }}
           />
-          <Button variant="secondary" onClick={test} disabled={!server().trim() || Boolean(error()) || Boolean(testRequest())}>
-            <i class={`codicon codicon-${testRequest() ? "loading codicon-modifier-spin" : "plug"}`} aria-hidden="true" />
+          <Button
+            variant="secondary"
+            onClick={test}
+            disabled={!server().trim() || Boolean(error()) || Boolean(testRequest())}
+          >
+            <i
+              class={`codicon codicon-${testRequest() ? "loading codicon-modifier-spin" : "plug"}`}
+              aria-hidden="true"
+            />
             {testRequest()
               ? language.t("settings.patentCenter.test.testing")
               : language.t("settings.patentCenter.test.action")}
           </Button>
         </div>
         <Show when={error()}>
-          {(message) => <div class="patent-center-status patent-center-status-error" role="alert">{message()}</div>}
+          {(message) => (
+            <div class="patent-center-status patent-center-status-error" role="alert">
+              {message()}
+            </div>
+          )}
         </Show>
         <Show when={result()}>{(item) => <CorpusStatus result={item()} />}</Show>
       </Card>
@@ -350,9 +368,7 @@ const PatentCenterTab: Component = () => {
                 showConnectionStatus
               />
             </div>
-            <span class="patent-center-model-helper">
-              {language.t("settings.patentCenter.analysisModel.helper")}
-            </span>
+            <span class="patent-center-model-helper">{language.t("settings.patentCenter.analysisModel.helper")}</span>
           </div>
         </SettingsRow>
         <SettingsRow
@@ -385,7 +401,9 @@ const PatentCenterTab: Component = () => {
                 <strong>无法读取 Patent Radar 扫描状态</strong>
               </div>
               <span>{message()}</span>
-              <Button variant="secondary" onClick={retryActivity}>重新读取</Button>
+              <Button variant="secondary" onClick={retryActivity}>
+                重新读取
+              </Button>
             </div>
           )}
         </Show>
@@ -399,7 +417,8 @@ const PatentCenterTab: Component = () => {
                 variant={item.action === "scan" ? "primary" : "secondary"}
                 onClick={() => run(item.action)}
                 disabled={
-                  ((item.action === "scan" || item.action === "scanModule") && (!analysisModel() || scanActionLoading())) ||
+                  ((item.action === "scan" || item.action === "scanModule") &&
+                    (!analysisModel() || scanActionLoading())) ||
                   (item.action === "scanModule" && activity()?.status === "SCANNING")
                 }
               >
@@ -421,19 +440,26 @@ export const PatentRadarTaskStrip: Component<{ run: PatentRadarRun; onOpen: () =
   const timer = window.setInterval(() => setClock(Date.now()), 1000)
   onCleanup(() => window.clearInterval(timer))
   const progress = () => props.run.progress
-  const percent = () => (progress()?.totalUnits ? Math.min(100, (progress()!.completedUnits / progress()!.totalUnits) * 100) : 0)
+  const percent = () =>
+    progress()?.totalUnits ? Math.min(100, (progress()!.completedUnits / progress()!.totalUnits) * 100) : 0
   return (
     <div class="patent-radar-task-strip" data-ui="patent-radar-task-strip">
       <span class="patent-radar-live-dot is-active" aria-hidden="true" />
       <div class="patent-radar-task-copy">
         <strong>{patentPhaseText(progress()?.phase)} · 后台运行中</strong>
         <span>
-          文件覆盖 {props.run.coverage?.analyzedFiles ?? 0} / {props.run.coverage?.supportedFiles ?? "—"} · 当前阶段 {progress()?.completedUnits ?? 0} / {progress()?.totalUnits ?? "—"} · 已运行 {elapsedText(progress()?.startedAt, clock())}
+          文件覆盖 {props.run.coverage?.analyzedFiles ?? 0} / {props.run.coverage?.supportedFiles ?? "—"} · 当前阶段{" "}
+          {progress()?.completedUnits ?? 0} / {progress()?.totalUnits ?? "—"} · 已运行{" "}
+          {elapsedText(progress()?.startedAt, clock())}
         </span>
-        <div class="patent-radar-task-track"><span style={{ width: `${percent()}%` }} /></div>
+        <div class="patent-radar-task-track">
+          <span style={{ width: `${percent()}%` }} />
+        </div>
         <small>关闭弹窗后任务仍会继续</small>
       </div>
-      <Button variant="secondary" onClick={props.onOpen}>查看进度</Button>
+      <Button variant="secondary" onClick={props.onOpen}>
+        查看进度
+      </Button>
     </div>
   )
 }
@@ -487,10 +513,14 @@ const CorpusStatus: Component<{ result: PatentCenterTestResult }> = (props) => {
               })}
             </span>
             <Show when={item().generation}>
-              {(generation) => <span>{language.t("settings.patentCenter.status.generation", { generation: generation() })}</span>}
+              {(generation) => (
+                <span>{language.t("settings.patentCenter.status.generation", { generation: generation() })}</span>
+              )}
             </Show>
             <Show when={item().quarantinedBatches > 0}>
-              <span>{language.t("settings.patentCenter.status.quarantined", { count: item().quarantinedBatches })}</span>
+              <span>
+                {language.t("settings.patentCenter.status.quarantined", { count: item().quarantinedBatches })}
+              </span>
             </Show>
           </div>
         )}
@@ -499,9 +529,13 @@ const CorpusStatus: Component<{ result: PatentCenterTestResult }> = (props) => {
   )
 }
 
-function statusText(result: PatentCenterTestResult, t: (key: string, params?: Record<string, string | number>) => string) {
+function statusText(
+  result: PatentCenterTestResult,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
   if (result.code === "ok") return t("settings.patentCenter.status.ready")
-  if (result.code === "not-ready") return t("settings.patentCenter.status.notReady", { state: result.corpus?.state ?? "" })
+  if (result.code === "not-ready")
+    return t("settings.patentCenter.status.notReady", { state: result.corpus?.state ?? "" })
   if (result.code === "http") return t("settings.patentCenter.status.http", { status: result.statusCode ?? 0 })
   if (result.code === "timeout") return t("settings.patentCenter.status.timeout")
   if (result.code === "network") return t("settings.patentCenter.status.network")

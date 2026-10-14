@@ -42,8 +42,14 @@ const ModelsTab: Component = () => {
     return typeof value === "string" ? value : "none"
   }
   const automaticLabel = () => autocompleteAutomaticLabel(autocompleteAutomatic(), autocompleteModel())
-  const selectionLabel = () => autocompleteSelectionLabel(autocompleteAutomatic(), autocompleteModel())
-  const autocompleteModels = () => [...qwenAutocompleteModels(provider.models()), ...AUTOCOMPLETE_SELECTOR_MODELS]
+  const selectionLabel = () => autocompleteSelectionLabel(autocompleteAutomatic(), autocompleteModel(), autocompleteProvider())
+  const autocompleteModels = () => [...qwenAutocompleteModels(provider.models(), provider.connected()), ...AUTOCOMPLETE_SELECTOR_MODELS]
+  const autocompleteUnavailable = () => {
+    const selection = getAutocompleteSelection(autocompleteProvider(), autocompleteModel())
+    if (!selection || autocompleteAutomatic()) return false
+    if (AUTOCOMPLETE_SELECTOR_MODELS.some((model) => model.providerID === selection.providerID && model.id === selection.modelID)) return false
+    return !autocompleteModels().some((model) => model.providerID === selection.providerID && model.id === selection.modelID)
+  }
 
   function handleModelSelect(configKey: "model" | "small_model") {
     return (providerID: string, modelID: string) => {
@@ -189,8 +195,14 @@ const ModelsTab: Component = () => {
             allowClear
             clearLabel={automaticLabel()}
             label={language.t("settings.autocomplete.model.title")}
-            description={`${language.t("settings.autocomplete.model.description")} Uses a connected qwen-coder-30b0 Provider. Public builds may use Codestral only when its authentication is available. Selection: ${selectionLabel()}. Configuration source: ${autocompleteScope()}.`}
+            description={`${language.t("settings.autocomplete.model.description")} ${language.t("settings.autocomplete.model.customHint")} Selection: ${selectionLabel()}. Configuration source: ${autocompleteScope()}.`}
+            showProviderName
           />
+          <Show when={autocompleteUnavailable()}>
+            <p role="status" style={{ "overflow-wrap": "anywhere" }}>
+              {language.t("settings.autocomplete.model.unavailable", { provider: autocompleteProvider() ?? "", model: autocompleteModel() ?? "" })}
+            </p>
+          </Show>
         </SettingsRow>
         <SettingsRow
           title={language.t("settings.models.speechToTextModel.title")}

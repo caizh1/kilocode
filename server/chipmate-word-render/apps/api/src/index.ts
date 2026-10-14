@@ -67,6 +67,7 @@ export function build(
     root: process.env.DIAGNOSTICS_ROOT?.trim() || join(db.directory, "diagnostics"),
     quota: number(process.env.DIAGNOSTICS_QUOTA_BYTES, 10 * 1024 ** 3),
     active: number(process.env.DIAGNOSTICS_MAX_ACTIVE, 4),
+    free: number(process.env.DIAGNOSTICS_MIN_FREE_BYTES ?? process.env.EXTENSION_UPLOAD_MIN_FREE_BYTES, 2 * 1024 ** 3),
     ...opts.diagnostics, identity, now: opts.now,
   })
   if (db) {

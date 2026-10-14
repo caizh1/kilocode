@@ -139,14 +139,12 @@ function checkVariant(v: VariantEntry, seen: Set<string>, t: Translator) {
   return { name: undefined }
 }
 
-function normalizeModelID(providerID: string, modelID: string): string {
-  const id = modelID.trim()
-  const prefix = `${providerID}/`
-  return providerID && id.startsWith(prefix) ? id.slice(prefix.length).trim() : id
+function normalizeModelID(modelID: string): string {
+  return modelID.trim()
 }
 
-function checkModel(providerID: string, m: ModelEntry, seenModels: Set<string>, t: Translator) {
-  const id = normalizeModelID(providerID, m.id)
+function checkModel(m: ModelEntry, seenModels: Set<string>, t: Translator) {
+  const id = normalizeModelID(m.id)
   const key = id.toLowerCase()
   let idErr: string | undefined
   if (!id) idErr = t("provider.custom.error.required")
@@ -226,14 +224,14 @@ function modalities(m: ModelEntry): Modalities | undefined {
   }
 }
 
-function serializeModel(providerID: string, m: ModelEntry): [string, Record<string, unknown>] {
+function serializeModel(m: ModelEntry): [string, Record<string, unknown>] {
   const ventries = m.reasoning ? m.variants.filter((v) => v.name.trim()).map(serializeVariant) : []
   const entry: Record<string, unknown> = { name: m.name.trim() }
   const modes = modalities(m)
   if (m.reasoning) entry.reasoning = true
   if (modes) entry.modalities = modes
   if (ventries.length > 0) entry.variants = Object.fromEntries(ventries)
-  return [normalizeModelID(providerID, m.id), entry]
+  return [normalizeModelID(m.id), entry]
 }
 
 function resolveEnv(rawEnv: string | undefined, savedEnv: string[] | undefined) {
@@ -249,8 +247,8 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
   const apiKey = input.form.apiKey.trim()
 
   const rawEnv = apiKey.match(/^\{env:([^}]+)\}$/)?.[1]?.trim()
-  // When editing and apiKey is empty, preserve existing env from the original config
-  const savedEnv = input.editing && !apiKey ? input.existingEnv : undefined
+  // 只有未编辑密钥时保留环境凭据；明确清空不能恢复隐藏的旧环境变量。
+  const savedEnv = input.editing && !apiKey && input.apiKeyChanged !== true ? input.existingEnv : undefined
   const key = apiKey && !rawEnv ? apiKey : undefined
 
   const { idErr, existsErr } = checkProviderID(
@@ -270,7 +268,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
   const credentialError = checkOriginCredential(input, baseURL, apiKey)
 
   const seenModels = new Set<string>()
-  const modelErrors = input.form.models.map((m) => checkModel(providerID, m, seenModels, input.t))
+  const modelErrors = input.form.models.map((m) => checkModel(m, seenModels, input.t))
   const modelsValid = modelErrors.every((m) => !m.id && !m.name && m.variants.every((v) => !v.name))
 
   const seenHeaders = new Set<string>()
@@ -312,7 +310,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
         name,
         ...resolveEnv(rawEnv, savedEnv),
         options,
-        models: Object.fromEntries(input.form.models.map((m) => serializeModel(providerID, m))),
+        models: Object.fromEntries(input.form.models.map(serializeModel)),
       },
     },
   }

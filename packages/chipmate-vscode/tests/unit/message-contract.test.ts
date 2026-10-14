@@ -45,6 +45,7 @@ function readMessageTypeSources(): string {
     readFile(ANACONDA_DESKTOP_MESSAGES_FILE),
     readFile(DEEPSEEK_HARNESS_MESSAGES_FILE),
     readFile(SESSION_SURFACE_MESSAGES_FILE),
+    readFile(path.join(ROOT, "src/shared/update-check.ts")),
   ].join("\n")
 }
 

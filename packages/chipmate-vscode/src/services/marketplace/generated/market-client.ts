@@ -5,6 +5,9 @@ import type { paths } from "./market-api"
 type Path = keyof paths
 
 export const MARKET_ENDPOINTS = [
+  "/api/v1/diagnostics/bundles",
+  "/api/v1/diagnostics/bundles/{id}",
+  "/api/v1/diagnostics/bundles/{id}/archive",
   "/api/v1/capabilities",
   "/api/v1/market/stream",
   "/api/v1/auth/session",

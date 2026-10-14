@@ -81,8 +81,7 @@ export class SetupScriptRunner {
         },
       })
       if (code === undefined) {
-        this.log("Setup script finished without a valid exit code — assuming success")
-        return true
+        throw new Error("准备脚本已中断，未取得成功退出码")
       }
       if (code !== 0) {
         throw new Error(`Setup script exited with code ${code}`)
@@ -92,7 +91,7 @@ export class SetupScriptRunner {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
       this.log(`Setup script execution failed: ${msg}`)
-      return true // Script was attempted
+      throw error
     }
   }
 }

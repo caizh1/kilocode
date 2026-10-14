@@ -183,6 +183,7 @@ export class FileWatcher implements IFileWatcher {
         return this.ignoreInstance?.ignores(relativeFilePath) ?? false
       },
       persistent: true,
+      followSymlinks: false,
       ignoreInitial: true,
     })
     this.watcher = watcher

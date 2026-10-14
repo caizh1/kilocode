@@ -1,3 +1,4 @@
+import { focusedChatSurface, clearChatSurface } from "./focused-surface"
 import * as vscode from "vscode"
 import type { ChipMateProvider } from "../../ChipMateProvider"
 import type { AgentManagerProvider } from "../../agent-manager/AgentManagerProvider"
@@ -38,7 +39,8 @@ export function registerCodeActions(
   agentManager?: AgentManagerProvider,
   activeTabProvider?: () => ChipMateProvider | undefined,
 ): void {
-  const target = () => (agentManager?.isActive() ? agentManager : (activeTabProvider?.() ?? provider))
+  const target = () =>
+    focusedChatSurface() ?? (agentManager?.isActive() ? agentManager : (activeTabProvider?.() ?? provider))
   const reveal = async () => {
     await vscode.commands.executeCommand("chipmate.v2.SidebarProvider.focus")
     await provider.waitForReady()
@@ -68,6 +70,9 @@ export function registerCodeActions(
   }
 
   context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) clearChatSurface()
+    }),
     vscode.commands.registerCommand("chipmate.v2.explainCode", async () => {
       const ctx = getEditorContext()
       if (!ctx) return

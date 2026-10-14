@@ -1,3 +1,5 @@
+import { DiagnosticsDialog } from "./DiagnosticsDialog"
+import type { DiagnosticMode } from "../../../../src/shared/diagnostics"
 import { Component, createSignal, onCleanup } from "solid-js"
 import { Button } from "@chipmate/chipmate-ui/button"
 import { Icon } from "@chipmate/chipmate-ui/icon"
@@ -15,6 +17,7 @@ export interface AboutChipMateTabProps {
 }
 
 const AboutChipMateTab: Component<AboutChipMateTabProps> = (props) => {
+  const [diagnosticMode, setDiagnosticMode] = createSignal<DiagnosticMode>()
   const language = useLanguage()
   const vscode = useVSCode()
   const { updateConfig, updateGlobalConfig } = useConfig()
@@ -176,6 +179,7 @@ const AboutChipMateTab: Component<AboutChipMateTabProps> = (props) => {
 
   return (
     <div>
+      <DiagnosticsDialog mode={diagnosticMode()} onClose={() => setDiagnosticMode(undefined)} />
       {/* Version Information */}
       <div style={sectionStyle}>
         <h4 style={headingStyle}>{language.t("settings.aboutChipMate.versionInfo")}</h4>
@@ -198,6 +202,7 @@ const AboutChipMateTab: Component<AboutChipMateTabProps> = (props) => {
         >
           {language.t("settings.aboutChipMate.feedback.prefix")}
         </p>
+      <div class="diagnostics-actions" style={{ "justify-content": "flex-start", "margin-bottom": "20px" }}><Button variant="primary" onClick={() => setDiagnosticMode("submit")}>提交诊断</Button><Button variant="secondary" onClick={() => setDiagnosticMode("export")}>保存日志包</Button></div>
       </div>
 
       {/* Telemetry */}

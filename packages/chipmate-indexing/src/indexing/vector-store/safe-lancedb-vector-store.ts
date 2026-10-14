@@ -182,9 +182,11 @@ export class SafeLanceDBVectorStore implements IVectorStore {
       this.candidate = true
       this.promoted = false
       this.candidateCreatedAt = candidate.createdAt
-      for (const sample of candidate.samples ?? []) {
+      this.samples.clear()
+      for (const sample of created ? [] : (candidate.samples ?? [])) {
         this.samples.set(String(sample.payload.filePath), sample)
       }
+      if (created) await this.saveCandidate(candidate.generation)
       this.decision = {
         action: "rebuild",
         reason: created ? "incomplete candidate required rebuild" : "resumed incomplete candidate",

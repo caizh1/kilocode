@@ -356,6 +356,14 @@ describe("LocalVectorStore", () => {
   })
 
   describe("initialize", () => {
+    test("残留元数据表删除失败时保留首因且不创建向量表", async () => {
+      mockDb.tableNames.mockResolvedValue(["metadata"])
+      mockDb.dropTable.mockRejectedValue(new Error("EACCES：元数据表不可写"))
+
+      await expect(store.initialize()).rejects.toThrow("EACCES：元数据表不可写")
+      expect(mockDb.createTable).not.toHaveBeenCalled()
+    })
+
     test("opens a complete compatible baseline without mutating it", async () => {
       spyOn(fs, "existsSync").mockReturnValue(true as any)
       store["_getStoredEmbeddingProfile"] = mock().mockResolvedValue({

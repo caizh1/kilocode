@@ -142,6 +142,17 @@ export function git(args: string[], cwd: string): string {
 
 export function parseNameStatus(output: string): Array<{ status: string; path: string }> {
   if (!output) return []
+  if (output.includes("\0")) {
+    const entries = output.split("\0")
+    const result: Array<{ status: string; path: string }> = []
+    for (let index = 0; index + 1 < entries.length; ) {
+      const status = entries[index++]!
+      const source = entries[index++]!
+      const path = /^[RC]/.test(status) ? entries[index++]! : source
+      if (path) result.push({ status, path })
+    }
+    return result
+  }
   return output.split("\n").map((line) => {
     const [status, ...rest] = line.split("\t")
     let path: string
@@ -157,6 +168,18 @@ export function parseNameStatus(output: string): Array<{ status: string; path: s
 
 export function parsePorcelain(output: string): Array<{ status: string; path: string }> {
   if (!output) return []
+  if (output.includes("\0")) {
+    const entries = output.split("\0")
+    const result: Array<{ status: string; path: string }> = []
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index]!
+      if (!entry) continue
+      const status = entry.slice(0, 2).trim()
+      result.push({ status, path: entry.slice(3) })
+      if (/[RC]/.test(entry.slice(0, 2))) index++
+    }
+    return result
+  }
   return output
     .split("\n")
     .filter((line) => line.length > 0)
@@ -185,11 +208,13 @@ export async function getGitContext(repoPath: string, selectedFiles?: string[]):
   const recentCommits = log ? log.split("\n") : []
 
   // Check staged files first
-  const staged = parseNameStatus(git(["diff", "--name-status", "--cached"], repoPath))
+  const staged = parseNameStatus(git(["diff", "--name-status", "-z", "--cached"], repoPath))
   const useStaged = staged.length > 0
 
   // Fall back to all changes if nothing staged
-  const raw = useStaged ? staged : parsePorcelain(git(["status", "--porcelain"], repoPath))
+  const raw = useStaged
+    ? staged
+    : parsePorcelain(git(["status", "--porcelain", "-z", "--untracked-files=all"], repoPath))
 
   const selected = selectedFiles ? new Set(selectedFiles) : undefined
 

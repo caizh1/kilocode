@@ -1,3 +1,4 @@
+import { DiagnosticStderr } from "../diagnostics/stderr"
 import { diagnosticsEnvironment } from "../diagnostics/record"
 import { type ChildProcess } from "child_process"
 import { spawn } from "../../util/process"
@@ -259,6 +260,7 @@ export class ServerManager {
           ...(!proxyStrictSSL && { NODE_TLS_REJECT_UNAUTHORIZED: "0" }),
           ...resolveManagedServerEnv(process.env, this.context.globalStorageUri.fsPath),
           ...diagnosticsEnvironment(),
+          CHIPMATE_DIAGNOSTICS_RUN_ID: runId,
           ...cliRuntimeEnv(cliPath),
           ...render,
           // VS Code's http.proxy / http.noProxy settings are not reflected in
@@ -324,6 +326,7 @@ export class ServerManager {
       let reported = false
       let timeout = ""
       const stderrLines: string[] = []
+      const diagnosticStderr = new DiagnosticStderr(runId)
 
       const finish = (code: number | null, signal: NodeJS.Signals | null) => {
         if (reported) return
@@ -402,7 +405,9 @@ export class ServerManager {
         }
       })
 
+      serverProcess.stderr?.once("end", () => diagnosticStderr.finish())
       serverProcess.stderr?.on("data", (data: Buffer) => {
+        diagnosticStderr.append(data)
         const errorOutput = data.toString()
         console.error("[ChipMate New] ServerManager: ⚠️ CLI Server stderr:", errorOutput)
         this.appendIndexingOutput(errorOutput)

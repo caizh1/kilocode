@@ -1,6 +1,32 @@
 import { describe, expect, test } from "bun:test"
 
 describe("LanceDB 原生批量 generation finalize", () => {
+  test("在隔离进程中验证模型切换与残留表恢复", async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "test",
+        "./test/chipmate/indexing/vector-store/lancedb-recovery.native-case.ts",
+        "--timeout",
+        "30000",
+      ],
+      {
+        cwd: import.meta.dir.replace("/test/chipmate/indexing/vector-store", ""),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    const output = `${stdout}\n${stderr}`
+    expect(output).toContain("8 pass")
+    expect(output).toContain("0 fail")
+    expect(code).toBe(0)
+  }, 30_000)
+
   test("在隔离进程中使用真实原生运行库", async () => {
     const child = Bun.spawn(
       [

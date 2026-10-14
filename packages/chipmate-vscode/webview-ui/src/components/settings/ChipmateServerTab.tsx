@@ -79,24 +79,27 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
       setResult(message.result)
       return
     }
-    if (message.type !== "chipmateUpdateState" || message.requestId !== updateRequest()) return
-    setUpdateRequest(undefined)
-    setPhase("idle")
-    setUpdate(message.result)
-    if (message.result.status === "available") {
+    if (message.type !== "chipmateUpdateState") return
+    setUpdateRequest(message.phase && message.phase !== "idle" ? message.requestId : undefined)
+    setPhase(message.phase ?? "idle")
+    if (message.phase === "installing") setAction("install")
+    if (message.candidate) setCandidate(message.candidate)
+    if (message.result) setUpdate(message.result)
+    if (message.result?.status === "available") {
       setCandidate(message.result)
       setExpanded(false)
     }
   })
   onCleanup(unsubscribe)
   vscode.postMessage({ type: "requestChipmateServerSettings" })
+  vscode.postMessage({ type: "requestChipmateUpdateState" })
 
   const change = (next: string) => {
+    if (phase() !== "idle") return
     updateSetting(CHIPMATE_SERVER_KEY, next)
     setResult(undefined)
     setTestRequest(undefined)
     setUpdateRequest(undefined)
-    setPhase("idle")
     setAction("check")
     setUpdate(undefined)
     setCandidate(undefined)
@@ -213,6 +216,10 @@ const ChipmateServerTab: Component<ChipmateServerTabProps> = (props) => {
         expanded={expanded}
         toggle={() => setExpanded((value) => !value)}
         check={check}
+        cancel={() => {
+          const requestId = updateRequest()
+          if (requestId) vscode.postMessage({ type: "cancelChipmateUpdateDownload", requestId })
+        }}
         install={install}
         retry={retry}
       />
@@ -228,6 +235,7 @@ const UpdateCard: Component<{
   toggle: () => void
   check: () => void
   install: () => void
+  cancel: () => void
   retry: () => void
 }> = (props) => {
   const language = useLanguage()
@@ -302,6 +310,9 @@ const UpdateCard: Component<{
         />
       </Show>
       <Show when={props.phase() === "installing"}>
+        <Button variant="secondary" onClick={props.cancel}>
+          取消下载
+        </Button>
         <UpdateStatus
           icon="loading"
           spin
@@ -414,9 +425,7 @@ const UpdateCard: Component<{
                   detail={updateError(result, language.t)}
                 />
                 <div class="chipmate-update-error-detail">
-                  <span>
-                    {language.t("settings.chipmateServer.update.errorCode", { code: result.code })}
-                  </span>
+                  <span>{language.t("settings.chipmateServer.update.errorCode", { code: result.code })}</span>
                   <pre data-ui="chipmate-update-error-message">{safeError(result.message)}</pre>
                 </div>
                 <div class="chipmate-update-actions">
@@ -505,10 +514,7 @@ function updateError(result: Extract<ChipmateUpdateResult, { status: "error" }>,
   return t("settings.chipmateServer.update.error.validation")
 }
 
-function updateErrorTitle(
-  result: Extract<ChipmateUpdateResult, { status: "error" }>,
-  t: LanguageContextValue["t"],
-) {
+function updateErrorTitle(result: Extract<ChipmateUpdateResult, { status: "error" }>, t: LanguageContextValue["t"]) {
   if (result.code === "install") return t("settings.chipmateServer.update.errorTitle.install")
   if (result.code === "receipt") return t("settings.chipmateServer.update.errorTitle.receipt")
   if (result.code === "reload") return t("settings.chipmateServer.update.errorTitle.reload")

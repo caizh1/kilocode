@@ -114,9 +114,7 @@ describe("local Skill import transactions", () => {
         ),
       ).toBe("changed guide\n")
       expect(
-        (await fs.readdir(path.join(project, ".chipmate-v2", "skills"))).some((name) =>
-          name.startsWith(".backup-"),
-        ),
+        (await fs.readdir(path.join(project, ".chipmate-v2", "skills"))).some((name) => name.startsWith(".backup-")),
       ).toBe(false)
     })
   })
@@ -156,9 +154,7 @@ describe("local Skill import transactions", () => {
       expect(result.items.find((item) => item.id === "good-skill")?.status).toBe("installed")
       expect(
         await fs.readFile(path.join(project, ".chipmate-v2", "skills", "bad-skill", "SKILL.md"), "utf8"),
-      ).toContain(
-        "Old managed instructions",
-      )
+      ).toContain("Old managed instructions")
       expect(
         (await discoverSkillCandidates(path.join(project, ".chipmate-v2", "skills", "good-skill")))[0]?.snapshot.valid,
       ).toBe(true)
@@ -223,3 +219,27 @@ async function skill(dir: string, name: string, description: string) {
 function markdown(name: string, description: string) {
   return `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nUse this Skill to produce actionable engineering output.\n`
 }
+
+it("QA-037 修复元数据改名同时更新归档身份且不改来源", async () => {
+  await fixture(async ({ source, project, home }) => {
+    const records = new Records()
+    const importer = new LocalSkillImporter(records, undefined, undefined, home)
+    const preview = await importer.preview(source, project)
+    const key = preview.candidates[0]!.key
+    const result = await importer.install(
+      {
+        token: preview.token,
+        candidateIds: [key],
+        replaceIds: [],
+        scope: "project",
+        repairs: { [key]: { name: "renamed-skill" } },
+      },
+      project,
+    )
+    expect(result.items).toEqual([{ id: "renamed-skill", status: "installed" }])
+    const target = path.join(project, ".chipmate-v2", "skills", "renamed-skill")
+    expect(JSON.parse(await fs.readFile(path.join(target, "skill.json"), "utf8")).id).toBe("renamed-skill")
+    expect((await discoverSkillCandidates(target))[0]?.snapshot.valid).toBe(true)
+    expect(await fs.readFile(path.join(source, "SKILL.md"), "utf8")).toContain("portable-skill")
+  })
+})

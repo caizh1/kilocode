@@ -75,20 +75,20 @@ export class LocalSkillImporter {
     try {
       for (const original of run.candidates) {
         if (!selected.has(original.key)) continue
-        const candidate = repaired(original, selection.repairs?.[original.key])
-        this.progress?.({ token: selection.token, current: candidate.id, completed: items.length, total })
-        if (run.cancelled) {
-          items.push({ id: candidate.id, status: "skipped", error: "Import cancelled" })
-          continue
-        }
-        if (!candidate.snapshot.valid) {
-          items.push({ id: candidate.id, status: "failed", error: "Skill validation failed" })
-          continue
-        }
         try {
+          const candidate = repaired(original, selection.repairs?.[original.key])
+          this.progress?.({ token: selection.token, current: candidate.id, completed: items.length, total })
+          if (run.cancelled) {
+            items.push({ id: candidate.id, status: "skipped", error: "Import cancelled" })
+            continue
+          }
+          if (!candidate.snapshot.valid) {
+            items.push({ id: candidate.id, status: "failed", error: "Skill validation failed" })
+            continue
+          }
           items.push(await this.write(candidate, selection.scope, project, replace.has(candidate.key)))
         } catch (err) {
-          items.push({ id: candidate.id, status: "failed", error: message(err) })
+          items.push({ id: original.id, status: "failed", error: message(err) })
         }
       }
       this.progress?.({ token: selection.token, current: "", completed: items.length, total })
@@ -238,7 +238,12 @@ function repaired(candidate: SkillCandidate, values: { name?: string; descriptio
   const files = candidate.files.map((item) =>
     item.path === "SKILL.md"
       ? { ...item, data: Buffer.from(repairPortableMetadata(item.data.toString("utf8"), { name, description })) }
-      : item,
+      : item.path === "skill.json"
+        ? {
+            ...item,
+            data: Buffer.from(JSON.stringify({ ...JSON.parse(item.data.toString("utf8")), id: name }, null, 2) + "\n"),
+          }
+        : item,
   )
   const snapshot = validateSkillFiles(name, files)
   return {

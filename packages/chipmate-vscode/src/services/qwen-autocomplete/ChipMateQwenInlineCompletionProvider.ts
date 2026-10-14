@@ -10,6 +10,7 @@ import {
 } from "./diagnostics"
 import { QwenAutocompleteLruCache, type QwenAutocompleteCache } from "./autocompleteLruCache"
 import { getContinueAutocompleteStopTokens } from "./fimTemplates"
+import { QWEN_FIM_MODEL_ID } from "../../shared/qwen-autocomplete"
 import { QwenFimClient } from "./QwenFimClient"
 import type { ChipMateConnectionService } from "../cli-backend"
 import { readQwenAutocompleteConfig, qwenAutocompleteEnabled } from "./config"
@@ -121,6 +122,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
   private readonly source: "smoke" | "editor"
   private readonly origin: () => "automatic" | "explicit"
   private current: Pending | null = null
+  private disposed = false
   private seq = 0
 
   constructor(deps: Deps = {}) {
@@ -141,6 +143,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
   }
 
   dispose(): void {
+    this.disposed = true
     this.debouncer.dispose()
     this.edited?.dispose()
     this.opened?.dispose()
@@ -172,7 +175,6 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
     const helper = createQwenAutocompleteHelper(document, position, gate.selected, {
       maxPromptTokens: cfg.maxPromptTokens,
       maxSuffixPercentage: cfg.maxSuffixPercentage,
-      modelName: cfg.model,
       prefixPercentage: cfg.prefixPercentage,
     })
     const snippets = await this.snippets(cfg, helper, document)
@@ -239,7 +241,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
         prompt: prompt.prompt,
         maxTokens: cfg.maxTokens,
         temperature: cfg.temperature,
-        stop: getContinueAutocompleteStopTokens(cfg.model),
+        stop: getContinueAutocompleteStopTokens(QWEN_FIM_MODEL_ID),
         signal: req.abort.signal,
         onResponse: (info) => {
           httpStatus = info.status
@@ -286,7 +288,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       const filtered = filterQwenCompletionDetailed({
         completion: raw,
         suffix: helper.prunedSuffix,
-        stopTokens: getContinueAutocompleteStopTokens(cfg.model),
+        stopTokens: getContinueAutocompleteStopTokens(QWEN_FIM_MODEL_ID),
         helper,
         position,
         multiline,
@@ -326,7 +328,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       }
       const processed = postprocessQwenCompletion({
         completion: filtered.text,
-        model: cfg.model,
+        model: QWEN_FIM_MODEL_ID,
         prefix: helper.prunedPrefix,
         suffix: helper.prunedSuffix,
       })
@@ -476,6 +478,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
     snippets: SnippetState,
     prompt: QwenPromptPlan,
   ): CacheResult {
+    if (this.disposed) return { hit: false, returned: null, status: "disabled", items: [] }
     if (!cfg.cacheEnabled) return { hit: false, returned: null, status: "disabled" }
     try {
       this.cache.setMaxEntries(cfg.cacheMaxEntries)
@@ -672,7 +675,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       includeRecentlyEditedRanges: cfg.recentlyEditedEnabled,
       useImports: cfg.importDefinitionsEnabled,
       maxPromptTokens: cfg.maxPromptTokens,
-      modelName: cfg.model,
+      modelName: QWEN_FIM_MODEL_ID,
       useRecentlyOpened: cfg.recentlyOpenedEnabled,
       useRootPath: cfg.rootPathEnabled,
     })
@@ -742,7 +745,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       recentlyEditedTrackedRangeCount: this.edited?.count() ?? 0,
       recentlyEditedPayloadCount: state.payload.recentlyEditedRangeSnippets.length,
       recentlyEditedSelectedCount: edited.length,
-      recentlyEditedSelectedTokens: edited.reduce((sum, snippet) => sum + countTokens(snippet.content, cfg.model), 0),
+      recentlyEditedSelectedTokens: edited.reduce((sum, snippet) => sum + countTokens(snippet.content, QWEN_FIM_MODEL_ID), 0),
       recentlyEditedInjectIntoPrompt: cfg.recentlyEditedInjectIntoPrompt,
     }
   }
@@ -760,7 +763,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       recentlyOpenedTrackedFileCount: this.opened?.count() ?? 0,
       recentlyOpenedPayloadCount: state.payload.recentlyOpenedFileSnippets.length,
       recentlyOpenedSelectedCount: opened.length,
-      recentlyOpenedSelectedTokens: opened.reduce((sum, snippet) => sum + countTokens(snippet.content, cfg.model), 0),
+      recentlyOpenedSelectedTokens: opened.reduce((sum, snippet) => sum + countTokens(snippet.content, QWEN_FIM_MODEL_ID), 0),
       recentlyOpenedReadTimeoutMs: cfg.recentlyOpenedFileReadTimeoutMs,
       recentlyOpenedSkippedCount: state.openedSkipped,
       recentlyOpenedInjectedIntoPrompt: prompt?.snippetsInjectedIntoPrompt
@@ -783,7 +786,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       importDefinitionsPayloadCount: state.payload.importDefinitionSnippets.length,
       importDefinitionsSelectedCount: imports.length,
       importDefinitionsSelectedTokens: imports.reduce(
-        (sum, snippet) => sum + countTokens(snippet.content, cfg.model),
+        (sum, snippet) => sum + countTokens(snippet.content, QWEN_FIM_MODEL_ID),
         0,
       ),
       importDefinitionsTimeoutMs: cfg.importDefinitionsTimeoutMs,
@@ -807,7 +810,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       rootPathCacheSize: cfg.rootPathCacheSize,
       rootPathPayloadCount: state.payload.rootPathSnippets.length,
       rootPathSelectedCount: root.length,
-      rootPathSelectedTokens: root.reduce((sum, snippet) => sum + countTokens(snippet.content, cfg.model), 0),
+      rootPathSelectedTokens: root.reduce((sum, snippet) => sum + countTokens(snippet.content, QWEN_FIM_MODEL_ID), 0),
       rootPathTimeoutMs: cfg.rootPathTimeoutMs,
       rootPathSkippedCount: state.rootSkipped,
       rootPathInjectedIntoPrompt: prompt?.snippetsInjectedIntoPrompt
@@ -1007,7 +1010,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
     token: vscode.CancellationToken,
     started: number,
   ): Promise<Gate> {
-    if (!qwenAutocompleteEnabled(cfg)) {
+    if (this.disposed || !qwenAutocompleteEnabled(cfg)) {
       return {
         selected,
         items: this.empty(
@@ -1060,7 +1063,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
         ),
       }
     }
-    if (token.isCancellationRequested) {
+    if (this.cancelledRequest(token)) {
       return { selected, items: this.cancelled(cfg, requestId, document, position, selected, started) }
     }
     const guard = await this.guardDecision(document, "current-file")
@@ -1102,7 +1105,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
         items: this.empty(cfg, requestId, document, position, selected, started, "selected-completion-invalid"),
       }
     }
-    if (token.isCancellationRequested) {
+    if (this.cancelledRequest(token)) {
       return { selected, items: this.cancelled(cfg, requestId, document, position, selected, started) }
     }
     const debounced = manual ? false : await this.debouncer.delayAndShouldDebounce(cfg.debounceMs)
@@ -1119,7 +1122,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
     if (debounced) {
       return { selected, items: this.empty(cfg, requestId, document, position, selected, started, "cancelled") }
     }
-    if (token.isCancellationRequested) {
+    if (this.cancelledRequest(token)) {
       return { selected, items: this.cancelled(cfg, requestId, document, position, selected, started) }
     }
     return { selected }
@@ -1202,6 +1205,7 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
     token: vscode.CancellationToken,
   ): boolean {
     return (
+      !this.disposed &&
       !token.isCancellationRequested &&
       !req.abort.signal.aborted &&
       this.current?.id === req.id &&
@@ -1209,6 +1213,10 @@ export class ChipMateQwenInlineCompletionProvider implements vscode.InlineComple
       position.line === req.line &&
       position.character === req.character
     )
+  }
+
+  private cancelledRequest(token: vscode.CancellationToken): boolean {
+    return this.disposed || token.isCancellationRequested
   }
 
   private logDone(req: Pending, started: number, prefix: number, suffix: number, text: string): void {

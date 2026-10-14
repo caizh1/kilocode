@@ -32,7 +32,7 @@ export function readQwenAutocompleteConfig(resource?: vscode.Uri): QwenAutocompl
     autoTrigger: bool(cfg.get("enableAutoTrigger"), true),
     provider: selected ? "qwen-direct" : "none",
     providerID,
-    model: QWEN_FIM_MODEL_ID,
+    model: selected ? str(cfg.get("model"), QWEN_FIM_MODEL_ID) : QWEN_FIM_MODEL_ID,
     debounceMs: num(cfg.get("qwen.debounceMs"), 350, 0, 5_000),
     maxTokens: num(cfg.get("qwen.maxTokens"), 128, 1, 2_048),
     maxPromptTokens: num(cfg.get("qwen.maxPromptTokens"), 1024, 1, 200_000),
@@ -70,5 +70,5 @@ export function readQwenAutocompleteConfig(resource?: vscode.Uri): QwenAutocompl
 }
 
 export function qwenAutocompleteEnabled(cfg: QwenAutocompleteConfig): boolean {
-  return cfg.enabled && cfg.provider === "qwen-direct" && cfg.providerID.length > 0 && cfg.model === QWEN_FIM_MODEL_ID
+  return cfg.enabled && cfg.provider === "qwen-direct" && isQwenFimTarget(cfg.providerID, cfg.model)
 }

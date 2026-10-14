@@ -154,8 +154,6 @@ const SESSION_SURFACE_MUTATIONS = new Set([
   "sessionCostAlertResponse",
   "suggestionAccept",
   "suggestionDismiss",
-  "deleteSession",
-  "renameSession",
   "forkSession",
   "sidebar.forkSession",
   "toggleSandbox",

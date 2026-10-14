@@ -639,8 +639,7 @@ describe("config overlay routes", () => {
       expect(response.status).toBe(200)
       expect(
         events.some(
-          (event) =>
-            event.payload?.type === "global.config.updated" && !("indexing" in event.payload.properties),
+          (event) => event.payload?.type === "global.config.updated" && !("indexing" in event.payload.properties),
         ),
       ).toBe(true)
     } finally {
@@ -849,16 +848,15 @@ describe("config overlay routes", () => {
     const edit = body.effective.permission.edit
     const after = await json<Agent[]>(await req(project.path, "/agent"))
 
-      expect(typeof edit === "string" ? edit : edit?.["*"]).toBe("ask")
-      expect(
-        Permission.evaluate("edit", "*", after.find((item) => item.name === "code")?.permission ?? []).action,
-      ).toBe("ask")
-      expect(body.collections.permission.find((item) => item.key === "edit")).toMatchObject({
-        source: "project",
-        overridden: true,
-      })
-    },
-  )
+    expect(typeof edit === "string" ? edit : edit?.["*"]).toBe("ask")
+    expect(Permission.evaluate("edit", "*", after.find((item) => item.name === "code")?.permission ?? []).action).toBe(
+      "ask",
+    )
+    expect(body.collections.permission.find((item) => item.key === "edit")).toMatchObject({
+      source: "project",
+      overridden: true,
+    })
+  })
 
   test.serial("refreshes agent permissions after global permission update", async () => {
     await using global = await tmpdir()
@@ -1067,3 +1065,34 @@ describe("config overlay routes", () => {
     )
   }
 })
+
+for (const scope of ["global", "project"] as const) {
+  test.serial(`QA-007 ${scope} 保存具体工具权限后优先于既有通配规则`, async () => {
+    await using global = await tmpdir()
+    await using project = await tmpdir()
+    await setGlobal(global.path, { permission: { read: { "*": "allow" }, "*": "ask" } })
+    if (scope === "project")
+      await Filesystem.write(
+        path.join(project.path, ".chipmate", "chipmate.jsonc"),
+        JSON.stringify({ permission: { read: { "*": "allow" }, "*": "ask" } }),
+      )
+    for (const action of ["deny", "allow"] as const) {
+      const saved = await req(project.path, "/config/overlay", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope, set: { permission: { read: { "*": action } } } }),
+      })
+      expect(saved.status).toBe(200)
+      const readback = await json<Overlay>(await req(project.path, `/config/overlay?scope=${scope}`))
+      const text = await Bun.file(readback.targets[scope].path).text()
+      expect(text.lastIndexOf('"read"')).toBeGreaterThan(text.indexOf('"*"'))
+      const agents = await json<Agent[]>(await req(project.path, "/agent"))
+      expect(
+        Permission.evaluate("read", "测试.txt", agents.find((agent) => agent.name === "code")!.permission).action,
+      ).toBe(action)
+      expect(
+        Permission.evaluate("qa_unknown", "测试", agents.find((agent) => agent.name === "code")!.permission).action,
+      ).toBe("ask")
+    }
+  })
+}

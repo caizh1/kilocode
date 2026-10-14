@@ -219,7 +219,8 @@ describe("session processor retry limit", () => {
               tools: {},
             }
 
-            const expected = MessageV2.fromError(retryable429(), { providerID: ProviderV2.ID.make("test") })
+            const normalized = MessageV2.fromError(retryable429(), { providerID: ProviderV2.ID.make("test") })
+            const expected = MessageV2.APIError.isInstance(normalized) ? new MessageV2.APIError({ ...normalized.data, metadata: { ...normalized.data.metadata, category: "请求限流" } }).toObject() : normalized
             try {
               const result = yield* handle.process(input)
               const calls = yield* test.calls
@@ -268,7 +269,7 @@ describe("session processor retry limit", () => {
     }),
   )
 
-  it.effect("limits only summary or large-payload retries by default", () =>
+  it.effect("默认最多三次重试，摘要和大请求保留更严格限制", () =>
     Effect.sync(() => {
       delete process.env.CHIPMATE_SESSION_RETRY_LIMIT
       const base = {
@@ -277,7 +278,7 @@ describe("session processor retry limit", () => {
         set: () => Effect.void,
       }
 
-      expect(ChipMateSessionProcessor.retryOpts({ ...base, bytes: 127_999 }).limit).toBeUndefined()
+      expect(ChipMateSessionProcessor.retryOpts({ ...base, bytes: 127_999 }).limit).toBe(3)
       expect(ChipMateSessionProcessor.retryOpts({ ...base, bytes: 128_000 }).limit).toBe(2)
       expect(ChipMateSessionProcessor.retryOpts({ ...base, bytes: 1, summary: true }).limit).toBe(2)
     }),
@@ -294,6 +295,8 @@ describe("session processor retry limit", () => {
       expect(ChipMateSessionProcessor.compact({ error, bytes: 128_000, auto: true })).toBe(true)
       expect(ChipMateSessionProcessor.compact({ error, bytes: 127_999, auto: true })).toBe(false)
       expect(ChipMateSessionProcessor.compact({ error, bytes: 128_000, auto: false })).toBe(false)
+      const partial = ChipMateSessionProcessor.blockRetry(error)
+      expect(ChipMateSessionProcessor.compact({ error: partial, bytes: 128_000, auto: true })).toBe(false)
     }),
   )
 })

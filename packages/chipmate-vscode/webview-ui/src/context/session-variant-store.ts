@@ -1,6 +1,8 @@
 import type { ModelSelection } from "../types/messages"
+import { internalModelReference } from "../../../src/shared/internal-offline"
 
 export function legacyVariantKey(sel: ModelSelection) {
+  sel = internalModelReference(sel)
   return `${sel.providerID}/${sel.modelID}`
 }
 

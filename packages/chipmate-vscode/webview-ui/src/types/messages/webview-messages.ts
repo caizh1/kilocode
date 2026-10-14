@@ -515,6 +515,7 @@ export interface RunPatentCenterActionMessage {
   type: "runPatentCenterAction"
   requestId: string
   action: PatentCenterAction
+  restartRunId?: string
   analysisModel?: PatentCenterModelSelection
 }
 
@@ -1496,6 +1497,9 @@ export type WebviewMessage =
   | RunPatentCenterActionMessage
   | RequestPatentRadarActivityMessage
   | CancelPatentRadarRunMessage
+  | { type: "chatSurfaceFocused" }
+  | { type: "requestChipmateUpdateState" }
+  | { type: "cancelChipmateUpdateDownload"; requestId: string }
   | CheckChipmateUpdateMessage
   | InstallAndReloadChipmateUpdateMessage
   | ShowChipmateUpdateLogMessage

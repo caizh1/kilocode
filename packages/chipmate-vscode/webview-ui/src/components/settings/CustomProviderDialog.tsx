@@ -633,7 +633,11 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   }
 
   function removeHeader(index: number) {
-    if (form.headers.length <= 1) return
+    if (form.headers.length <= 1) {
+      setForm("headers", [{ key: "", value: "" }])
+      setErrors("headers", [{}])
+      return
+    }
     setForm("headers", (v) => v.filter((_, i) => i !== index))
     setErrors("headers", (v) => v.filter((_, i) => i !== index))
   }
@@ -1110,7 +1114,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                         icon="trash"
                         variant="ghost"
                         onClick={() => removeHeader(i())}
-                        disabled={form.headers.length <= 1}
+                        disabled={form.headers.length <= 1 && !h.key && !h.value}
                         aria-label={language.t("provider.custom.headers.remove")}
                         style={{ "margin-top": "6px" }}
                       />

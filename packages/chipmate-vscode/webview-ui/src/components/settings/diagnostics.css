@@ -1,0 +1,111 @@
+.diagnostics-dialog [data-slot="dialog-content"] {
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+.diagnostics-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 20px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  min-width: 0;
+}
+.diagnostics-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.diagnostics-body textarea,
+.diagnostics-body select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+}
+.diagnostics-body textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.diagnostics-body :focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+.diagnostics-muted {
+  color: var(--vscode-descriptionForeground);
+  margin: 0;
+  font-size: 12px;
+}
+.diagnostics-note {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--vscode-textBlockQuote-background);
+}
+.diagnostics-server,
+.diagnostics-status code {
+  overflow-wrap: anywhere;
+}
+.diagnostics-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.diagnostics-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.diagnostics-status progress {
+  width: 100%;
+}
+@media (max-width: 360px) {
+  .diagnostics-body {
+    padding: 0 12px 12px;
+  }
+  .diagnostics-actions > button {
+    flex: 1 1 auto;
+  }
+}
+.diagnostics-dialog [data-slot="dialog-header"] {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 20px;
+}
+.diagnostics-dialog [data-slot="dialog-description"] {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground);
+}
+.diagnostics-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.diagnostics-title-row button {
+  flex-shrink: 0;
+}
+.diagnostics-counter {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  align-self: flex-end;
+}
+.diagnostics-dialog [data-slot="dialog-description"] {
+  margin: 0;
+  padding: 0;
+}

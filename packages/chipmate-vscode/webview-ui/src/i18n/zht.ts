@@ -1289,6 +1289,8 @@ export const dict = {
   "settings.autocomplete.title": "自動完成",
   "settings.autocomplete.model.title": "自動補全模型",
   "settings.autocomplete.model.description": "選擇用於內聯程式碼補全的模型",
+  "settings.autocomplete.model.customHint": "自訂模型使用 Qwen FIM 範本。清單中沒有部署 ID 時，請先在提供者設定中新增模型，再到這裡選擇。",
+  "settings.autocomplete.model.unavailable": "已選模型 {{provider}} / {{model}} 暫不可用，原選擇已保留。請重新連線提供者，或在提供者設定中新增該模型。",
   "settings.notifications.title": "通知",
   "settings.context.title": "上下文",
 

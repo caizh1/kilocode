@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/record"
 import { createHash, randomUUID } from "node:crypto"
 import { createWriteStream, existsSync, readFileSync } from "node:fs"
 import * as fs from "node:fs/promises"
@@ -46,7 +47,7 @@ export class DeepSeekHarnessRuntimeInstaller {
   }
 
   ensureInstalled(): Promise<InstalledDeepSeekHarnessRuntime> {
-    this.task ??= this.install().finally(() => (this.task = undefined))
+    this.task ??= this.install().then((result) => { diagnostic("运行时安装校验完成", { available: true }, "INFO", "runtime"); return result }).catch((error) => { diagnostic("运行时安装失败", { error }, "ERROR", "runtime"); throw error }).finally(() => (this.task = undefined))
     return this.task
   }
 

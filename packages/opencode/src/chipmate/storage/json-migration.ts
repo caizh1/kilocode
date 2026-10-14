@@ -172,7 +172,8 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
   const errs = stats.errors
 
   const batchSize = 1000
-  const now = Date.now()
+  // 缺省时间必须稳定，否则同一份旧备份每次归一化都会产生不同指纹。
+  const now = 0
 
   async function list(pattern: string) {
     return Glob.scan(pattern, { cwd: storageDir, absolute: true })
@@ -276,7 +277,7 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
         icon_url_override: data.icon?.override,
         icon_color: data.icon?.color,
         time_created: data.time?.created ?? now,
-        time_updated: data.time?.updated ?? now,
+        time_updated: data.time?.updated ?? data.time?.created ?? now,
         time_initialized: data.time?.initialized,
         sandboxes: data.sandboxes ?? [],
         commands: data.commands,
@@ -330,7 +331,7 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
         revert: data.revert ?? null,
         permission: data.permission ?? null,
         time_created: data.time?.created ?? now,
-        time_updated: data.time?.updated ?? now,
+        time_updated: data.time?.updated ?? data.time?.created ?? now,
         time_compacting: data.time?.compacting ?? null,
         time_archived: data.time?.archived ?? null,
       })
@@ -374,7 +375,7 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
         id,
         session_id: sessionID,
         time_created: data.time?.created ?? now,
-        time_updated: data.time?.updated ?? now,
+        time_updated: data.time?.updated ?? data.time?.created ?? now,
         data: rest,
       }
     }
@@ -413,7 +414,7 @@ export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: 
         message_id: messageID,
         session_id: sessionID,
         time_created: data.time?.created ?? now,
-        time_updated: data.time?.updated ?? now,
+        time_updated: data.time?.updated ?? data.time?.created ?? now,
         data: rest,
       }
     }

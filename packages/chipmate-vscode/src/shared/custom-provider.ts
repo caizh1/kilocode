@@ -119,11 +119,12 @@ export function resolveCustomProviderAuth(apiKey: string | undefined, changed: b
 }
 
 export function providerOriginsDiffer(existing: unknown, next: unknown): boolean {
-  if (typeof existing !== "string" || typeof next !== "string") return false
+  // 只有能确认同源才可保留旧凭据；缺失或无法解析的来源按换源处理。
+  if (typeof existing !== "string" || typeof next !== "string") return true
   try {
     return new URL(existing).origin !== new URL(next).origin
   } catch {
-    return false
+    return true
   }
 }
 
@@ -177,12 +178,14 @@ export function sanitizeCustomProviderConfig(provider: unknown): { value: Saniti
 
 type AnyRecord = Record<string, unknown>
 type VariantPatch = Partial<{ [Key in keyof VariantConfig]: VariantConfig[Key] | null }>
-type ProviderPatch = Omit<SanitizedProviderConfig, "models"> & {
+type ProviderPatch = Omit<SanitizedProviderConfig, "models" | "options"> & {
+  options: { baseURL: string; headers?: Record<string, string | null>; apiKey?: null }
   models: Record<
     string,
     null | {
       name: string
       reasoning?: true | null
+      headers?: null
       modalities?: ModelModalities | null
       variants?: Record<string, VariantConfig | VariantPatch | null>
     }
@@ -193,15 +196,39 @@ function isRecord(v: unknown): v is AnyRecord {
   return !!v && typeof v === "object" && !Array.isArray(v)
 }
 
-/**
- * Build a provider patch that includes null sentinels for model properties,
- * variants, and variant options that existed in the previous config but are
- * absent from the new one. The CLI `config.update` endpoint deep-merges the
- * payload with the existing config; without explicit nulls, removed entries
- * would persist on disk.
- */
-export function withCustomProviderDeletions(existing: unknown, next: SanitizedProviderConfig): SanitizedProviderConfig {
+function withOptionDeletions(existing: AnyRecord, next: SanitizedProviderConfig, replaceAuth: boolean) {
+  const options: ProviderPatch["options"] = { ...next.options }
+  const previous = isRecord(existing.options) ? existing.options : {}
+  const headers = isRecord(previous.headers) ? previous.headers : {}
+  const removed = Object.keys(headers).filter((key) => !Object.hasOwn(next.options.headers ?? {}, key))
+  if (removed.length > 0) {
+    options.headers = { ...next.options.headers, ...Object.fromEntries(removed.map((key) => [key, null])) }
+  }
+  // 手写配置的内联密钥优先于凭据存储，替换凭据或换源时必须一并清除。
+  if (previous.apiKey !== undefined && (replaceAuth || providerOriginsDiffer(previous.baseURL, next.options.baseURL))) {
+    options.apiKey = null
+  }
+  return options
+}
+
+function modelDeletions(previous: AnyRecord, next: AnyRecord, reset: boolean) {
+  return {
+    ...(previous.reasoning !== undefined && next.reasoning === undefined ? { reasoning: null } : {}),
+    ...(previous.modalities !== undefined && next.modalities === undefined ? { modalities: null } : {}),
+    ...(reset && previous.headers !== undefined ? { headers: null } : {}),
+  }
+}
+
+/** 深度合并接口需要显式 null 才能删除旧请求头、模型和变体。 */
+export function withCustomProviderDeletions(
+  existing: unknown,
+  next: SanitizedProviderConfig,
+  replaceAuth?: boolean,
+): SanitizedProviderConfig {
   if (!isRecord(existing)) return next
+  const options = withOptionDeletions(existing, next, replaceAuth === true)
+  const previous = isRecord(existing.options) ? existing.options : {}
+  const reset = replaceAuth === true || providerOriginsDiffer(previous.baseURL, next.options.baseURL)
   const oldModels = isRecord(existing.models) ? existing.models : {}
   const patched: ProviderPatch["models"] = { ...next.models }
 
@@ -232,10 +259,9 @@ export function withCustomProviderDeletions(existing: unknown, next: SanitizedPr
     patched[id] = {
       ...newModel,
       ...(variants ? { variants } : {}),
-      ...(oldModel.reasoning !== undefined && newModel.reasoning === undefined ? { reasoning: null } : {}),
-      ...(oldModel.modalities !== undefined && newModel.modalities === undefined ? { modalities: null } : {}),
+      ...modelDeletions(oldModel, newModel, reset),
     }
   }
 
-  return { ...next, models: patched } as SanitizedProviderConfig
+  return { ...next, ...(reset ? { env: next.env ?? [] } : {}), options, models: patched } as SanitizedProviderConfig
 }

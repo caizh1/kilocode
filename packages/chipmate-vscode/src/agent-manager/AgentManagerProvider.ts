@@ -1,3 +1,4 @@
+import { focusChatSurface, clearChatSurface } from "../services/code-actions/focused-surface"
 import * as fs from "fs"
 import * as path from "path"
 import type { ChipMateClient, Session } from "@chipmate/sdk/v2/client"
@@ -15,7 +16,7 @@ import { PRStatusBridge } from "./pr-status-bridge"
 import { GitOps } from "./GitOps"
 import { versionedName } from "./branch-name"
 import { BranchNamingController } from "./branch-naming"
-import { SetupScriptService } from "./SetupScriptService"
+import { SetupScriptService, openSetupScript } from "./SetupScriptService"
 import { SetupScriptRunner } from "./SetupScriptRunner"
 import { copyEnvFiles } from "./env-copy"
 import { SessionTerminalManager } from "./SessionTerminalManager"
@@ -399,6 +400,10 @@ export class AgentManagerProvider implements Disposable {
   // Message interceptor
 
   private async onMessage(msg: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    if (msg.type === "chatSurfaceFocused") {
+      focusChatSurface(this)
+      return null
+    }
     if (
       this.internal &&
       (msg.type === "agentManager.importFromPR" ||
@@ -1490,18 +1495,7 @@ export class AgentManagerProvider implements Disposable {
 
   /** Open the worktree setup script in the editor for user configuration. */
   private async configureSetupScript(): Promise<void> {
-    const service = this.getSetupScriptService()
-    if (!service) return
-    try {
-      if (!service.hasScript()) {
-        await service.createDefaultScript()
-      }
-      const resolved = service.resolveScript()
-      if (!resolved) return
-      await this.host.openDocument(resolved.path)
-    } catch (error) {
-      this.log(`Failed to open setup script: ${error}`)
-    }
+    await openSetupScript(this.getSetupScriptService(), (file) => this.host.openDocument(file), (message) => this.log(message))
   }
 
   /** Copy .env files and run the worktree setup script. Blocks until complete. Shows progress in overlay. */
@@ -1538,6 +1532,7 @@ export class AgentManagerProvider implements Disposable {
         branch,
         worktreeId,
       })
+      throw error
     }
   }
 
@@ -1971,6 +1966,7 @@ export class AgentManagerProvider implements Disposable {
   }
 
   public dispose(): void {
+    clearChatSurface(this)
     void this.shutdown()
   }
 

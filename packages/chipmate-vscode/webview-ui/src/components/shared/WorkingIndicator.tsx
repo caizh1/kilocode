@@ -9,14 +9,12 @@ import { Spinner, cycle } from "@chipmate/chipmate-ui/dynamic-spinner"
 import { Button } from "@chipmate/chipmate-ui/button"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
-import { useVSCode } from "../../context/vscode"
 import { compactionActive } from "../../context/compaction-activity"
 import { formatWorkingElapsed, tracksElapsed } from "./working-indicator-utils"
 
 export const WorkingIndicator: Component = () => {
   const session = useSession()
   const language = useLanguage()
-  const vscode = useVSCode()
 
   const [elapsed, setElapsed] = createSignal(0)
   const [retryCountdown, setRetryCountdown] = createSignal(0)
@@ -63,7 +61,8 @@ export const WorkingIndicator: Component = () => {
     if (info.type === "retry") {
       const countdown = retryCountdown()
       const retryMsg = info.message || language.t("session.status.retry")
-      return countdown > 0 ? `${retryMsg} (${countdown}s)` : retryMsg
+      const label = `正在重试（第 ${info.attempt} 次）：${retryMsg}`
+      return countdown > 0 ? `${label}（${countdown} 秒后）` : label
     }
     if (info.type === "offline") {
       return info.message || language.t("session.status.offline")
@@ -83,28 +82,45 @@ export const WorkingIndicator: Component = () => {
     return perms.length > 0 || questions.length > 0 || suggestions.length > 0
   }
 
-  const isRetrying = () => session.statusInfo().type === "retry"
+  const retryInfo = () => {
+    const info = session.statusInfo()
+    return info.type === "retry" ? info : undefined
+  }
+  const isRetrying = () => Boolean(retryInfo())
 
   const compaction = () => compactionActive(session.messages(), session.getParts, session.statusInfo())
 
   const handleCancelRetry = () => {
-    const sid = session.currentSessionID()
-    if (sid) {
-      vscode.postMessage({ type: "abort", sessionID: sid })
-    }
+    session.abort()
   }
 
   return (
-    <div class="working-indicator-slot">
-      <Show when={(session.submitting() || session.status() !== "idle") && !blocked() && !compaction()}>
-        <div class="working-indicator">
+    <Show when={(session.submitting() || session.status() !== "idle") && !blocked() && !compaction()}>
+      <div class="working-indicator-slot">
+        <div class="working-indicator" classList={{ "working-indicator-retry": isRetrying() }}>
           <Spinner
             variant={cycle(session.busySince(), "working-indicator")}
             class="working-spinner"
             style={{ width: "24px", height: "24px" }}
           />
-          <span class="working-text">{statusText()}</span>
-          <Show when={elapsed() > 0}>
+          <div class="working-text" classList={{ "working-retry": isRetrying() }}>
+            <Show when={retryInfo()} fallback={statusText()}>
+              {(info) => (
+                <>
+                  <div class="working-retry-heading">
+                    <span class="working-retry-attempt">第 {info().attempt} 次重试</span>
+                    <span class="working-retry-countdown">
+                      {retryCountdown() > 0 ? `${retryCountdown()} 秒后` : "正在连接"}
+                    </span>
+                  </div>
+                  <div class="working-retry-message" title={statusText()}>
+                    {info().message}
+                  </div>
+                </>
+              )}
+            </Show>
+          </div>
+          <Show when={elapsed() > 0 && !isRetrying()}>
             <span class="working-elapsed">{formatElapsed()}</span>
           </Show>
           <Show when={isRetrying()}>
@@ -119,7 +135,7 @@ export const WorkingIndicator: Component = () => {
             </Button>
           </Show>
         </div>
-      </Show>
-    </div>
+      </div>
+    </Show>
   )
 }

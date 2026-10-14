@@ -56,7 +56,6 @@ import { baseKey } from "../../../session-portability/cumulative-diff"
 import { extractSessionDiffs, restoreSessionDiffs } from "../../../session-portability/session-diff-restore"
 
 const FIM_TIMEOUT_MS = 30_000
-const QWEN_FIM_MODEL = "qwen-coder-30b0"
 const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
 const log = Log.create({ service: "chipmate-gateway" })
 
@@ -254,10 +253,6 @@ export const chipmateGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "ga
           },
         )
       }
-      if (ctx.payload.modelID !== QWEN_FIM_MODEL) {
-        return reject("model-id-rejected", 400)
-      }
-
       const all = yield* providers.list()
       const provider = Object.values(all).find((item) => item.id === ctx.payload.providerID)
       if (!provider) {

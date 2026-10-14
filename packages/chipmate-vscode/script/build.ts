@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 import { join } from "node:path"
+import { parseModelReplacements } from "@opencode-ai/core/chipmate/model-replacements"
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import {
   copyCodeGraphParserWorker,
@@ -240,6 +241,7 @@ await $`node ${join(import.meta.dir, "..", "esbuild.js")} ${esbuildArgs}`.env({
   ...(internal && {
     CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL: provider.apiBaseUrl,
     CHIPMATE_INTERNAL_PROVIDER_CHAT_MODEL: provider.chatModel,
+    CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS: provider.modelReplacements,
   }),
 })
 removeMaps(distDir)
@@ -415,6 +417,7 @@ type MarketplaceDefaults = {
 type ProviderDefaults = {
   apiBaseUrl?: string
   chatModel?: string
+  modelReplacements?: string
 }
 
 async function localRenderDefaults(root: string): Promise<RenderDefaults> {
@@ -450,7 +453,13 @@ async function localIndexingDefaults(root: string): Promise<IndexingDefaults> {
 async function localProviderDefaults(root: string): Promise<ProviderDefaults> {
   const env = await localEnv(join(root, ".env.local"))
   const json = await localJson(join(root, ".chipmate-render-defaults.local.json"))
+  const replacements = parseModelReplacements(
+    trim(process.env.CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS) ||
+    trim(env.CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS) ||
+    trim(json.provider?.modelReplacements),
+  )
   return {
+    ...(replacements ? { modelReplacements: JSON.stringify(replacements) } : {}),
     apiBaseUrl:
       trim(process.env.CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL) ||
       trim(env.CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL) ||
@@ -535,6 +544,7 @@ async function localJson(file: string): Promise<
     provider: {
       apiBaseUrl: trim(data.provider?.apiBaseUrl),
       chatModel: trim(data.provider?.chatModel),
+      modelReplacements: data.provider?.modelReplacements ? JSON.stringify(data.provider.modelReplacements) : undefined,
     },
     chipmateServer: {
       baseUrl: trim(data.chipmateServer?.baseUrl),
@@ -820,6 +830,17 @@ async function verifyInternalProviderDefaults(vsix: string, expected: ProviderDe
   }
   if (props["chipmate.v2.model.modelID"]?.default !== expected.chatModel) {
     throw new Error("Internal VSIX packaged model fallback does not match provider.chatModel.")
+  }
+  const replacements = parseModelReplacements(expected.modelReplacements)
+  if (replacements) {
+    if (replacements.providerID !== "chipmate" || Object.hasOwn(replacements.models, expected.chatModel!))
+      throw new Error("内网模型替换映射必须仅作用于默认提供商，且默认模型不能是退休模型。")
+    const literals = [JSON.stringify(replacements), JSON.stringify(JSON.stringify(replacements)).slice(1, -1)]
+    for (const entry of ["extension.js", "webview.js", "agent-manager.js"]) {
+      const code = (await $`${unzip} -p ${vsix} ${`extension/dist/${entry}`}`.quiet()).text()
+      if (!literals.some((literal) => code.includes(literal)))
+        throw new Error(`内网模型替换映射未完整注入 ${entry}。`)
+    }
   }
 }
 

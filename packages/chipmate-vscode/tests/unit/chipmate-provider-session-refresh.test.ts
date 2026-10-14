@@ -70,6 +70,7 @@ function createClient() {
 }
 
 function createConnection(client: ReturnType<typeof createClient>) {
+  let migration: (() => void) | undefined
   let current: ReturnType<typeof createClient> | null = null
   let listener: ((state: State, error?: Error) => void | Promise<void>) | undefined
   return {
@@ -93,7 +94,8 @@ function createConnection(client: ReturnType<typeof createClient>) {
     onNotificationDismissed: () => () => undefined,
     onLanguageChanged: () => () => undefined,
     onProfileChanged: () => () => undefined,
-    onMigrationComplete: () => () => undefined,
+    onMigrationComplete: (callback: () => void) => { migration = callback; return () => { migration = undefined } },
+    migrate: () => migration?.(),
     onFavoritesChanged: () => () => undefined,
     onModelSelectorExpandedChanged: () => () => undefined,
     onClearPendingPrompts: () => () => undefined,
@@ -333,4 +335,24 @@ describe("ChipMateProvider pending session refresh", () => {
 
     expect(snapshots).toEqual([true])
   })
+})
+
+
+it("QA-012 历史迁移完成事件经真实 Provider 重新发送历史列表", async () => {
+  const client = createClient()
+  const connection = createConnection(client)
+  const provider = new ChipMateProvider({} as never, connection as never)
+  const internal = provider as unknown as ProviderInternals
+  await internal.initializeConnection()
+  client.calls.length = 0
+  const received = Promise.withResolvers<unknown>()
+  const timeout = setTimeout(() => received.reject(new Error("恢复完成后未刷新历史页面")), 2_000)
+  internal.webview = { postMessage: async (message) => {
+    if (typeof message === "object" && message && "type" in message && message.type === "sessionsLoaded") received.resolve(message)
+  } }
+  try {
+    connection.migrate()
+    await received.promise
+    expect(client.calls).toContain("/repo")
+  } finally { clearTimeout(timeout) }
 })

@@ -36,7 +36,14 @@ export function registerPatentRadar(context: vscode.ExtensionContext, connection
     const root = directory()
     const model = selectedModel ?? analysisModel()
     if (!model) throw new Error("请先连接 Provider，并在“设置 > 专利中心”选择分析模型")
-    const run = await client.scan(root, new Date().toISOString().slice(0, 10), server(), model, scope, confirmLargeClosure)
+    const run = await client.scan(
+      root,
+      new Date().toISOString().slice(0, 10),
+      server(),
+      model,
+      scope,
+      confirmLargeClosure,
+    )
     await context.globalState.update(key(root), Date.now())
     return run
   }
@@ -44,14 +51,26 @@ export function registerPatentRadar(context: vscode.ExtensionContext, connection
     panel,
     vscode.commands.registerCommand(
       "chipmate.v2.patentRadar.scan",
-      (options?: { analysisModel?: PatentCenterModelSelection }) => scan(false, options?.analysisModel),
+      async (options?: { analysisModel?: PatentCenterModelSelection; restartRunId?: string }) => {
+        if (!options?.restartRunId) return scan(false, options?.analysisModel)
+        const previous = await client.get(directory(), options.restartRunId)
+        if (previous.scope.kind === "workspace") return scan(false, options.analysisModel)
+        const prepared = await previewAndConfirm(client, directory(), previous.scope)
+        if (!prepared) return
+        return scan(false, options.analysisModel, prepared.scope, prepared.confirmLargeClosure)
+      },
     ),
     vscode.commands.registerCommand(
       "chipmate.v2.patentRadar.scanModule",
       async (resource?: vscode.Uri | { analysisModel?: PatentCenterModelSelection }, resources?: vscode.Uri[]) => {
         const model = resource && !(resource instanceof vscode.Uri) ? resource.analysisModel : undefined
-        const selected = resource instanceof vscode.Uri ? [resource, ...(resources ?? []).filter((item) => item.fsPath !== resource.fsPath)] : undefined
-        const scope = selected?.length ? await scopeFromUris(directory(), selected) : await pickModuleScope(client, directory())
+        const selected =
+          resource instanceof vscode.Uri
+            ? [resource, ...(resources ?? []).filter((item) => item.fsPath !== resource.fsPath)]
+            : undefined
+        const scope = selected?.length
+          ? await scopeFromUris(directory(), selected)
+          : await pickModuleScope(client, directory())
         if (!scope) return
         const prepared = await previewAndConfirm(client, directory(), scope)
         if (!prepared) return
@@ -101,7 +120,9 @@ export function registerPatentRadar(context: vscode.ExtensionContext, connection
       .catch((error) => console.warn("[ChipMate New] Patent Radar 断点续跑失败：", error))
   }
   void catchUp(context, scan).catch((error) => console.warn("[ChipMate New] Patent Radar 补跑失败：", error))
-  void catchUpModules(context, client).catch((error) => console.warn("[ChipMate New] Patent Radar 模块补跑失败：", error))
+  void catchUpModules(context, client).catch((error) =>
+    console.warn("[ChipMate New] Patent Radar 模块补跑失败：", error),
+  )
 }
 
 async function catchUpModules(context: vscode.ExtensionContext, client: PatentRadarClient) {
@@ -128,7 +149,11 @@ async function pickModuleScope(client: PatentRadarClient, root: string): Promise
   const picked = await vscode.window.showQuickPick(
     [
       { label: "$(add) 选择文件或目录创建临时模块", value: "new" },
-      ...modules.map((item) => ({ label: `$(package) ${item.name}`, description: item.corePaths.join("、"), value: item.id })),
+      ...modules.map((item) => ({
+        label: `$(package) ${item.name}`,
+        description: item.corePaths.join("、"),
+        value: item.id,
+      })),
     ],
     { title: "Patent Radar：选择模块", placeHolder: "选择已保存模块，或创建临时模块" },
   )
@@ -183,7 +208,8 @@ async function previewAndConfirm(client: PatentRadarClient, root: string, initia
       "使用均衡范围",
     )
     if (!choice) return
-    if (choice === "改为全仓扫描") return { scope: { kind: "workspace" } as PatentRadarScope, confirmLargeClosure: false }
+    if (choice === "改为全仓扫描")
+      return { scope: { kind: "workspace" } as PatentRadarScope, confirmLargeClosure: false }
     if (choice === "使用均衡范围") {
       scope = { ...scope, expansionPolicy: "balanced" }
       preview = await client.previewScope(root, scope)
@@ -199,7 +225,11 @@ async function previewAndConfirm(client: PatentRadarClient, root: string, initia
   )
   if (!action) return
   if (action === "保存并扫描" && scope.kind === "module") {
-    const name = await vscode.window.showInputBox({ title: "保存 Patent Radar 模块", prompt: "模块名称", validateInput: (value) => value.trim() ? undefined : "请输入模块名称" })
+    const name = await vscode.window.showInputBox({
+      title: "保存 Patent Radar 模块",
+      prompt: "模块名称",
+      validateInput: (value) => (value.trim() ? undefined : "请输入模块名称"),
+    })
     if (!name) return
     const saved = await client.saveModule(root, {
       name: name.trim(),
@@ -223,18 +253,26 @@ async function manageModules(client: PatentRadarClient, root: string) {
     { title: "Patent Radar：管理已保存模块" },
   )
   if (!picked) return
-  const action = await vscode.window.showQuickPick(["重命名", picked.module.autoScan ? "关闭自动扫描" : "开启自动扫描", "删除"], {
-    title: `管理模块：${picked.module.name}`,
-  })
+  const action = await vscode.window.showQuickPick(
+    ["重命名", picked.module.autoScan ? "关闭自动扫描" : "开启自动扫描", "删除"],
+    {
+      title: `管理模块：${picked.module.name}`,
+    },
+  )
   if (!action) return
   if (action === "删除") {
-    const confirmed = await vscode.window.showWarningMessage(`确定删除模块“${picked.module.name}”吗？历史扫描不会删除。`, { modal: true }, "删除")
+    const confirmed = await vscode.window.showWarningMessage(
+      `确定删除模块“${picked.module.name}”吗？历史扫描不会删除。`,
+      { modal: true },
+      "删除",
+    )
     if (confirmed === "删除") await client.deleteModule(root, picked.module.id)
     return
   }
-  const name = action === "重命名"
-    ? await vscode.window.showInputBox({ title: "重命名模块", value: picked.module.name })
-    : picked.module.name
+  const name =
+    action === "重命名"
+      ? await vscode.window.showInputBox({ title: "重命名模块", value: picked.module.name })
+      : picked.module.name
   if (!name) return
   await client.saveModule(root, {
     ...picked.module,

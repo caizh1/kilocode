@@ -63,6 +63,7 @@ interface Category {
   count: number
 }
 
+const DiagnosticsPage = lazy(() => import("./routes/diagnostics").then((module) => ({ default: module.DiagnosticsPage })))
 const hero = "/assets/spatial-hero.webp"
 const Detail = lazy(() => import("./routes/detail").then((module) => ({ default: module.Detail })))
 const StatusPage = lazy(() => import("./routes/status").then((module) => ({ default: module.StatusPage })))
@@ -262,6 +263,8 @@ function App() {
     admin.loading ? <section className="page-width"><Skeleton label="正在验证管理员权限" /></section> :
       admin.access ? <AuthSettingsPage key={`${admin.access.mode}:${admin.access.subject ?? ""}:${admin.access.expiresAt ?? ""}`} {...(user ? { user } : {})} csrf={csrf} access={admin.access} requestLogin={() => requestLogin("/admin/auth")} /> :
         <section className="page-width"><div className="glass-panel account-empty"><h1>需要管理员权限</h1><p>此页面仅对 Server 管理员开放。</p><button className="primary-button" onClick={() => requestLogin("/admin/auth")}>使用管理员账号登录</button></div></section>
+  ) : url.pathname === "/diagnostics" ? (
+    <DiagnosticsPage key={`${user?.id ?? "anonymous"}:${admin.access?.subject ?? ""}:${admin.access?.mode ?? ""}`} authenticated={Boolean(user || admin.access)} requestLogin={() => requestLogin(`${url.pathname}${url.search}`)} />
   ) : url.pathname === "/device" ? (
     <DeviceApprovalPage
       {...(user ? { user } : {})}
@@ -375,6 +378,7 @@ function Header(props: {
         <NavButton active={props.path === "/status"} onClick={() => props.navigate("/status")} icon={<ShieldCheck />}>
           服务状态
         </NavButton>
+        <NavButton active={props.path === "/diagnostics"} onClick={() => props.navigate("/diagnostics")} icon={<DownloadSimple />}>诊断日志</NavButton>
         {props.admin && <NavButton active={props.path === "/admin/auth"} onClick={() => props.navigate("/admin/auth")} icon={<Key />}>
           认证设置
         </NavButton>}

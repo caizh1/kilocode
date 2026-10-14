@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/record"
 import { marketplaceIssue, safeMarketplaceErrorText } from "./errors"
 import type {
   MarketStatus,
@@ -26,6 +27,7 @@ export function serverState(
 }
 
 export function serverFailure(err: unknown, now = new Date().toISOString()): MarketplaceServerState {
+  diagnostic("技能市场服务连接失败", { error: err }, "ERROR", "marketplace")
   return {
     status: "failed",
     checkedAt: now,

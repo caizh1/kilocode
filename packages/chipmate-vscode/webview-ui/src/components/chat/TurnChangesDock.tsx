@@ -27,11 +27,8 @@ export function TurnChangesDock() {
     if (!visible()) setExpanded(false)
   })
   const label = () => {
-    const info = session.statusInfo()
     if (summary()?.phase === "stopping") return "正在停止"
     if (summary()?.phase === "settling") return "正在整理修改"
-    if (info.type === "retry") return info.message || "正在等待重试"
-    if (info.type === "offline") return info.message || "连接已断开"
     if (record()?.error()) return "修改记录暂不可用"
     return summary() ? "正在记录修改" : "正在准备修改记录"
   }

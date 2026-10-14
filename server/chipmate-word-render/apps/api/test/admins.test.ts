@@ -259,7 +259,7 @@ test("v10 升级不继承旧管理员标记，并保留用户及外部身份", a
     legacy.close()
     const db = new MarketDb({ dir: root })
     try {
-      assert.equal((await db.health()).schemaVersion, 11)
+      assert.equal((await db.health()).schemaVersion, 12)
       assert.deepEqual(await db.administrators(), [])
       assert.equal((await db.externalIdentity("ldap", "old-guid"))?.userId, "market-old")
       assert.equal(await db.isAdministrator("old-guid"), false)

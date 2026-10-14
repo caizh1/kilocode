@@ -525,3 +525,26 @@ describe("CodeIndexServiceFactory", () => {
     )
   })
 })
+
+test("QA-017 自定义兼容模型自动探测实际维度", async () => {
+  mockEmbeddingsCreate.mockReset()
+  setOpenAIConstructorHook(undefined)
+  const factory = createFactory({
+    embedderProvider: "openai-compatible",
+    openAiCompatibleBaseUrl: "http://localhost:1234/v1",
+    modelId: "qa-custom-embedding",
+    dimensionMode: "auto",
+  })
+  mockEmbeddingsCreate.mockImplementation(async (request) => ({
+    data: (Array.isArray(request.input) ? request.input : [request.input]).map((_: unknown, index: number) => ({
+      index,
+      embedding: [Math.cos((index % 6) * 0.8 + 0.2 + (index >= 6 ? 0.05 : 0)), Math.sin((index % 6) * 0.8 + 0.2 + (index >= 6 ? 0.05 : 0)), 0.4],
+    })),
+    usage: { prompt_tokens: 1, total_tokens: 1 },
+  }))
+  expect(factory.usesAdaptiveEmbedding()).toBe(true)
+  const runtime = await factory.prepareEmbeddingRuntime()
+  expect(runtime.profile.dimension).toBe(3)
+  expect(runtime.profile.instructionVersion).toBeUndefined()
+  expect(mockEmbeddingsCreate.mock.calls.every(([request]) => !("dimensions" in request))).toBe(true)
+})

@@ -52,6 +52,11 @@ describe("Qwen FIM custom Provider integration", () => {
                   headers: { "X-Layer": "model" },
                   limit: { context: 32_768, output: 4_096 },
                 },
+                "deployment/alpha": {
+                  id: "upstream/revision",
+                  name: "Renamed Qwen FIM",
+                  limit: { context: 32_768, output: 4_096 },
+                },
               },
             },
           },
@@ -71,6 +76,7 @@ describe("Qwen FIM custom Provider integration", () => {
       expect(listed.response.status).toBe(200)
       expect(provider).toBeDefined()
       expect(provider?.models["qwen-coder-30b0"]?.api.npm).toBe("@ai-sdk/openai-compatible")
+      expect(provider?.models["deployment/alpha"]?.api.id).toBe("upstream/revision")
       expect(listed.data?.connected).toContain("custom-qwen")
 
       const result = await sdk.chipmate.qwenFim({
@@ -105,6 +111,18 @@ describe("Qwen FIM custom Provider integration", () => {
       expect(requests[0]?.headers.get("Authorization")).toBe("Bearer integration-secret")
       expect(requests[0]?.headers.get("X-Provider")).toBe("preserved")
       expect(requests[0]?.headers.get("X-Layer")).toBe("model")
+
+      const alias = await sdk.chipmate.qwenFim({
+        providerID: "custom-qwen",
+        modelID: "deployment/alpha",
+        prefix: "<|fim_prefix|>int main(void) {<|fim_suffix|>}<|fim_middle|>",
+        suffix: "",
+        stop,
+      })
+      expect(alias.response.status).toBe(200)
+      expect(alias.data?.text).toBe("return integration_ok;")
+      expect(requests[1]?.body.model).toBe("upstream/revision")
+      expect(requests[1]?.body.prompt).toContain("<|fim_middle|>")
     } finally {
       upstream.stop(true)
     }

@@ -34,7 +34,8 @@ describe("ChipMate Server settings flow", () => {
   it("keeps manual update checks and install-and-reload as separate request-correlated actions", () => {
     expect(server).toContain('type: "checkChipmateUpdate"')
     expect(server).toContain('type: "installAndReloadChipmateUpdate"')
-    expect(server).toContain('message.requestId !== updateRequest()')
+    expect(server).toContain('type: "requestChipmateUpdateState"')
+    expect(server).toContain('type: "cancelChipmateUpdateDownload"')
     expect(server).toContain('data-ui="chipmate-update-notes"')
     expect(server).toContain('aria-live="assertive"')
     expect(server).toContain('data-ui="chipmate-update-error-message"')

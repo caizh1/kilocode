@@ -263,14 +263,13 @@ export const LocalTabsProvider: ParentComponent = (props) => {
 
   let timer: ReturnType<typeof setTimeout> | undefined
   const persist = () => {
-    const tabs = real()
-    const tab = active()
-    const selected = tab && !isDraftTab(tab) ? tab : undefined
+    const tabs = ids()
+    const selected = active()
     const prev = vscode.getState<LocalTabsState>() ?? {}
     vscode.setState({ ...prev, sidebarSessionTabIDs: tabs, sidebarActiveSessionTabID: selected })
   }
   createEffect(() => {
-    real()
+    ids()
     active()
     clearTimeout(timer)
     timer = setTimeout(persist, 300)

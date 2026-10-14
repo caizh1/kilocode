@@ -126,9 +126,7 @@ describe("DesignDoc HttpApi 合约", () => {
         targetPath: ".",
         artifactType: "code-structure",
         model: { providerID: "deepseek", modelID: "deepseek-v4-flash" },
-        modelFallbacks: [
-          { fromAttempt: 3, model: { providerID: "deepseek", modelID: "deepseek-v4-flash-strong" } },
-        ],
+        modelFallbacks: [{ fromAttempt: 3, model: { providerID: "deepseek", modelID: "deepseek-v4-flash-strong" } }],
       }),
     })
     const job = await decodeJob(created)
@@ -439,4 +437,30 @@ function persistedJob(workspace: string, id: string, withAttempt = false): Desig
     createdAt: now,
     updatedAt: now,
   }
+}
+
+for (const status of ["blocked", "cancelled", "failed"] as const) {
+  test(`QA-028 刷新列表不能复活模型失败的 ${status} 任务或重置重试预算`, async () => {
+    await using workspace = await tmpdir()
+    const job = persistedJob(workspace.path, `qa-model-failure-${status}`, true)
+    job.status = status
+    job.lastError = {
+      code: "MODEL_UNAVAILABLE",
+      message: "测试模型不可用",
+      retryable: false,
+      severity: "error",
+      evidenceIDs: [],
+      sourcePaths: [],
+    }
+    job.workItems[0]!.status = "failed"
+    job.workItems[0]!.attempts[0]!.status = "error"
+    await DesignDocStore.create(job)
+    for (let index = 0; index < 5; index++) {
+      expect((await request(workspace.path, DesignDocPaths.list)).status).toBe(200)
+      const current = await decodeJob(await request(workspace.path, DesignDocPaths.get.replace(":jobID", job.id)))
+      expect(current.status).toBe(status)
+      expect(current.workItems[0]?.attempts).toHaveLength(1)
+      expect(current.workItems[0]?.attempts[0]?.status).toBe("error")
+    }
+  })
 }

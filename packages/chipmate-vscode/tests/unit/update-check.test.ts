@@ -150,9 +150,7 @@ describe("UpdateCheckService", () => {
       "http://server.test:6001/packages/manifest.json",
       "http://server.test:6001/packages/chipmate.vsix",
     ])
-    expect(env.install.mock.calls[0]).toEqual([
-      env.final("0.0.17"),
-    ])
+    expect(env.install.mock.calls[0]).toEqual([env.final("0.0.17")])
     expect(env.info).toEqual([
       {
         message: "ChipMate update 0.0.17 is available. Current version: 0.0.16.",
@@ -314,8 +312,7 @@ describe("UpdateCheckService", () => {
     expect(env.documents).toEqual([{ language: "markdown", content: notes }])
     expect(env.shownDocuments).toHaveLength(1)
     expect(env.info[0]).toEqual({
-      message:
-        "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 检测新版后先查看更新说明",
+      message: "ChipMate update 0.0.17 is available. Current version: 0.0.16. What's new: 检测新版后先查看更新说明",
       items: [RELEASE_NOTES, INSTALL_AND_RELOAD],
     })
     expect(env.install).toHaveBeenCalledTimes(1)
@@ -429,13 +426,15 @@ describe("UpdateCheckService", () => {
     const target = "darwin-arm64"
     const env = await setup({ target })
     const item = manifest({ version: "0.0.99" }).latestByTarget[TARGET]
-    env.fetch.mockResolvedValueOnce(json({
-      schemaVersion: 2,
-      latestByTarget: {
-        [TARGET]: item,
-        [target]: { ...item, version: "0.0.16", target },
-      },
-    }))
+    env.fetch.mockResolvedValueOnce(
+      json({
+        schemaVersion: 2,
+        latestByTarget: {
+          [TARGET]: item,
+          [target]: { ...item, version: "0.0.16", target },
+        },
+      }),
+    )
 
     await env.service.checkManual()
 
@@ -499,11 +498,15 @@ describe("UpdateCheckService", () => {
       env.fetch.mockResolvedValueOnce(new Response(body, { status: 200 }))
       let finish!: () => void
       let started!: () => void
-      const ready = new Promise<void>((resolve) => { started = resolve })
+      const ready = new Promise<void>((resolve) => {
+        started = resolve
+      })
       env.install.mockImplementationOnce(async () => {
         started()
         if (outcome === "取消安装" || outcome === "命令不可用") throw new Error(outcome)
-        await new Promise<void>((resolve) => { finish = resolve })
+        await new Promise<void>((resolve) => {
+          finish = resolve
+        })
       })
       const candidate = await env.service.probeManual()
       if (candidate.status !== "available") throw new Error("未生成更新候选")
@@ -650,7 +653,10 @@ describe("UpdateCheckService", () => {
     expect(await env.service.installManual(available.candidateId)).toMatchObject({ status: "error", code: "install" })
     await fs.writeFile(env.final("0.0.25"), "已被修改")
 
-    expect(await env.service.installManual(available.candidateId)).toMatchObject({ status: "installed", version: "0.0.25" })
+    expect(await env.service.installManual(available.candidateId)).toMatchObject({
+      status: "installed",
+      version: "0.0.25",
+    })
     expect(env.install).toHaveBeenCalledTimes(2)
     expect(env.fetch.mock.calls.filter((call) => String(call[0]).endsWith("chipmate.vsix"))).toHaveLength(2)
   })
@@ -881,3 +887,24 @@ function aborted(signal: AbortSignal | null | undefined): Promise<void> {
     signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true })
   })
 }
+
+it("QA-039 主动取消下载清理临时文件且不触发安装，可重新检查", async () => {
+  const env = await setup({ config: { timeoutMs: 1000, downloadTimeoutMs: 10_000 } })
+  env.fetch.mockResolvedValueOnce(json(manifest({ sizeBytes: 1, sha256: "0".repeat(64) })))
+  const started = Promise.withResolvers<void>()
+  env.fetch.mockImplementationOnce(async (_input, init) => {
+    started.resolve()
+    await aborted(init?.signal)
+    throw new Error("下载已取消")
+  })
+  const candidate = await env.service.probeManual()
+  if (candidate.status !== "available") throw new Error("未取得测试更新")
+  const pending = env.service.installManual(candidate.candidateId)
+  await started.promise
+  env.service.cancelDownload()
+  expect(await pending).toMatchObject({ status: "error", code: "download" })
+  expect(env.install).not.toHaveBeenCalled()
+  expect(await exists(env.final("0.0.17"))).toBe(false)
+  env.fetch.mockResolvedValueOnce(json(manifest()))
+  expect((await env.service.probeManual()).status).toBe("available")
+})

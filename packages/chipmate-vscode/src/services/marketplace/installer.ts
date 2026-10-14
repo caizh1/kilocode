@@ -1,3 +1,4 @@
+import { diagnostic } from "../diagnostics/record"
 import * as fs from "fs/promises"
 import * as path from "path"
 import * as os from "os"
@@ -302,6 +303,7 @@ export class MarketplaceInstaller {
       }
       const failure = knownInstallFailure(item.id, err)
       if (failure) return failure
+      diagnostic("技能安装失败", { error: err }, "ERROR", "marketplace")
       console.warn(`Failed to install skill ${item.id}:`, err)
       return { success: false, slug: item.id, error: String(err) }
     } finally {
@@ -400,6 +402,7 @@ export class MarketplaceInstaller {
       }
       const failure = knownInstallFailure(item.id, err)
       if (failure) return failure
+      diagnostic("已校验技能安装失败", { error: err }, "ERROR", "marketplace")
       console.warn(`Failed to install verified skill ${item.id}:`, err)
       return { success: false, slug: item.id, error: String(err) }
     } finally {

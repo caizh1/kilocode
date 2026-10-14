@@ -118,12 +118,12 @@ async function ancestor(git: GitOps, dir: string, base: string, log?: Log): Prom
 }
 
 async function numstat(git: GitOps, dir: string, base: string, file?: string) {
-  const args = ["-c", "core.quotepath=false", "diff", "--numstat", "--no-renames", base]
+  const args = ["-c", "core.quotepath=false", "diff", "--numstat", "-z", "--no-renames", base]
   if (file) args.push("--", file)
   const result = await git.execGit(args, dir)
   const map = new Map<string, { additions: number; deletions: number; binary: boolean }>()
   if (result.code !== 0) return map
-  for (const line of result.stdout.trim().split("\n")) {
+  for (const line of result.stdout.split("\0")) {
     if (!line) continue
     const parts = line.split("\t")
     const add = parts[0]
@@ -167,7 +167,7 @@ function statusFromCode(code: string): Status {
 
 async function list(git: GitOps, dir: string, anc: string, log?: Log): Promise<Meta[]> {
   const nameStatus = await git.execGit(
-    ["-c", "core.quotepath=false", "diff", "--name-status", "--no-renames", anc],
+    ["-c", "core.quotepath=false", "diff", "--name-status", "-z", "--no-renames", anc],
     dir,
   )
   if (nameStatus.code !== 0) {
@@ -179,11 +179,10 @@ async function list(git: GitOps, dir: string, anc: string, log?: Log): Promise<M
   const result: Meta[] = []
   const seen = new Set<string>()
 
-  for (const line of nameStatus.stdout.trim().split("\n")) {
-    if (!line) continue
-    const parts = line.split("\t")
-    const code = parts[0]
-    const file = parts.slice(1).join("\t")
+  const entries = nameStatus.stdout.split("\0")
+  for (let index = 0; index + 1 < entries.length; index += 2) {
+    const code = entries[index]
+    const file = entries[index + 1]
     if (!file || !code) continue
     seen.add(file)
     const status = statusFromCode(code)
@@ -201,16 +200,16 @@ async function list(git: GitOps, dir: string, anc: string, log?: Log): Promise<M
     })
   }
 
-  const untracked = await git.execGit(["ls-files", "--others", "--exclude-standard"], dir)
+  const untracked = await git.execGit(["ls-files", "-z", "--others", "--exclude-standard"], dir)
   if (untracked.code !== 0) {
     log?.("git ls-files --others failed", { code: untracked.code, stderr: untracked.stderr.trim() })
     return result
   }
 
-  const files = untracked.stdout.trim()
+  const files = untracked.stdout
   if (!files) return result
 
-  for (const file of files.split("\n")) {
+  for (const file of files.split("\0")) {
     if (!file || seen.has(file)) continue
     const full = resolveInside(dir, file)
     if (!full) continue
@@ -296,8 +295,8 @@ async function detailMeta(git: GitOps, dir: string, anc: string, file: string): 
   if (!full) return undefined
   const tracked = await git.execGit(["ls-files", "--error-unmatch", "--", file], dir)
   if (tracked.code !== 0) {
-    const untracked = await git.execGit(["ls-files", "--others", "--exclude-standard", "--", file], dir)
-    if (untracked.code !== 0 || !untracked.stdout.split("\n").includes(file)) return undefined
+    const untracked = await git.execGit(["ls-files", "-z", "--others", "--exclude-standard", "--", file], dir)
+    if (untracked.code !== 0 || !untracked.stdout.split("\0").includes(file)) return undefined
     const exists = await fs.lstat(full).catch(() => undefined)
     if (!exists) return undefined
     const binary = await binaryFile(full)
@@ -314,15 +313,13 @@ async function detailMeta(git: GitOps, dir: string, anc: string, file: string): 
   }
 
   const nameStatus = await git.execGit(
-    ["-c", "core.quotepath=false", "diff", "--name-status", "--no-renames", anc, "--", file],
+    ["-c", "core.quotepath=false", "diff", "--name-status", "-z", "--no-renames", anc, "--", file],
     dir,
   )
   if (nameStatus.code !== 0) return undefined
-  const line = nameStatus.stdout.trim().split("\n")[0]
-  if (!line) return undefined
-  const parts = line.split("\t")
+  const parts = nameStatus.stdout.split("\0")
   const code = parts[0]
-  const pathPart = parts.slice(1).join("\t") || file
+  const pathPart = parts[1] || file
   if (!code) return undefined
 
   const counts = await numstat(git, dir, anc, file)

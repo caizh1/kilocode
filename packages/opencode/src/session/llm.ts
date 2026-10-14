@@ -42,12 +42,14 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { RequestTrace, type RequestIdentity } from "@/chipmate/provider/request-diagnostics" // chipmate_change
 
 const log = Log.create({ service: "llm" }) // chipmate_change
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
 export type StreamInput = {
+  diagnostic?: RequestIdentity // chipmate_change - immutable identity for this retry attempt
   user: SessionV1.User
   sessionID: string
   parentSessionID?: string
@@ -95,6 +97,7 @@ export function runtimeToolStream(input: {
 // chipmate_change end
 
 export type StreamRequest = StreamInput & {
+  trace: RequestTrace // chipmate_change
   abort: AbortSignal
 }
 
@@ -404,6 +407,7 @@ const live: Layer.Layer<
           providerOptions: prepared.params.options,
           headers: prepared.headers,
           abort: input.abort,
+          trace: input.trace, // chipmate_change
         })
         if (native.type === "supported") {
           yield* Effect.logInfo("llm runtime selected", {
@@ -442,17 +446,7 @@ const live: Layer.Layer<
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
       const result = streamText({
         onError(error) {
-          bridge.fork(
-            Effect.logError("stream error", {
-              providerID: input.model.providerID,
-              modelID: input.model.id,
-              "session.id": input.sessionID,
-              small: (input.small ?? false).toString(),
-              agent: input.agent.name,
-              mode: input.agent.mode,
-              error,
-            }),
-          )
+          input.trace.failure(error.error) // chipmate_change - preserve the bounded, redacted cause chain without request bodies
         },
         // Copilot returns the authoritative billed amount only in provider-specific response fields.
         includeRawChunks: input.model.providerID.includes("github-copilot"),
@@ -500,6 +494,7 @@ const live: Layer.Layer<
         model: wrapLanguageModel({
           model: language,
           middleware: [
+            input.trace.middleware(), // chipmate_change - request-local transport diagnostics
             {
               specificationVersion: "v3" as const,
               async transformParams(args) {
@@ -555,9 +550,33 @@ const live: Layer.Layer<
               (ctrl) => Effect.sync(() => ctrl.abort()),
             )
 
-            const result = yield* run({ ...input, abort: ctrl.signal })
+            // chipmate_change start - scope diagnostics to the real stream and its cancellation lifecycle
+            const context = yield* InstanceState.context
+            const trace = yield* Effect.acquireRelease(
+              Effect.sync(
+                () =>
+                  new RequestTrace({
+                    ...input.diagnostic,
+                    sessionID: input.sessionID,
+                    parentSessionID: input.parentSessionID ?? ChipMateSession.resolveParent(input.sessionID),
+                    rootSessionID: ChipMateSession.resolveRoot(input.sessionID),
+                    providerID: input.model.providerID,
+                    modelID: input.model.id,
+                    directory: context.directory,
+                  }),
+              ),
+              (trace) => Effect.sync(() => trace.close()),
+            )
+            const result = yield* run({ ...input, abort: ctrl.signal, trace }).pipe(
+              Effect.mapError((error) => trace.failure(error)),
+            )
 
-            if (result.type === "native") return result.stream
+            if (result.type === "native")
+              return result.stream.pipe(
+                Stream.tap((event) => Effect.sync(() => trace.observe(event))),
+                Stream.mapError((error) => trace.failure(error)),
+              )
+            // chipmate_change end
 
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
@@ -567,6 +586,8 @@ const live: Layer.Layer<
             ).pipe(
               Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
               Stream.flatMap((events) => Stream.fromIterable(events)),
+              Stream.tap((event) => Effect.sync(() => trace.observe(event))), // chipmate_change
+              Stream.mapError((error) => trace.failure(error)), // chipmate_change
             )
           }),
         ),

@@ -44,6 +44,7 @@ function createCtx(
   const ctx = {
     client: {
       auth: {
+        get: async () => ({ data: null }),
         set: async (
           input: {
             providerID: string
@@ -232,6 +233,84 @@ describe("connectProvider", () => {
 })
 
 describe("saveCustomProvider", () => {
+  for (const address of [undefined, "", "http://", "https//old.example/v1"]) {
+    it(`旧地址无效时不得保留历史密钥更正地址：${String(address)}`, async () => {
+      const existing = {
+        disabled_providers: ["myprovider"],
+        provider: { myprovider: { ...createSavedProvider(), options: { baseURL: address } } },
+      }
+      const { ctx, calls, setCachedConfig } = createCtx(existing, existing, undefined, undefined, [])
+      ctx.client.auth.get = async () => ({ data: { type: "api", key: "qa-legacy" } }) as never
+      await saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig)
+      expect(calls.config).toEqual([])
+      expect(calls.set).toEqual([])
+      expect(calls.remove).toEqual([])
+      expect(calls.posts).toContainEqual(expect.objectContaining({ type: "providerActionError" }))
+      expect(calls.posts).not.toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
+    })
+  }
+
+  it("旧地址无效时凭据读取失败必须终止，无凭据或重填新密钥时仍可恢复", async () => {
+    const existing = { provider: { myprovider: { ...createSavedProvider(), options: { baseURL: "http://" } } } }
+    for (const mode of ["读取失败", "无凭据", "重填密钥"]) {
+      const { ctx, calls, setCachedConfig } = createCtx(existing, existing, undefined, undefined, [])
+      ctx.client.auth.get = async () => {
+        if (mode === "读取失败") throw new Error("凭据状态不可读")
+        return { data: null } as never
+      }
+      await saveCustomProvider(
+        ctx,
+        "req",
+        "myprovider",
+        createProvider(),
+        mode === "重填密钥" ? "qa-new" : undefined,
+        mode === "重填密钥",
+        null,
+        setCachedConfig,
+      )
+      expect(calls.config.length).toBe(mode === "读取失败" ? 0 : 1)
+      expect(calls.posts).toContainEqual(
+        expect.objectContaining({
+          type: mode === "读取失败" ? "providerActionError" : "providerConnected",
+        }),
+      )
+    }
+  })
+
+  it("禁用项的历史密钥仍需通过真实凭据状态校验后才能换源", async () => {
+    const existing = { disabled_providers: ["myprovider"], provider: { myprovider: createSavedProvider() } }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, undefined, undefined, [])
+    ctx.client.auth.get = async () => ({ data: { type: "api", key: "qa-legacy" } }) as never
+    const next = { ...createProvider(), options: { baseURL: "https://other.example/v1" } }
+    await saveCustomProvider(ctx, "req", "myprovider", next, undefined, false, null, setCachedConfig)
+    expect(calls.config).toEqual([])
+    expect(calls.posts).toContainEqual(expect.objectContaining({ type: "providerActionError" }))
+    expect(calls.posts.some((post) => JSON.stringify(post).includes("qa-legacy"))).toBe(false)
+  })
+
+  it("凭据读取失败时停止换源，无凭据的服务仍允许换源", async () => {
+    const existing = { provider: { myprovider: createSavedProvider() } }
+    for (const failure of [true, false]) {
+      const { ctx, calls, setCachedConfig } = createCtx(existing, existing, undefined, undefined, [])
+      ctx.client.auth.get = async () => {
+        if (failure) throw new Error("凭据状态读取失败")
+        return { data: null } as never
+      }
+      const next = { ...createProvider(), options: { baseURL: "https://other.example/v1" } }
+      await saveCustomProvider(ctx, "req", "myprovider", next, undefined, false, null, setCachedConfig)
+      expect(calls.config.length).toBe(failure ? 0 : 1)
+    }
+  })
+
+  it("重新添加无地址配置的禁用项时不能沿用孤立历史密钥", async () => {
+    const existing = { disabled_providers: ["myprovider"] }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, undefined, undefined, [])
+    ctx.client.auth.get = async () => ({ data: { type: "api", key: "qa-orphan" } }) as never
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig)
+    expect(calls.config).toEqual([])
+    expect(calls.posts).toContainEqual(expect.objectContaining({ type: "providerActionError" }))
+  })
+
   it("uses a normal final disposal request after deferred writes", async () => {
     const calls: Options[] = []
     const ctx = buildActionContext(
@@ -278,19 +357,33 @@ describe("saveCustomProvider", () => {
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
   })
 
+  it("凭据保存失败时禁止发布新地址", async () => {
+    const previous = { provider: { myprovider: createSavedProvider() } }
+    const { ctx, calls, setCachedConfig } = createCtx(previous, previous, new Error("凭据不可写"))
+    const next = { ...createProvider(), options: { baseURL: "https://other.example/v1" } }
+    await saveCustomProvider(ctx, "req", "myprovider", next, "qa-new", true, null, setCachedConfig)
+    expect(calls.config).toHaveLength(0)
+    expect(calls.posts).not.toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
+  })
+
   it("stores a changed api key", async () => {
     const { ctx, calls, setCachedConfig } = createCtx()
 
     await saveCustomProvider(ctx, "req", "myprovider", createProvider(), " sk-test ", true, null, setCachedConfig)
 
     expect(calls.remove).toHaveLength(0)
-    expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-test" } }])
+    expect(calls.set).toEqual([
+      {
+        providerID: "myprovider",
+        auth: { type: "api", key: "sk-test", metadata: { chipmateOrigin: "https://example.com" } },
+      },
+    ])
     expect(calls.setOptions[0]?.headers?.["x-chipmate-defer-instance-dispose"]).toBe("1")
     expect(calls.order).toEqual([
       "global.get",
       "config.get",
-      "global.update",
       "auth.set",
+      "global.update",
       "dispose",
       "config.get",
       "providers",
@@ -347,7 +440,12 @@ describe("saveCustomProvider", () => {
     await saveCustomProvider(ctx, "req", "myprovider", next, "sk-new", true, null, setCachedConfig)
 
     expect(calls.config).toHaveLength(1)
-    expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-new" } }])
+    expect(calls.set).toEqual([
+      {
+        providerID: "myprovider",
+        auth: { type: "api", key: "sk-new", metadata: { chipmateOrigin: "https://other.example" } },
+      },
+    ])
   })
 
   it("activates a saved reasoning model without persisted variants", async () => {
@@ -390,19 +488,33 @@ describe("saveCustomProvider", () => {
         },
       },
     })
-    expect(calls.set).toEqual([{ providerID: "chipmate", auth: { type: "api", key: "sk-test" } }])
+    expect(calls.set).toEqual([
+      {
+        providerID: "chipmate",
+        auth: { type: "api", key: "sk-test", metadata: { chipmateOrigin: "https://example.com" } },
+      },
+    ])
     expect(calls.config[1]).toEqual({ config: { model: "chipmate/deepseek-v4-flash" } })
     expect(calls.order).toEqual([
       "global.get",
       "config.get",
-      "global.update",
       "auth.set",
+      "global.update",
       "global.update",
       "dispose",
       "config.get",
       "providers",
     ])
     expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "chipmate" })
+  })
+
+  it("saves a deployment ID containing the provider prefix unchanged", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx()
+    const config = { ...createProvider(), models: { "myprovider/deployment": { name: "Production FIM" } } }
+    await saveCustomProvider(ctx, "req", "myprovider", config, "sk-test", true, null, setCachedConfig)
+    expect(calls.config[0]).toMatchObject({
+      config: { provider: { myprovider: { models: { "myprovider/deployment": { name: "Production FIM" } } } } },
+    })
   })
 
   it("rejects activation outside the submitted model set before mutating config", async () => {
@@ -431,7 +543,7 @@ describe("saveCustomProvider", () => {
     })
   })
 
-  it("does not activate the model when secret persistence fails", async () => {
+  it("凭据持久化失败时不发布配置或激活模型", async () => {
     const { ctx, calls, setCachedConfig } = createCtx(undefined, undefined, new Error("auth failed"))
     const config = {
       ...createProvider(),
@@ -455,7 +567,7 @@ describe("saveCustomProvider", () => {
       "deepseek-v4-flash",
     )
 
-    expect(calls.config).toHaveLength(1)
+    expect(calls.config).toHaveLength(0)
     expect(calls.config.some((call) => "model" in call.config)).toBe(false)
   })
 
@@ -494,22 +606,14 @@ describe("saveCustomProvider", () => {
     })
   })
 
-  it("finalizes the saved config once when auth persistence fails", async () => {
+  it("凭据持久化失败后只刷新原有配置一次", async () => {
     const { ctx, calls, setCachedConfig } = createCtx(undefined, undefined, new Error("auth failed"))
 
     await saveCustomProvider(ctx, "req", "myprovider", createProvider(), "sk-test", true, null, setCachedConfig)
 
     expect(calls.dispose).toBe(1)
     expect(calls.refresh).toBe(1)
-    expect(calls.order).toEqual([
-      "global.get",
-      "config.get",
-      "global.update",
-      "auth.set",
-      "dispose",
-      "config.get",
-      "providers",
-    ])
+    expect(calls.order).toEqual(["global.get", "config.get", "auth.set", "dispose", "config.get", "providers"])
   })
 
   // Regression tests for https://github.com/ChipMate-Org/chipmate/issues/9186

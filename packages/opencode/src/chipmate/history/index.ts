@@ -14,7 +14,8 @@ import { Hash } from "@opencode-ai/core/util/hash"
 import { Global } from "@opencode-ai/core/global"
 import { Database as CoreDatabase } from "@opencode-ai/core/database/database"
 import { drizzle } from "drizzle-orm/bun-sqlite"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { JsonMigration } from "@/chipmate/storage/json-migration"
 
 const FORMAT_VERSION = 1
@@ -382,7 +383,7 @@ function unsafeName(name: string) {
 }
 
 function isSymlink(entry: Entry) {
-  if ((entry.versionMadeBy >>> 8) !== 3) return false
+  if (entry.versionMadeBy >>> 8 !== 3) return false
   return ((entry.externalFileAttributes >>> 16) & 0o170000) === 0o120000
 }
 
@@ -451,7 +452,7 @@ async function streamEntry(reader: ReadZipFile, entry: Entry, output?: NodeJS.Wr
       },
     })
   await pipeline(await reader.openReadStreamPromise(entry), inspect, destination)
-  if ((checksum >>> 0) !== (entry.crc32 >>> 0)) throw new Error(`备份 CRC 校验失败：${entry.fileName}`)
+  if (checksum >>> 0 !== entry.crc32 >>> 0) throw new Error(`备份 CRC 校验失败：${entry.fileName}`)
   return hash.digest("hex")
 }
 
@@ -467,7 +468,7 @@ async function entryText(reader: ReadZipFile, entry: Entry, limit: number) {
     checksum = crc32(chunk, checksum)
     chunks.push(chunk)
   }
-  if ((checksum >>> 0) !== (entry.crc32 >>> 0)) throw new Error(`备份 CRC 校验失败：${entry.fileName}`)
+  if (checksum >>> 0 !== entry.crc32 >>> 0) throw new Error(`备份 CRC 校验失败：${entry.fileName}`)
   return Buffer.concat(chunks, total).toString("utf8")
 }
 
@@ -526,8 +527,7 @@ async function verifyArchive(file: string) {
         }
         continue
       }
-      if ((await streamEntry(reader, entry)) !== expected.sha256)
-        throw new Error(`备份哈希校验失败：${entry.fileName}`)
+      if ((await streamEntry(reader, entry)) !== expected.sha256) throw new Error(`备份哈希校验失败：${entry.fileName}`)
     }
     if ([...declared.keys()].some((name) => !entries.some((entry) => entry.fileName === name)))
       throw new Error("备份清单声明的文件缺失")
@@ -601,7 +601,10 @@ function sameRow(a: Row | undefined, b: Row, table: (typeof TABLES)[number]) {
   if (!a) return false
   const left = Object.entries(comparable(a, table)).toSorted(([first], [second]) => first.localeCompare(second))
   const right = Object.entries(comparable(b, table)).toSorted(([first], [second]) => first.localeCompare(second))
-  return left.length === right.length && left.every(([key, value], index) => key === right[index]?.[0] && value === right[index]?.[1])
+  return (
+    left.length === right.length &&
+    left.every(([key, value], index) => key === right[index]?.[0] && value === right[index]?.[1])
+  )
 }
 
 function insertRow(target: Database, table: (typeof TABLES)[number], row: Row) {
@@ -768,6 +771,17 @@ function mergeSource(targetFile: string, source: Source, progress?: (event: Prog
       const messageID = (id: string) => (conflict ? remap("msg", identity, id) : id)
       const partID = (id: string) => (conflict ? remap("prt", identity, id) : id)
       try {
+        // 先验证整个会话族，防止坏片段已写入后才发现无法呈现。
+        for (const row of familyRows(input, "part", ids)) {
+          const data = JSON.parse(String(row.data))
+          const decoded = Schema.decodeUnknownExit(SessionV1.Part)({
+            ...data,
+            id: row.id,
+            messageID: row.message_id,
+            sessionID: row.session_id,
+          })
+          if (decoded._tag === "Failure") throw new Error(`消息片段 ${row.id} 的结构无效，未导入该会话族`)
+        }
         const sessionRows = sessions.map((original) => {
           const row: Row = { ...safeRow("session", original), id: sessionIDs.get(String(original.id))! }
           if (original.parent_id) row.parent_id = sessionIDs.get(String(original.parent_id)) ?? original.parent_id

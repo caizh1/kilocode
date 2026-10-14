@@ -301,3 +301,13 @@ describe("commit-message.git-context", () => {
     })
   })
 })
+
+test("QA-031 中文空格与制表换行路径的真实暂存 Diff 不为空", async () => {
+  await using temporary = await tmpdir({ git: true })
+  for (const name of ["中文 文件.ts", "换\t行\n文件.ts"]) {
+    await stage(temporary.path, { [name]: "export const 标记 = 936\n" })
+  }
+  const context = await getGitContext(temporary.path)
+  expect(context.files.map((file) => file.path).sort()).toEqual(["中文 文件.ts", "换\t行\n文件.ts"].sort())
+  expect(context.files.every((file) => file.diff.includes("+export const 标记 = 936"))).toBe(true)
+})

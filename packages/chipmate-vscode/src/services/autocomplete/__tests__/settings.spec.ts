@@ -78,10 +78,11 @@ describe("autocomplete settings", () => {
     expect(validAutocompleteSetting("model", undefined)).toBe(true)
   })
 
-  it("rejects unsupported model updates while allowing configured provider IDs", async () => {
+  it("accepts deployment aliases while rejecting empty model IDs", async () => {
     const { validAutocompleteSetting } = await import("../settings")
 
-    expect(validAutocompleteSetting("model", "other/model")).toBe(false)
+    expect(validAutocompleteSetting("model", "other/model")).toBe(true)
+    expect(validAutocompleteSetting("model", " ")).toBe(false)
     expect(validAutocompleteSetting("provider", "openrouter")).toBe(true)
   })
 

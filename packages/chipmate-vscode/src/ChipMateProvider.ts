@@ -1,3 +1,5 @@
+import type { ChipmateUpdateStateMessage } from "./shared/update-check"
+import { focusChatSurface, clearChatSurface } from "./services/code-actions/focused-surface"
 import { diagnosticsService } from "./services/diagnostics/service"
 import { saveAppearance, bindAppearance } from "./appearance"
 import { handleTurnChanges, rejectTurnChanges, resolveTurnChangesDirectory } from "./chipmate-provider/turn-changes"
@@ -97,6 +99,7 @@ import {
   validAutocompleteSetting,
   watchAutocompleteConfig,
 } from "./services/autocomplete/settings"
+import { refreshQwenAutocompleteProviders } from "./services/qwen-autocomplete"
 import { routeEarlyMessage } from "./chipmate-provider/early-message"
 import * as ModelState from "./chipmate-provider/model-state"
 import { handleForkSession } from "./chipmate-provider/fork-session"
@@ -153,7 +156,7 @@ import {
 } from "./chipmate-provider/handlers/question"
 import { fetchAndSendPendingSuggestions } from "./chipmate-provider/handlers/suggestion"
 import { nativeTitle } from "./chipmate-provider/native-tab-title"
-import { isInternalOfflineBuild } from "./shared/internal-offline"
+import { isInternalOfflineBuild, internalModelReference } from "./shared/internal-offline"
 import { handleInternalOfflineAuth } from "./chipmate-provider/internal-offline-auth"
 import { parseReview, reviewMetadata, type ReviewMessageData } from "./shared/review-comments"
 import { completesWithoutStatus } from "./chipmate-provider/command-completion"
@@ -197,6 +200,7 @@ import {
 import type { StoredProviderKey } from "./provider-actions"
 import { AnacondaDesktopBridge } from "./anaconda-desktop/bridge"
 import { fetchOpenAIModels, FetchModelsError } from "./shared/fetch-models"
+import { providerModelsDiagnostic } from "./services/diagnostics/provider-models"
 import type { Agent } from "@chipmate/sdk/v2/client"
 import { configFeatures } from "./features"
 import { createAutoApproveBridge } from "./chipmate-provider/auto-approve"
@@ -509,6 +513,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
   private unsubscribeState: (() => void) | null = null
   private unsubscribeNotificationDismiss: (() => void) | null = null
   private unsubscribeLanguageChange: (() => void) | null = null
+  private unsubscribeMigrationComplete: (() => void) | null = null
   private unsubscribeProfileChange: (() => void) | null = null
   private unsubscribeFavoritesChange: (() => void) | null = null
   private unsubscribeModelSelectorExpanded: (() => void) | null = null
@@ -1141,7 +1146,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         this.rejectSurfaceSubmission(message as Record<string, unknown>)
         return
       }
-      if (await diagnosticsService()?.handle(message, { directory: this.getWorkspaceDirectory(this.currentSession?.id) ?? "", sessionID: this.currentSession?.id, post: (reply) => this.postMessage(reply) })) return
+      if (await diagnosticsService()?.handle(message, { key: this, directory: this.getWorkspaceDirectory(this.currentSession?.id) ?? "", sessionID: this.currentSession?.id, post: (reply) => this.postMessage(reply) })) return
       const intercepted = await interceptMessage(message, {
         workspaceDir: (sid) => this.getWorkspaceDirectory(sid ?? this.currentSession?.id),
         post: (m) => this.postMessage(m),
@@ -1150,6 +1155,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       })
       if (intercepted === null) return
       message = intercepted
+      if (message.type === "chatSurfaceFocused") { focusChatSurface(this); return }
 
       if (isDeepSeekHarnessMessage(message)) {
         await this.handleDeepSeekHarnessMessage(message)
@@ -1623,7 +1629,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
           break
         }
         case "runPatentCenterAction": {
-          const result = await runPatentCenterAction(message.action, message.analysisModel)
+          const result = await runPatentCenterAction(message.action, message.analysisModel, message.restartRunId)
           this.postMessage({ type: "patentRadarActionCompleted", requestId: message.requestId, action: message.action, ...result })
           break
         }
@@ -1880,17 +1886,42 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     return false
   }
 
+  private updateState?: ChipmateUpdateStateMessage
+
   private async handleChipmateUpdateMessage(message: {
     type?: unknown
     requestId?: unknown
     candidateId?: unknown
   }): Promise<void> {
+    if (message.type === "requestChipmateUpdateState") {
+      if (this.updateState) this.postMessage(this.updateState)
+      return
+    }
+    if (message.type === "cancelChipmateUpdateDownload") {
+      if (message.requestId === this.updateState?.requestId) getUpdateCheckService()?.cancelDownload()
+      return
+    }
     if (message.type === "showChipmateUpdateLog") {
       getUpdateCheckService()?.showLog()
       return
     }
     if (message.type !== "checkChipmateUpdate" && message.type !== "installAndReloadChipmateUpdate") return
     if (typeof message.requestId !== "string") return
+    if (this.updateState?.phase && this.updateState.phase !== "idle") {
+      this.postMessage(this.updateState)
+      return
+    }
+    this.updateState = {
+      type: "chipmateUpdateState", requestId: message.requestId,
+      phase: message.type === "checkChipmateUpdate" ? "checking" : "installing",
+      candidate: this.updateState?.candidate,
+    }
+    this.postMessage(this.updateState)
+    const complete = (result: NonNullable<ChipmateUpdateStateMessage["result"]>) => {
+      this.updateState = { type: "chipmateUpdateState", requestId: String(message.requestId), phase: "idle", result,
+        candidate: result.status === "available" ? result : this.updateState?.candidate }
+      this.postMessage(this.updateState)
+    }
     const service = getUpdateCheckService()
     const unavailable = {
       status: "error" as const,
@@ -1900,14 +1931,14 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     }
     if (message.type === "checkChipmateUpdate") {
       const result = service ? await service.probeManual() : unavailable
-      this.postMessage({ type: "chipmateUpdateState", requestId: message.requestId, result })
+      complete(result)
       return
     }
     const result =
       service && typeof message.candidateId === "string"
         ? await service.installManual(message.candidateId)
         : unavailable
-    this.postMessage({ type: "chipmateUpdateState", requestId: message.requestId, result })
+    complete(result)
   }
 
   private async toggleFavorite(message: {
@@ -1915,6 +1946,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     providerID: string
     modelID: string
   }): Promise<void> {
+    message = internalModelReference(message)
     const current = validateFavorites(this.extensionContext?.globalState.get("favoriteModels"))
     const key = `${message.providerID}/${message.modelID}`
     const exists = current.some((f) => `${f.providerID}/${f.modelID}` === key)
@@ -1956,6 +1988,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     this.unsubscribeNotificationDismiss?.()
     this.unsubscribeLanguageChange?.()
     this.unsubscribeProfileChange?.()
+    this.unsubscribeMigrationComplete?.()
     this.unsubscribeFavoritesChange?.()
     this.unsubscribeModelSelectorExpanded?.()
     this.unsubscribeClearPendingPrompts?.()
@@ -2060,6 +2093,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       })
 
       // Subscribe to profile change broadcast from other ChipMateProvider instances
+      this.unsubscribeMigrationComplete = this.connectionService.onMigrationComplete(() => {
+        void this.refreshSessions()
+      })
       this.unsubscribeProfileChange = this.connectionService.onProfileChanged((data) => {
         if (isInternalOfflineBuild()) {
           this.postMessage({ type: "profileData", data: null })
@@ -2720,6 +2756,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
             authStates,
           }
           this.cachedProvidersMessage = message
+          refreshQwenAutocompleteProviders()
           const dshSelection =
             generation > this.providersSkipDeepSeekHarnessCoordinationThroughGeneration
               ? this.deepSeekHarness?.runningProviderSelection()
@@ -2819,7 +2856,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
       typeof msg.apiKey === "string" ? msg.apiKey : resolveStoredKey(this.storedProviderKeys, msg.providerID, url)
     const headers = msg.headers && typeof msg.headers === "object" ? (msg.headers as Record<string, string>) : undefined
     try {
-      const models = await fetchOpenAIModels({ baseURL: url, apiKey: key, headers })
+      const models = await fetchOpenAIModels({ baseURL: url, apiKey: key, headers,
+        ...providerModelsDiagnostic(rid, msg.providerID, url, this.getWorkspaceDirectory()),
+      })
       this.postMessage({ type: "customProviderModelsFetched", requestId: rid, models })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to fetch models"
@@ -5034,7 +5073,13 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
 
   private async resetAutocompleteAfterProviderRemoval(providerID: string): Promise<void> {
     if (!this.extensionContext) return
-    if (!(await resetAutocompleteSelectionAfterProviderRemoval(this.extensionContext, providerID))) return
+    if (!(await resetAutocompleteSelectionAfterProviderRemoval(this.extensionContext, providerID))) {
+      if (buildAutocompleteSettingsMessage(this.extensionContext).settings.provider === providerID)
+        void vscode.window.showInformationMessage(
+          "The selected autocomplete Provider is unavailable. The selection was kept so you can reconnect it or choose another model.",
+        )
+      return
+    }
     this.postMessage(buildAutocompleteSettingsMessage(this.extensionContext))
     void vscode.window.showInformationMessage(
       "The removed autocomplete Provider was selected. ChipMate switched to Automatic and is looking for another compatible Qwen Provider.",
@@ -5920,6 +5965,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
    * Does NOT kill the server — that's the connection service's job.
    */
   dispose(): void {
+    clearChatSurface(this)
     if (this.extensionContext) introductionStore(this.extensionContext.globalState).release(this)
     this.editorReferences.dispose()
     this.sessionExportDisposed = true
@@ -5942,6 +5988,7 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
     this.unsubscribeNotificationDismiss?.()
     this.unsubscribeLanguageChange?.()
     this.unsubscribeProfileChange?.()
+    this.unsubscribeMigrationComplete?.()
     this.unsubscribeFavoritesChange?.()
     this.unsubscribeModelSelectorExpanded?.()
     this.unsubscribeClearPendingPrompts?.()

@@ -1,6 +1,21 @@
 export type DiagnosticMode = "submit" | "export"
-export type DiagnosticPhase = "collecting" | "packaging" | "login" | "uploading" | "verifying" | "submitted" | "saved" | "failed" | "cancelled"
-export interface DiagnosticOptions { requestId: string; mode: DiagnosticMode; hours: 1 | 24 | 168; description: string; includeSession: boolean }
+export type DiagnosticPhase =
+  | "collecting"
+  | "packaging"
+  | "login"
+  | "uploading"
+  | "verifying"
+  | "submitted"
+  | "saved"
+  | "failed"
+  | "cancelled"
+export interface DiagnosticOptions {
+  requestId: string
+  mode: DiagnosticMode
+  hours: 1 | 24 | 168
+  description: string
+  includeSession: boolean
+}
 export interface DiagnosticState {
   requestId: string
   phase: DiagnosticPhase
@@ -12,7 +27,10 @@ export interface DiagnosticState {
 }
 export type DiagnosticRequest =
   | { type: "diagnostics.start"; options: DiagnosticOptions }
-  | { type: "diagnostics.cancel" | "diagnostics.retry" | "diagnostics.save" | "diagnostics.open" | "diagnostics.copy"; requestId: string }
+  | {
+      type: "diagnostics.cancel" | "diagnostics.retry" | "diagnostics.save" | "diagnostics.open" | "diagnostics.copy"
+      requestId: string
+    }
   | { type: "diagnostics.context"; requestId: string }
   | { type: "diagnostics.event"; event: "error" | "rejection" | "message-error"; message: string; stack?: string }
 export type DiagnosticResponse =

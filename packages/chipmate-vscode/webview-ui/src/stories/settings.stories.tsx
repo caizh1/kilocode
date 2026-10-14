@@ -967,6 +967,56 @@ export const ModelsAutocompleteOpen: Story = {
   ),
 }
 
+const fimProviders: Record<string, Provider> = {
+  primary: {
+    id: "primary",
+    name: "Primary deployment",
+    models: {
+      "deployment/alpha": { id: "deployment/alpha", name: "Production FIM alias with a long descriptive name", api: { npm: "@ai-sdk/openai-compatible" } },
+      "chat-only": { id: "chat-only", name: "Chat only", api: { npm: "@ai-sdk/openai" } },
+    },
+  },
+  secondary: {
+    id: "secondary",
+    name: "Secondary deployment",
+    models: {
+      "deployment/alpha": { id: "deployment/alpha", name: "Same ID elsewhere", api: { npm: "@ai-sdk/openai-compatible" } },
+    },
+  },
+}
+
+export const ModelsAutocompleteCustom: Story = {
+  name: "ModelsTab — custom Qwen FIM selection",
+  render: () => (
+    <StoryProviders
+      config={{} as Config}
+      providers={fimProviders}
+      connected={["primary", "secondary"]}
+      settings={{ "autocomplete.provider": "primary", "autocomplete.model": "deployment/alpha", "autocomplete.automatic": false }}
+    >
+      <div style={{ "max-height": "700px", overflow: "auto" }}>
+        <ModelsTab />
+      </div>
+    </StoryProviders>
+  ),
+}
+
+export const ModelsAutocompleteUnavailable: Story = {
+  name: "ModelsTab — unavailable saved Qwen FIM selection",
+  render: () => (
+    <StoryProviders
+      config={{} as Config}
+      providers={fimProviders}
+      connected={["secondary"]}
+      settings={{ "autocomplete.provider": "primary", "autocomplete.model": "deployment/removed", "autocomplete.automatic": false }}
+    >
+      <div style={{ "max-height": "700px", overflow: "auto" }}>
+        <ModelsTab />
+      </div>
+    </StoryProviders>
+  ),
+}
+
 export const ModelsAccessibleLabels: Story = {
   name: "ModelsTab — accessible model labels",
   render: () => (

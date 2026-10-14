@@ -1,4 +1,4 @@
-import { initializeDiagnostics } from "./services/diagnostics/record"
+import { initializeDiagnostics, diagnostic } from "./services/diagnostics/record"
 import { initializeDiagnosticService } from "./services/diagnostics/service"
 import { disposeAppearance } from "./appearance"
 import { openAppearanceSidebar } from "./appearance-navigation"
@@ -45,6 +45,7 @@ import { registerCoexistence } from "./chipmate/coexistence"
 import { isolate } from "./chipmate/storage"
 import { INTERNAL_OFFLINE_CONTEXT, isInternalOfflineBuild } from "./shared/internal-offline"
 import { migrateLegacyProductState } from "./migration/legacy-product-state"
+import { migratePackagedModelState } from "./migration/packaged-model-state"
 import { disposeDeepSeekHarnessService, getDeepSeekHarnessService } from "./services/deepseek-harness/service"
 import { registerChatHistoryMigration } from "./commands/chat-history-migration"
 import { SessionSurfaceCoordinator } from "./services/session-surface/coordinator"
@@ -82,12 +83,17 @@ const panelTitleHandler =
 // without requiring the user to open a ChipMate sidebar or panel first. The CLI backend is NOT spawned here;
 // it starts lazily when a webview connects or when ensureBackendForAutocomplete() triggers it.
 export async function activate(source: vscode.ExtensionContext) {
+  try { return await activateDiagnosticHost(source) } catch (error) { diagnostic("扩展激活失败", { error }, "ERROR", "extension.activation"); throw error }
+}
+
+async function activateDiagnosticHost(source: vscode.ExtensionContext) {
   const context = isolate(source)
   initializeDiagnostics(context)
   context.subscriptions.push({ dispose: disposeAppearance })
   const updateLog = createUpdateLog()
   context.subscriptions.push({ dispose: () => updateLog.dispose?.() })
   await migrateLegacyProductState(context)
+  await migratePackagedModelState(context)
   void confirmPendingUpdateActivation(context)
     .then(async (result) => {
       if (result.status === "none") return

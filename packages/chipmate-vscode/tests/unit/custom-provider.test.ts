@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import {
   MASKED_CUSTOM_PROVIDER_KEY,
   parseCustomProviderSecret,
+  providerOriginsDiffer,
   resolveCustomProviderKey,
   resolveCustomProviderAuth,
   sanitizeCustomProviderConfig,
@@ -209,6 +210,21 @@ describe("sanitizeCustomProviderConfig", () => {
   })
 })
 
+describe("提供商来源比较", () => {
+  for (const address of [undefined, null, 42, "", "http://", "https//old.example/v1"]) {
+    it(`未知旧来源不能视为同源：${String(address)}`, () => {
+      expect(providerOriginsDiffer(address, "https://example.com/v1")).toBe(true)
+      expect(providerOriginsDiffer("https://example.com/v1", address)).toBe(true)
+    })
+  }
+
+  it("同源路径修改、域名大小写和默认端口仍可保留凭据", () => {
+    expect(providerOriginsDiffer("https://EXAMPLE.com:443/v1", "https://example.com/v2")).toBe(false)
+    expect(providerOriginsDiffer("https://example.com/v1", "http://example.com/v1")).toBe(true)
+    expect(providerOriginsDiffer("https://example.com/v1", "https://example.com:8443/v1")).toBe(true)
+  })
+})
+
 describe("withCustomProviderDeletions", () => {
   const baseNext = {
     npm: "@ai-sdk/openai-compatible" as const,
@@ -217,9 +233,74 @@ describe("withCustomProviderDeletions", () => {
     models: { keep: { name: "Keep" } },
   }
 
-  it("passes through unchanged when there is no prior config", () => {
+  it("删除全部请求头时显式清除旧值", () => {
+    const existing = { options: { ...baseNext.options, headers: { "X-Api-Key": "旧凭据" } } }
+    expect(withCustomProviderDeletions(existing, baseNext).options).toEqual({
+      ...baseNext.options,
+      headers: { "X-Api-Key": null },
+    })
+  })
+
+  it("旧地址未知时清理内联密钥、环境变量和隐藏模型头", () => {
+    for (const baseURL of [undefined, "", "http://", "https//old.example/v1"]) {
+      const existing = {
+        ...baseNext,
+        env: ["QA_OLD_KEY"],
+        options: { baseURL, apiKey: "qa-old" },
+        models: { keep: { name: "旧模型", headers: { "X-Api-Key": "qa-old" } } },
+      }
+      const next = withCustomProviderDeletions(existing, baseNext)
+      expect(next.options).toEqual({ ...baseNext.options, apiKey: null })
+      expect(next.env).toEqual([])
+      expect(next.models.keep).toMatchObject({ headers: null })
+    }
+  })
+
+  it("删除单个请求头和改变大小写时不遗留旧键", () => {
+    const existing = { options: { headers: { Authorization: "旧凭据", "X-Keep": "保留", "X-Delete": "删除" } } }
+    const next = {
+      ...baseNext,
+      options: { ...baseNext.options, headers: { authorization: "新凭据", "X-Keep": "保留" } },
+    }
+    expect(withCustomProviderDeletions(existing, next).options.headers).toEqual({
+      authorization: "新凭据",
+      "X-Keep": "保留",
+      Authorization: null,
+      "X-Delete": null,
+    })
+  })
+
+  it("换源或替换凭据时清除优先级更高的旧内联密钥", () => {
+    const existing = { options: { baseURL: "https://old.example/v1", apiKey: "旧内联密钥", timeout: 3000 } }
+    expect(withCustomProviderDeletions(existing, baseNext).options).toEqual({ ...baseNext.options, apiKey: null })
+    expect(
+      withCustomProviderDeletions({ options: { ...baseNext.options, apiKey: "旧内联密钥" } }, baseNext, true).options,
+    ).toEqual({ ...baseNext.options, apiKey: null })
+    expect(withCustomProviderDeletions({ options: { ...baseNext.options, apiKey: "保留" } }, baseNext).options).toEqual(
+      baseNext.options,
+    )
+  })
+
+  it("不存在旧配置时直接保存，空配置明确不继承环境凭据", () => {
     expect(withCustomProviderDeletions(undefined, baseNext)).toEqual(baseNext)
-    expect(withCustomProviderDeletions({}, baseNext)).toEqual(baseNext)
+    expect(withCustomProviderDeletions({}, baseNext)).toEqual({ ...baseNext, env: [] })
+  })
+
+  it("换源或替换密钥时清理隐藏模型头，同源普通编辑保留", () => {
+    const existing = { ...baseNext, models: { keep: { name: "保留模型", headers: { "X-Api-Key": "旧凭据" } } } }
+    expect(withCustomProviderDeletions(existing, baseNext).models.keep).toEqual({ name: "Keep" })
+    expect(withCustomProviderDeletions(existing, baseNext, true).models.keep).toMatchObject({ headers: null })
+    const next = { ...baseNext, options: { baseURL: "https://other.example/v1" } }
+    expect(withCustomProviderDeletions(existing, next).models.keep).toMatchObject({ headers: null })
+  })
+
+  it("替换或清空密钥时显式清除旧环境变量，普通编辑保留", () => {
+    const existing = { ...baseNext, env: ["QA_OLD_KEY"] }
+    expect(withCustomProviderDeletions(existing, baseNext, true).env).toEqual([])
+    expect(withCustomProviderDeletions(existing, baseNext).env).toBeUndefined()
+    expect(withCustomProviderDeletions(existing, { ...baseNext, env: ["QA_NEW_KEY"] }, true).env).toEqual([
+      "QA_NEW_KEY",
+    ])
   })
 
   it("emits null for models present in existing but absent in next", () => {

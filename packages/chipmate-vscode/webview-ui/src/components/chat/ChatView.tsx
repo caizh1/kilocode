@@ -104,9 +104,18 @@ export const ChatView: Component<ChatViewProps> = (props) => {
   // Session is busy only because a question tool call is pending — prompt should behave as idle
   const questioning = () => isQuestioning(blocked(), familyQuestions().length)
   const dock = () => !readonly() || !!permissionRequest()
+  let chatRef: HTMLDivElement | undefined
+  const focused = () => {
+    if (!props.readonly) vscode.postMessage({ type: "chatSurfaceFocused" })
+  }
 
   onMount(() => {
     if (props.readonly) return
+    const focusWindow = () => {
+      if (chatRef?.contains(document.activeElement)) focused()
+    }
+    window.addEventListener("focus", focusWindow)
+    onCleanup(() => window.removeEventListener("focus", focusWindow))
     const handler = (e: KeyboardEvent) => {
       if (readonly()) return
       if (e.key !== "Escape" || (!session.submitting() && session.status() === "idle") || e.defaultPrevented) return
@@ -378,6 +387,9 @@ export const ChatView: Component<ChatViewProps> = (props) => {
     <TurnChangesProvider enabled={!deepSeekHarness.active()}>
     <TranscriptSearchProvider>
       <div
+        ref={chatRef}
+        onPointerDown={focused}
+        onFocusIn={focused}
         class="chat-view"
         classList={{ "chat-view--surface-deleted": surface.state()?.phase === "deleted" }}
         data-ui="qa-shell"

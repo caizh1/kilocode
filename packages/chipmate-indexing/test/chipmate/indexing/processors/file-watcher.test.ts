@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { mkdtemp, mkdir, rm, writeFile } from "fs/promises"
+import { mkdtemp, mkdir, rm, writeFile, symlink } from "fs/promises"
 import { tmpdir } from "os"
 import path from "path"
 import { createHash } from "crypto"
@@ -855,4 +855,30 @@ describe("FileWatcher", () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+})
+
+test("QA-018 循环符号链接不阻止真实监视器启动", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "chipmate-循环链接-"))
+  const cache = new CacheManager(path.join(root, ".cache"), root)
+  const watcher = new FileWatcher(root, cache)
+  try {
+    await cache.initialize()
+    await symlink(root, path.join(root, "循环"), "dir")
+    await watcher.initialize()
+    const changed = Promise.withResolvers<string[]>()
+    const listener = watcher.onDidStartBatchProcessing.on((files) => changed.resolve(files))
+    const timer = setTimeout(() => changed.reject(new Error("循环链接阻断了增量事件")), 8_000)
+    try {
+      watcher.setCollecting(true)
+      const file = path.join(root, "普通文件.ts")
+      await writeFile(file, "export const 值 = 1\n")
+      expect(await changed.promise).toContain(file)
+    } finally {
+      clearTimeout(timer)
+      listener.dispose()
+    }
+  } finally {
+    watcher.dispose()
+    await rm(root, { recursive: true, force: true })
+  }
 })

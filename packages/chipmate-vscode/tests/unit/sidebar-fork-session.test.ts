@@ -45,3 +45,22 @@ describe("sidebar fork session", () => {
     expect(post).toHaveBeenCalledWith({ type: "error", message: "Wait for the session to finish before forking it." })
   })
 })
+
+it("QA-011 分叉已由完成事件交付时仍终结来源页面等待", async () => {
+  const posts: unknown[] = []
+  const forked = mock(() => undefined)
+  await handleForkSession(
+    ctx({
+      coordinator: { execute: async () => session, claim: () => false } as never,
+      post: (message) => posts.push(message),
+      forked,
+    }),
+    "source",
+    "message",
+  )
+  expect(forked).not.toHaveBeenCalled()
+  expect(posts).toEqual([
+    { type: "sessionForkState", sessionID: "source", afterMessageID: "message", state: "pending" },
+    { type: "sessionForkState", sessionID: "source", afterMessageID: "message", state: "complete" },
+  ])
+})

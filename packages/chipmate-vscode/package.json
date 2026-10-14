@@ -2,7 +2,7 @@
   "name": "chipmate",
   "displayName": "ChipMate: AI Coding Agent, Copilot, and Autocomplete",
   "description": "Open Source AI coding agent that generates code from natural language, automates tasks, and runs terminal commands. Features inline autocomplete, browser automation, automated refactoring, and custom modes for planning, coding, and debugging. Supports 500+ AI models including Claude (Anthropic), Gemini, Grok, GPT, Codex and GLM.",
-  "version": "1.2.19",
+  "version": "1.2.25",
   "icon": "assets/icons/logo-outline-black.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -1349,25 +1349,7 @@
         },
         "chipmate.v2.autocomplete.model": {
           "type": "string",
-          "enum": [
-            "qwen-coder-30b0",
-            "mistralai/codestral-2508",
-            "inception/mercury-edit-2",
-            "inception/mercury-next-edit",
-            "codestral-2508",
-            "mercury-edit-2",
-            "mercury-next-edit"
-          ],
-          "enumDescriptions": [
-            "Qwen Coder through a connected OpenAI-compatible provider",
-            "Codestral via ChipMate Gateway",
-            "Mercury Edit 2 (FIM) via ChipMate Gateway",
-            "Mercury Edit 2 (Next Edit), multi-line edit predictions with jump-to-edit UX, via ChipMate Gateway",
-            "Codestral via your connected Mistral provider API key",
-            "Mercury Edit 2 (FIM) via your connected Inception provider API key",
-            "Mercury Edit 2 (Next Edit), multi-line edit predictions with jump-to-edit UX, via your connected Inception provider API key"
-          ],
-          "description": "Model to use for inline autocomplete suggestions. If unset, the recommended default is used."
+          "description": "用于行内补全的模型 ID。已连接的 OpenAI-compatible 提供商自定义模型使用 Qwen FIM 模板；内置模型沿用原有通道。未设置时使用自动策略。"
         },
         "chipmate.v2.autocomplete.provider": {
           "type": "string",

@@ -43,7 +43,7 @@ describe("session.network", () => {
     expect(SessionNetwork.disconnected({ code: "EAI_AGAIN" })).toBe(true)
     expect(SessionNetwork.disconnected({ code: "EHOSTUNREACH" })).toBe(true)
     expect(SessionNetwork.disconnected({ code: "UND_ERR_CONNECT_TIMEOUT" })).toBe(true)
-    expect(SessionNetwork.disconnected({ code: "EPIPE" })).toBe(false)
+    expect(SessionNetwork.disconnected({ code: "EPIPE" })).toBe(true)
     expect(SessionNetwork.disconnected({ code: "ENOENT" })).toBe(false)
   })
 

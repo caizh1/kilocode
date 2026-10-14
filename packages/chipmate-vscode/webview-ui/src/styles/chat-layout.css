@@ -37,7 +37,11 @@
 }
 
 .chat-input {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 60%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* ============================================
@@ -167,8 +171,6 @@
 }
 
 .working-indicator-slot {
-  /* Offset the session actions appearing when work finishes. */
-  min-height: 10px;
   flex-shrink: 0;
 }
 
@@ -184,6 +186,43 @@
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+.working-text.working-retry {
+  flex: 1 1 90px;
+  min-width: 72px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.working-indicator-retry {
+  flex-wrap: wrap;
+}
+
+.working-cancel {
+  margin-left: auto;
+}
+
+.working-retry-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.working-retry-heading > span {
+  white-space: nowrap;
+}
+
+.working-retry-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.working-spinner,
+.working-cancel {
+  flex-shrink: 0;
 }
 
 .working-compaction,

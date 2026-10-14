@@ -70,3 +70,29 @@ test("伸缩记录栏遵循 VS Code 动效设置", async ({ page }) => {
   await page.evaluate(() => document.body.classList.add("vscode-reduce-motion"))
   await expect(drawer).toHaveCSS("transition-duration", "1e-05s")
 })
+
+for (const skin of ["default", "night-city"]) {
+  test(`完整聊天状态动画遵循 VS Code 设置并实际变化 ${skin}`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" })
+    await page.goto(`/iframe.html?id=chat-按需修改记录--running&globals=skin:${skin}`)
+    const spinner = page.locator('.working-indicator > [data-component="spinner"]')
+    await expect(spinner).toBeVisible()
+    await expect(spinner).toHaveAttribute("data-spinner-variant", "reduced")
+    await page.evaluate(() => document.body.setAttribute("data-vscode-theme-id", "验收主题"))
+    await expect(spinner).not.toHaveAttribute("data-spinner-variant", "reduced")
+    // Storybook 未注入动画资源目录，验证生产组件实际采用的系统动画降级路径。
+    const motion = spinner.locator('rect[style*="infinite"]').first()
+    await expect(motion).toHaveCSS("animation-iteration-count", "infinite")
+    expect(await motion.evaluate((element) => parseFloat(getComputedStyle(element).animationDuration))).toBeGreaterThan(
+      0.1,
+    )
+    const first = await spinner.screenshot({ animations: "allow" })
+    await expect.poll(async () => (await spinner.screenshot({ animations: "allow" })).equals(first)).toBe(false)
+    await page.evaluate(() => document.body.classList.add("vscode-reduce-motion"))
+    await expect(spinner).toHaveAttribute("data-spinner-variant", "reduced")
+    await expect(motion).toHaveCSS("animation-duration", "1e-05s")
+    await expect(motion).toHaveCSS("animation-iteration-count", "1")
+    const still = await spinner.screenshot({ animations: "allow" })
+    expect((await spinner.screenshot({ animations: "allow" })).equals(still)).toBe(true)
+  })
+}

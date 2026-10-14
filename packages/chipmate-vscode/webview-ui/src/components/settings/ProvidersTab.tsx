@@ -203,9 +203,14 @@ const ProvidersTab: Component<ProvidersTabProps> = (props) => {
     updateConfig({ disabled_providers: next })
   }
 
+  function displayName(item: Provider) {
+    const duplicate = Object.values(providers()).some((other) => other.id !== item.id && other.name === item.name)
+    return duplicate ? `${item.name}（${item.id}）` : item.name
+  }
+
   function disabledName(id: string) {
     const item = providers()[id]
-    return item?.name ?? id
+    return item ? displayName(item) : id
   }
 
   function connectProvider(item: Provider) {
@@ -342,7 +347,7 @@ const ProvidersTab: Component<ProvidersTabProps> = (props) => {
               "white-space": "nowrap",
             }}
           >
-            {item.name}
+            {displayName(item)}
           </span>
           <Tag>
             {chipmateLoggedIn()
@@ -421,7 +426,7 @@ const ProvidersTab: Component<ProvidersTabProps> = (props) => {
                       "white-space": "nowrap",
                     }}
                   >
-                    {item.name}
+                    {displayName(item)}
                   </span>
                   <Tag>{sourceTag(item)}</Tag>
                 </div>
@@ -501,7 +506,7 @@ const ProvidersTab: Component<ProvidersTabProps> = (props) => {
                           color: "var(--vscode-foreground)",
                         }}
                       >
-                        {item.name}
+                        {displayName(item)}
                       </span>
                     </div>
                     <Show when={noteKey}>

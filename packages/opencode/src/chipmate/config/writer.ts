@@ -1,3 +1,4 @@
+import { orderPermissions } from "./permission-order"
 import { applyEdits, findNodeAtLocation, modify, parseTree } from "jsonc-parser"
 import { mkdir, stat } from "fs/promises"
 import path from "path"
@@ -15,12 +16,14 @@ export namespace ChipMateConfigWriter {
     target: ChipMateConfigOverlay.Target
   }
 
-  export type Result = {
-    ok: true
-    target: ChipMateConfigOverlay.Target
-    changed: boolean
-    sandboxChanged: boolean
-  } | Conflict
+  export type Result =
+    | {
+        ok: true
+        target: ChipMateConfigOverlay.Target
+        changed: boolean
+        sandboxChanged: boolean
+      }
+    | Conflict
 
   export async function write(input: {
     directory: string
@@ -115,6 +118,10 @@ export namespace ChipMateConfigWriter {
         )
       }
     }
-    return Object.entries(patch).reduce((text, [key, value]) => patchJsonc(text, value, [...parts, key]), input)
+    const updated = Object.entries(patch).reduce(
+      (text, [key, value]) => patchJsonc(text, value, [...parts, key]),
+      input,
+    )
+    return parts.length === 0 ? orderPermissions(updated, patch) : updated
   }
 }

@@ -3,6 +3,7 @@
 export interface ProviderModel {
   id: string
   name: string
+  api?: { npm?: string }
   inputPrice?: number
   outputPrice?: number
   contextLength?: number

@@ -17,6 +17,10 @@ import { RuntimeFlags } from "@/effect/runtime-flags" // chipmate_change - confi
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
+import { recoveryBudget } from "@/chipmate/session/recovery" // chipmate_change
+import { diagnosticErrors } from "@opencode-ai/core/chipmate/diagnostics/redact" // chipmate_change
+import { requestDiagnostic, requestErrorMetadata } from "@/chipmate/provider/request-diagnostics" // chipmate_change
+import { InstanceState } from "@/effect/instance-state" // chipmate_change
 import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
@@ -171,8 +175,9 @@ export const layer = Layer.effect(
         })
       const retryParse = (e: unknown) => {
         const error = parse(e)
-        if (e instanceof ChipMateSessionProcessor.IncompleteResponseError) return ChipMateSessionProcessor.blockRetry(error)
-        if (attempt.text || attempt.reasoning || attempt.tool) return ChipMateSessionProcessor.blockRetry(error)
+        if (e instanceof ChipMateSessionProcessor.IncompleteResponseError)
+          return ChipMateSessionProcessor.blockRetry(error)
+        if (!ChipMateSessionProcessor.replayable(attempt)) return ChipMateSessionProcessor.blockRetry(error)
         return error
       }
       // chipmate_change end
@@ -606,7 +611,9 @@ export const layer = Layer.effect(
               })
             )
               return yield* Effect.fail(
-                new ChipMateSessionProcessor.IncompleteResponseError(ChipMateResponseMetadata.read(value.providerMetadata)),
+                new ChipMateSessionProcessor.IncompleteResponseError(
+                  ChipMateResponseMetadata.read(value.providerMetadata),
+                ),
               )
             // chipmate_change end
             // chipmate_change start - pass turn context for slow-snapshot UI/policy handling
@@ -921,10 +928,20 @@ export const layer = Layer.effect(
         yield* Effect.logError("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
-          error: errorMessage(e),
-          stack: e instanceof Error ? e.stack : undefined,
+          // chipmate_change start
+          ...requestErrorMetadata(e), // chipmate_change - 原始异常已在传输层使用当前请求凭据脱敏，此处只关联编号
+          details: requestErrorMetadata(e)
+            ? undefined
+            : diagnosticErrors(e, [], globalThis.process.env.CHIPMATE_DIAGNOSTICS_SALT), // chipmate_change
+          // chipmate_change end
         })
-        const error = parse(e)
+        // chipmate_change start
+        const parsed = parse(e) // chipmate_change
+        const error =
+          MessageV2.APIError.isInstance(parsed) && !ChipMateSessionProcessor.replayable(attempt)
+            ? ChipMateSessionProcessor.blockRetry(parsed)
+            : parsed // chipmate_change
+        // chipmate_change end
         // chipmate_change start
         if (e instanceof ChipMateSessionProcessor.IncompleteResponseError) ctx.assistantMessage.finish = "unknown"
         ctx.compactionError = MessageV2.ContextOverflowError.isInstance(error) ? error : ctx.compactionError
@@ -977,19 +994,43 @@ export const layer = Layer.effect(
           // chipmate_change start - publish retry state consistently for provider and empty-response retries
           const retries = { provider: 0 }
           const bytes = Buffer.byteLength(JSON.stringify(streamInput.messages))
+          const budget = recoveryBudget({ bytes, summary: ctx.assistantMessage.summary })
+          const operationId = crypto.randomUUID()
+          const diagnosticContext = {
+            operationId,
+            sessionID: ctx.sessionID,
+            messageID: ctx.assistantMessage.id,
+            providerID: ctx.model.providerID,
+            modelID: ctx.model.id,
+            directory: (yield* InstanceState.context).directory,
+          }
+          let failure: unknown
           const setRetry = (info: {
             attempt: number
             message: string
             action?: SessionRetry.Retryable["action"]
             next: number
           }) => {
-            return status.set(ctx.sessionID, {
-              type: "retry",
-              attempt: info.attempt,
-              message: info.message,
-              action: info.action,
-              next: info.next,
-            })
+            const diagnostic = Effect.sync(() =>
+              requestDiagnostic("模型请求准备重试", {
+                ...diagnosticContext,
+                attempt: info.attempt,
+                limit: budget.limit,
+                duration: Math.max(0, info.next - Date.now()),
+                result: "等待重试",
+              }),
+            )
+            return diagnostic.pipe(
+              Effect.andThen(
+                status.set(ctx.sessionID, {
+                  type: "retry",
+                  attempt: info.attempt,
+                  message: info.message,
+                  action: info.action,
+                  next: info.next,
+                }),
+              ),
+            )
           }
 
           const request = () =>
@@ -1003,6 +1044,12 @@ export const layer = Layer.effect(
               const stream = ChipMateSessionThinking.stream(
                 llm.stream({
                   ...streamInput,
+                  diagnostic: {
+                    operationId,
+                    attempt: budget.used + 1,
+                    limit: budget.limit,
+                    messageID: ctx.assistantMessage.id,
+                  },
                   preflight: !ctx.assistantMessage.summary,
                 }),
                 ctx.model,
@@ -1032,6 +1079,7 @@ export const layer = Layer.effect(
                 SessionRetry.policy({
                   provider: input.model.providerID,
                   parse: retryParse,
+                  budget, // chipmate_change - one budget shared with incomplete-response recovery
                   ...ChipMateSessionProcessor.retryOpts({
                     sessionID: ctx.sessionID,
                     abort: ac.signal,
@@ -1082,6 +1130,7 @@ export const layer = Layer.effect(
           const recover = () => {
             const baseline = new Set<string>()
             return ChipMateSessionProcessor.recover({
+              budget, // chipmate_change - 空响应与传输恢复共用预算
               run: Effect.fn("SessionProcessor.incompleteAttempt")(function* () {
                 baseline.clear()
                 for (const part of yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
@@ -1104,7 +1153,40 @@ export const layer = Layer.effect(
             })
           }
 
-          yield* recover().pipe(Effect.catch(halt), Effect.ensuring(cleanup()))
+          // chipmate_change start - 等待期间的取消和最终结果也必须可关联、可导出
+          yield* recover().pipe(
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                failure = error
+              }),
+            ),
+            Effect.catch(halt),
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                aborted = true
+                ac.abort()
+              }),
+            ),
+            Effect.ensuring(cleanup()),
+            Effect.ensuring(
+              Effect.sync(() => {
+                const error = ctx.assistantMessage.error
+                requestDiagnostic("模型逻辑请求结束", {
+                  ...diagnosticContext,
+                  ...requestErrorMetadata(failure),
+                  used: budget.used,
+                  limit: budget.limit,
+                  result: aborted ? "取消" : error ? "失败" : ctx.needsCompaction ? "转入压缩" : "完成",
+                  reason: aborted
+                    ? "用户取消或会话结束"
+                    : MessageV2.APIError.isInstance(error)
+                      ? (error.data.metadata?.retryBlocked ??
+                        (budget.used >= budget.limit ? "重试预算已用尽" : "不可自动恢复"))
+                      : undefined,
+                })
+              }),
+            ),
+          )
           // chipmate_change end
 
           if (ctx.needsCompaction) return "compact"

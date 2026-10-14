@@ -243,6 +243,8 @@ export const SessionSurfaceProvider: ParentComponent<{ unmanaged?: boolean; ackT
   const unsubscribe = vscode.onMessage((message) => {
     if (message.type === "sessionSurface.bootstrap") {
       clearBinding()
+      stagedDrafts.clear()
+      readySignature = ""
       batch(() => {
         setKind(message.kind)
         setPinnedKey(message.pinnedKey)
@@ -297,7 +299,7 @@ export const SessionSurfaceProvider: ParentComponent<{ unmanaged?: boolean; ackT
   let readySignature = ""
   createEffect(() => {
     const key = kind() === "main-editor" ? pinnedKey() : activeKey()
-    if (!key) return
+    if (!key || !sameSessionSurfaceKey(key, draft()?.key)) return
     const ownershipEpoch = state()?.token?.epoch
     const signature = `${key.kind}:${key.id}:${draft()?.revision ?? 0}:${ownershipEpoch ?? "mirror"}`
     if (signature === readySignature) return
@@ -307,7 +309,7 @@ export const SessionSurfaceProvider: ParentComponent<{ unmanaged?: boolean; ackT
 
   const stageDraft = (content: SessionSurfaceDraftContent) => {
     const key = activeKey()
-    if (!key) return
+    if (!key || !sameSessionSurfaceKey(key, draft()?.key)) return
     const id = sessionSurfaceKey(key)
     const previous = stagedDrafts.get(id)
     stagedDrafts.set(id, {
@@ -371,6 +373,7 @@ export const SessionSurfaceProvider: ParentComponent<{ unmanaged?: boolean; ackT
     const current = state()
     if (!current?.token || current.phase === "deleted") return false
     if (!sameSessionSurfaceKey(activeKey(), current.key)) return false
+    if (!sameSessionSurfaceKey(activeKey(), draft()?.key)) return false
     return current.phase === "sidebar" || current.phase === "main"
   })
 

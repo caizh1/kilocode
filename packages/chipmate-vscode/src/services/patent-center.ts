@@ -33,17 +33,20 @@ export function patentCenterSettings(): PatentCenterSettings {
 export async function runPatentCenterAction(
   action: PatentCenterAction,
   analysisModel?: PatentCenterModelSelection,
+  restartRunId?: string,
 ): Promise<{ run: PatentRadarRun | null; cancelled: boolean; error?: string }> {
   try {
     if ((action === "scan" || action === "scanModule") && !analysisModel)
       throw new Error("请先连接 Provider，并在“设置 > 专利中心”选择分析模型")
     const result = await vscode.commands.executeCommand(
       COMMANDS[action],
-      action === "scan" || action === "scanModule" ? { analysisModel } : undefined,
+      action === "scan" || action === "scanModule"
+        ? { analysisModel, ...(restartRunId ? { restartRunId } : {}) }
+        : undefined,
     )
     return {
       run: isPatentRadarRun(result) ? result : null,
-      cancelled: action === "scanModule" && result === undefined,
+      cancelled: (action === "scanModule" || (action === "scan" && !!restartRunId)) && result === undefined,
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -109,7 +112,8 @@ function parseCorpus(value: unknown): PatentCenterTestResult["corpus"] | undefin
   if (jurisdictions.length !== value.jurisdictions.length) return
   const documents = jurisdictions.reduce((sum, item) => sum + number(item.documents), 0)
   const ready = jurisdictions.filter(
-    (item) => number(item.documents) > 0 && item.historicalBaseline === true && typeof item.coverageThrough === "string",
+    (item) =>
+      number(item.documents) > 0 && item.historicalBaseline === true && typeof item.coverageThrough === "string",
   ).length
   return {
     state: value.state,

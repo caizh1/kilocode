@@ -29,6 +29,8 @@ interface DeviceResponse {
 
 export class MarketplaceAuth {
   private run: Promise<StoredTokens | undefined> | undefined
+  private epoch = 0
+  private assertContext(base: string, epoch: number) { if (this.base() !== base || this.epoch !== epoch) throw new Error("登录上下文已变化，请重新登录") }
   private readonly activeOriginKey = "chipmate.v2.marketplace.ldap.active-origin"
 
   constructor(
@@ -36,21 +38,24 @@ export class MarketplaceAuth {
     private readonly serverBaseUrl: () => string,
   ) {}
 
-  async access(interactive = false): Promise<string | undefined> {
-    const tokens = await this.tokens(interactive)
+  async access(interactive = false, signal?: AbortSignal): Promise<string | undefined> {
+    const tokens = await this.tokens(interactive, signal)
     return tokens?.accessToken
   }
+
+  async currentAccess(): Promise<string | undefined> { return (await this.load())?.accessToken }
 
   async user(): Promise<MarketplaceUser | undefined> {
     return (await this.load())?.user
   }
 
   async logout() {
+    this.epoch++
     await this.switchOrigin()
     const stored = await this.load()
     if (stored?.accessToken) {
       await fetch(`${this.base()}/api/v1/auth/token/revoke`, {
-        method: "POST",
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
         headers: { authorization: `Bearer ${stored.accessToken}` },
       }).catch(() => undefined)
     }
@@ -70,46 +75,52 @@ export class MarketplaceAuth {
     return task(next.accessToken)
   }
 
-  private async tokens(interactive: boolean) {
+  private async tokens(interactive: boolean, signal?: AbortSignal) {
     if (this.run) return this.run
-    const run = this.resolve(interactive).finally(() => {
+    const run = this.resolve(interactive, signal).finally(() => {
       if (this.run === run) this.run = undefined
     })
     this.run = run
     return run
   }
 
-  private async resolve(interactive: boolean) {
+  private async resolve(interactive: boolean, signal?: AbortSignal) {
+    const base = this.base(), epoch = this.epoch
     await this.switchOrigin()
     const stored = await this.load()
+    this.assertContext(base, epoch)
     if (stored && stored.accessExpiresAt > Date.now() + 30_000) return stored
     const refreshed = stored ? await this.refresh(false) : undefined
     if (refreshed) return refreshed
     if (!interactive) return undefined
-    return this.deviceLogin()
+    return this.deviceLogin(signal)
   }
 
   private async refresh(clearOnFailure: boolean) {
+    const base = this.base(), epoch = this.epoch
     const stored = await this.load()
     if (!stored || stored.refreshExpiresAt <= Date.now()) {
       if (clearOnFailure || stored) await this.secrets.delete(this.key())
       return undefined
     }
     try {
-      const response = await json<TokenResponse>(`${this.base()}/api/v1/auth/token/refresh`, {
-        method: "POST",
+      const response = await json<TokenResponse>(`${base}/api/v1/auth/token/refresh`, {
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ refreshToken: stored.refreshToken }),
       })
-      return this.save(response)
+      this.assertContext(base, epoch)
+      return this.save(response, base, epoch)
     } catch (err) {
       if (clearOnFailure || isUnauthorized(err)) await this.secrets.delete(this.key())
       return undefined
     }
   }
 
-  private async deviceLogin() {
-    const device = await json<DeviceResponse>(`${this.base()}/api/v1/auth/device/code`, { method: "POST" })
+  private async deviceLogin(signal?: AbortSignal) {
+    signal?.throwIfAborted()
+    const base = this.base(), epoch = this.epoch
+    const device = await json<DeviceResponse>(`${base}/api/v1/auth/device/code`, { method: "POST", signal: signal ?? AbortSignal.timeout(15000) })
     const opened = await vscode.env.openExternal(vscode.Uri.parse(device.verificationUriComplete))
     if (!opened) throw new Error("无法打开 LDAP 设备授权页面。")
     return vscode.window.withProgress(
@@ -122,15 +133,17 @@ export class MarketplaceAuth {
         const expiresAt = Date.now() + device.expiresIn * 1_000
         const interval = { value: Math.max(5, device.interval) }
         while (!token.isCancellationRequested && Date.now() < expiresAt) {
-          await wait(interval.value * 1_000, token)
+          await wait(interval.value * 1_000, token, signal)
+          signal?.throwIfAborted()
           if (token.isCancellationRequested) return undefined
-          const response = await fetch(`${this.base()}/api/v1/auth/device/token`, {
-            method: "POST",
+          const response = await fetch(`${base}/api/v1/auth/device/token`, {
+            method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ deviceCode: device.deviceCode }),
           })
           const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
-          if (response.ok) return this.save(payload as unknown as TokenResponse)
+          this.assertContext(base, epoch)
+          if (response.ok) return this.save(payload as unknown as TokenResponse, base, epoch)
           if (payload.code === "AUTHORIZATION_PENDING") continue
           if (payload.code === "SLOW_DOWN") {
             interval.value = Math.max(interval.value + 5, Number(response.headers.get("retry-after")) || 10)
@@ -144,7 +157,8 @@ export class MarketplaceAuth {
     )
   }
 
-  private async save(response: TokenResponse) {
+  private async save(response: TokenResponse, base: string, epoch: number) {
+    this.assertContext(base, epoch)
     if (!response.accessToken || !response.refreshToken || !response.user?.displayName) {
       throw new Error("ChipMate Server 返回了无效的设备登录凭据。")
     }
@@ -155,8 +169,10 @@ export class MarketplaceAuth {
       refreshExpiresAt: Date.now() + response.refreshExpiresIn * 1_000,
       user: { name: response.user.displayName },
     }
-    await this.secrets.store(this.key(), JSON.stringify(stored))
-    await this.secrets.store(this.activeOriginKey, this.origin())
+    const origin = new URL(base).origin.toLocaleLowerCase()
+    await this.secrets.store(this.key(origin), JSON.stringify(stored))
+    this.assertContext(base, epoch)
+    await this.secrets.store(this.activeOriginKey, origin)
     return stored
   }
 
@@ -198,7 +214,7 @@ export class MarketplaceAuth {
         const stored = JSON.parse(raw) as StoredTokens
         if (stored.accessToken) {
           await fetch(`${previous}/api/v1/auth/token/revoke`, {
-            method: "POST",
+            method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
             headers: { authorization: `Bearer ${stored.accessToken}` },
           }).catch(() => undefined)
         }
@@ -212,7 +228,7 @@ export class MarketplaceAuth {
 }
 
 async function json<T>(url: string, init: RequestInit) {
-  const response = await fetch(url, init)
+  const response = await fetch(url, { ...init, redirect: "error", signal: init.signal ?? AbortSignal.timeout(15000) })
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
   if (!response.ok) {
     const error = new Error(typeof payload.message === "string" ? payload.message : `HTTP ${response.status}`) as Error & {
@@ -228,14 +244,18 @@ function isUnauthorized(err: unknown) {
   return Boolean(err && typeof err === "object" && "status" in err && (err as { status?: unknown }).status === 401)
 }
 
-function wait(ms: number, token: vscode.CancellationToken) {
+function wait(ms: number, token: vscode.CancellationToken, signal?: AbortSignal) {
   return new Promise<void>((resolve) => {
     let subscription: vscode.Disposable | undefined
     const finish = () => {
       subscription?.dispose()
+      signal?.removeEventListener("abort", abort)
       resolve()
     }
+    const abort = () => { clearTimeout(timer); finish() }
     const timer = setTimeout(finish, ms)
+    signal?.addEventListener("abort", abort, { once: true })
+    if (signal?.aborted) abort()
     subscription = token.onCancellationRequested(() => {
       clearTimeout(timer)
       finish()

@@ -133,20 +133,33 @@ describe("isModelValid", () => {
     const internal = makeProvider("internal", "Internal", ["glm-5.2", "doubao-seed-2.0-pro", "qwen3.8-27b"])
     const catalog = { internal }
     expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "glm-5.2" }, true)).toBe(false)
-    expect(
-      isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "doubao-seed-2.0-pro" }, true),
-    ).toBe(false)
-    expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "qwen3.8-27b" }, true)).toBe(
-      true,
+    expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "doubao-seed-2.0-pro" }, true)).toBe(
+      false,
     )
+    expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "qwen3.8-27b" }, true)).toBe(true)
     expect(isModelValid(catalog, ["internal"], { providerID: "internal", modelID: "glm-5.2" }, false)).toBe(true)
   })
 
   it("rejects a prohibited model identified only after provider metadata loads", () => {
     const internal = makeProvider("internal", "Internal", ["endpoint"])
     internal.models.endpoint!.name = "Doubao Seed 2.0 Pro"
-    expect(isModelValid({ internal }, ["internal"], { providerID: "internal", modelID: "endpoint" }, true)).toBe(
-      false,
-    )
+    expect(isModelValid({ internal }, ["internal"], { providerID: "internal", modelID: "endpoint" }, true)).toBe(false)
   })
+})
+
+it("QA-002 同名来源及同名模型具有稳定可见标识", () => {
+  const models = flattenModels(
+    {
+      one: {
+        id: "one",
+        name: "同名来源",
+        models: { a: { id: "a", name: "同名模型" }, b: { id: "b", name: "同名模型" } },
+      },
+      two: { id: "two", name: "同名来源", models: { a: { id: "a", name: "同名模型" } } },
+    },
+    false,
+  )
+  expect(new Set(models.map((model) => `${model.providerName}/${model.name}`)).size).toBe(3)
+  expect(models[0]?.providerName).toContain("one")
+  expect(models[0]?.name).toContain("a")
 })

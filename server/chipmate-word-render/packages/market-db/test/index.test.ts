@@ -16,10 +16,10 @@ const archive = resolve(repo, "docs/chipmate-skill-market-alignment-evidence/g0/
 const source = resolve(repo, ".chipmate/skills/source-backed-detail-design")
 
 test("database schema uses ordered migrations", () => {
-  assert.equal(MARKET_DB_SCHEMA_VERSION, 11)
+  assert.equal(MARKET_DB_SCHEMA_VERSION, 12)
   assert.deepEqual(
     MIGRATIONS.map((migration) => migration.version),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
   )
 })
 
@@ -50,7 +50,7 @@ test("v9 升级到 LDAP 认证架构后保留作者、收藏、安装和发布�
   sqlite.close()
 
   const migrated = new MarketDb({ dir: root })
-  assert.equal((await migrated.health()).schemaVersion, 11)
+  assert.equal((await migrated.health()).schemaVersion, 12)
   await migrated.close()
   const check = new DatabaseSync(path, { readOnly: true })
   assert.deepEqual(plain(check.prepare("SELECT id,author_id FROM skills").all()), [{ id: "historic-skill", author_id: "historic-alice" }])
@@ -101,7 +101,7 @@ test("publication request aliases backfill existing idempotency keys", async () 
 
   const db = new MarketDb({ dir: root })
   try {
-    assert.equal((await db.health()).schemaVersion, 11)
+    assert.equal((await db.health()).schemaVersion, 12)
     const run = await db.startPublication({
       id: "publication-migration-retry",
       ownerId: "user-migration-0001",
@@ -140,7 +140,7 @@ test("worker owns import, revisions, FTS, state, metrics, and legacy export", { 
         foreignKeys: health.foreignKeys,
         busyTimeout: health.busyTimeout,
       },
-      { available: true, schemaVersion: 11, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
+      { available: true, schemaVersion: 12, journalMode: "wal", foreignKeys: true, busyTimeout: 5000 },
     )
 
     const first = await db.importLegacy(legacy)

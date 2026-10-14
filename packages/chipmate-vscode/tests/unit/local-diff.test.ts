@@ -592,3 +592,19 @@ describe("resolveLocalDiffTarget + revertFile", () => {
     })
   })
 })
+
+describe("QA-025 特殊路径工作树 Diff", () => {
+  for (const file of ["中文 空格.ts", "换\t行\n文件.ts", ' 引号"文件.ts ']) {
+    it(`未跟踪、暂存及修改文件完整保留路径：${JSON.stringify(file)}`, async () => {
+      await withRepo(async (dir, base) => {
+        await fs.writeFile(path.join(dir, file), "初始内容\n")
+        const ops = git()
+        expect((await diffSummary(ops, dir, base)).find((entry) => entry.file === file)?.status).toBe("added")
+        expect((await diffFile(ops, dir, base, file))?.after).toBe("初始内容\n")
+        runSync(dir, ["add", "--", file])
+        expect((await diffSummary(ops, dir, base)).find((entry) => entry.file === file)?.additions).toBe(1)
+        expect((await diffFile(ops, dir, base, file))?.after).toBe("初始内容\n")
+      })
+    })
+  }
+})

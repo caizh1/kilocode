@@ -1,4 +1,5 @@
 import { buildQwenFimPrompt, normalizeQwenFimSuffix } from "./fimTemplates"
+import { QWEN_FIM_MODEL_ID } from "../../shared/qwen-autocomplete"
 import type { QwenAutocompleteHelperVars } from "./helperVars"
 import type { QwenAutocompleteCodeSnippet } from "./snippets"
 import { countTokens, pruneLinesFromBottom, pruneLinesFromTop } from "./tokenPruning"
@@ -56,7 +57,6 @@ export function resolveQwenSnippetInjectionGate(input: RenderInput): Gate {
   const inject = input.injectIntoPrompt ?? (input.cfg.recentlyEditedEnabled && input.cfg.recentlyEditedInjectIntoPrompt)
   if (!inject) return blocked("disabled", "disabled", null)
   if (input.snippets.length === 0) return blocked("no-selected-snippets", "single-file-qwen-fim", null)
-  if (!isQwenCoder(input.cfg.model)) return blocked("unsupported-model", "blocked", available(input.cfg))
   const tokens = available(input.cfg)
   if (tokens === null) return blocked("unknown-context-length", "blocked", null)
   if (tokens < input.cfg.maxPromptTokens) return blocked("insufficient-context-length", "blocked", tokens)
@@ -70,24 +70,24 @@ export function resolveQwenSnippetInjectionGate(input: RenderInput): Gate {
 
 export function renderQwenMultifileFimPromptWithTokenLimit(input: RenderInput, limit: number): QwenPromptPlan {
   const initial = build(input.helper.prunedPrefix, normalizeQwenFimSuffix(input.helper.prunedSuffix), input)
-  if (countTokens(initial.prompt, input.cfg.model) <= limit) {
+  if (countTokens(initial.prompt, QWEN_FIM_MODEL_ID) <= limit) {
     return injected(input, initial, limit)
   }
-  const prefixTokens = countTokens(input.helper.prunedPrefix, input.cfg.model)
-  const suffixTokens = countTokens(normalizeQwenFimSuffix(input.helper.prunedSuffix), input.cfg.model)
+  const prefixTokens = countTokens(input.helper.prunedPrefix, QWEN_FIM_MODEL_ID)
+  const suffixTokens = countTokens(normalizeQwenFimSuffix(input.helper.prunedSuffix), QWEN_FIM_MODEL_ID)
   const total = prefixTokens + suffixTokens
   if (total > 0) {
-    const prune = countTokens(initial.prompt, input.cfg.model) - limit
+    const prune = countTokens(initial.prompt, QWEN_FIM_MODEL_ID) - limit
     const dropPrefix = Math.ceil(prune * (prefixTokens / total))
     const dropSuffix = Math.ceil(prune - dropPrefix)
     const prefixMax = Math.max(0, prefixTokens - dropPrefix)
     const suffixMax = Math.max(0, suffixTokens - dropSuffix)
     const pruned = build(
-      pruneLinesFromTop(input.helper.prunedPrefix, prefixMax, input.cfg.model),
-      pruneLinesFromBottom(normalizeQwenFimSuffix(input.helper.prunedSuffix), suffixMax, input.cfg.model),
+      pruneLinesFromTop(input.helper.prunedPrefix, prefixMax, QWEN_FIM_MODEL_ID),
+      pruneLinesFromBottom(normalizeQwenFimSuffix(input.helper.prunedSuffix), suffixMax, QWEN_FIM_MODEL_ID),
       input,
     )
-    if (countTokens(pruned.prompt, input.cfg.model) <= limit) {
+    if (countTokens(pruned.prompt, QWEN_FIM_MODEL_ID) <= limit) {
       return injected(input, pruned, limit)
     }
   }
@@ -126,7 +126,7 @@ function injected(
   out: { prefix: string; prompt: string; suffix: string },
   tokens: number,
 ): QwenPromptPlan {
-  const estimate = countTokens(out.prompt, input.cfg.model)
+  const estimate = countTokens(out.prompt, QWEN_FIM_MODEL_ID)
   return {
     availablePromptTokens: tokens,
     estimatedRenderedPromptTokens: estimate,
@@ -147,7 +147,7 @@ function single(input: RenderInput, gate: Gate): QwenPromptPlan {
   const prompt = buildQwenFimPrompt({ prefix: input.helper.prunedPrefix, suffix })
   return {
     availablePromptTokens: gate.availablePromptTokens,
-    estimatedRenderedPromptTokens: countTokens(prompt, input.cfg.model),
+    estimatedRenderedPromptTokens: countTokens(prompt, QWEN_FIM_MODEL_ID),
     prompt,
     promptRendererMode: gate.promptRendererMode,
     renderedPrefix: input.helper.prunedPrefix,
@@ -175,10 +175,6 @@ function available(cfg: QwenAutocompleteConfig): number | null {
   return cfg.contextLength - cfg.maxTokens - safety
 }
 
-function isQwenCoder(model: string): boolean {
-  const name = model.toLowerCase()
-  return name.includes("qwen") && name.includes("coder")
-}
 
 function repo(workspaces: string[]): string {
   return safeName(workspaces[0] ?? "myproject") || "myproject"

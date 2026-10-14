@@ -16,6 +16,10 @@ export function getVSCodeAPI(): VSCodeAPI {
     // In VS Code webview, acquireVsCodeApi is available globally
     if (typeof acquireVsCodeApi === "function") {
       vscodeApi = acquireAppearanceApi() as VSCodeAPI
+      const report = (event: "error" | "rejection" | "message-error", value: unknown) => { const error = value instanceof Error ? value : undefined; vscodeApi?.postMessage({ type: "diagnostics.event", event, message: String(error?.message ?? value).slice(0, 8192), stack: error?.stack?.slice(0, 8192) }) }
+      window.addEventListener("error", (event) => report("error", event.error ?? event.message))
+      window.addEventListener("unhandledrejection", (event) => report("rejection", event.reason))
+      window.addEventListener("messageerror", () => report("message-error", "Webview 消息解码失败"))
     } else {
       // Mock for development/testing outside VS Code
       console.warn("[ChipMate New] Running outside VS Code, using mock API")

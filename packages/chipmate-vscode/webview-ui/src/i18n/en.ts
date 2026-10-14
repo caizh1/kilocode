@@ -1754,6 +1754,8 @@ export const dict = {
 
   "settings.autocomplete.model.title": "Autocomplete model",
   "settings.autocomplete.model.description": "Select the model used for inline code completions",
+  "settings.autocomplete.model.customHint": "Custom models use the Qwen FIM template. Add a missing deployment ID in Provider settings, then select it here.",
+  "settings.autocomplete.model.unavailable": "Selected model {{provider}} / {{model}} is unavailable. The saved selection is preserved; reconnect the provider or add the model in Provider settings.",
   "settings.autocomplete.autoTrigger.title": "Enable automatic inline completions",
   "settings.autocomplete.autoTrigger.description": "Automatically show inline completion suggestions as you type",
   "settings.autocomplete.smartKeybinding.title": "Enable smart inline task keybinding",

@@ -491,7 +491,7 @@ describe("session processor incomplete response retry", () => {
     ),
   )
 
-  it.effect("keeps provider retries independent after an empty response", () =>
+  it.effect("空响应与提供商失败共享预算，不发生额外第四次请求", () =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
@@ -504,14 +504,14 @@ describe("session processor incomplete response retry", () => {
           const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
           try {
-            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+            expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
           } finally {
             delay.mockRestore()
             delete process.env.CHIPMATE_SESSION_RETRY_LIMIT
           }
 
-          expect(yield* ctx.test.calls).toBe(4)
-          expect(ctx.handle.message.finish).toBe("stop")
+          expect(yield* ctx.test.calls).toBe(3)
+          expect(MessageV2.APIError.isInstance(ctx.handle.message.error)).toBe(true)
         }),
       { git: true },
     ),
@@ -567,7 +567,7 @@ describe("session processor incomplete response retry", () => {
             delete process.env.CHIPMATE_SESSION_RETRY_LIMIT
           }
 
-          expect(yield* ctx.test.calls).toBe(4)
+          expect(yield* ctx.test.calls).toBe(3)
           expect(MessageV2.APIError.isInstance(ctx.handle.message.error)).toBe(true)
         }),
       { git: true },

@@ -190,3 +190,26 @@ describe("resolveModelSelection", () => {
     expect(result).toEqual({ providerID: "internal", modelID: "qwen3.8-27b" })
   })
 })
+
+it("QA-003 删除已选 Provider 后等待重新选择，不回退到其他来源", () => {
+  expect(
+    resolveModelSelection({
+      providers,
+      connected: ["openai"],
+      override: { providerID: "已删除来源", modelID: "模型甲" },
+      global: { providerID: "openai", modelID: "gpt-4.1" },
+    }),
+  ).toBeNull()
+  expect(
+    resolveModelSelection({
+      providers,
+      connected: ["openai"],
+      override: { providerID: "openai", modelID: "gpt-4.1" },
+    }),
+  ).toEqual({ providerID: "openai", modelID: "gpt-4.1" })
+})
+
+
+it("QA-003 默认来源被删除后也不能自动改用其他来源", () => {
+  expect(resolveModelSelection({ providers: { openai: providers.openai }, connected: ["openai"], global: { providerID: "已删除", modelID: "旧模型" }, fallback: { providerID: "openai", modelID: "gpt-4.1" } })).toBeNull()
+})

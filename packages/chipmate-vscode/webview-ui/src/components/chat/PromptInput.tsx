@@ -560,6 +560,45 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }),
   )
 
+  // Save/restore input text when switching sessions.
+  // Uses `on()` to track only draftKey — avoids re-running on every keystroke.
+  createEffect(
+    on(draftKey, (key, prev) => {
+      const next = handoff
+      handoff = undefined
+      if (next && prev !== undefined && prev !== key) {
+        saveDraft(prev, next.text, next.comments, next.images, next.scroll)
+        movePromptDraft({ text: drafts, comments: reviewDrafts, images: imageDrafts, scrolls: scrollDrafts }, prev, key)
+      } else if (prev !== undefined && prev !== key) {
+        saveDraft(prev, untrack(text), untrack(reviewComments), untrack(imageAttach.images))
+      }
+      if (next && (prev === undefined || prev === key)) {
+        saveDraft(key, next.text, next.comments, next.images, next.scroll)
+      }
+      const draft = next?.text ?? drafts.get(key) ?? ""
+      const pending = next?.comments ?? reviewDrafts.get(key) ?? []
+      const images = next?.images ?? imageDrafts.get(key) ?? []
+      const scroll = next?.scroll ?? scrollDrafts.get(key) ?? 0
+      setText(draft)
+      setReviewComments(pending)
+      imageAttach.replace(images)
+      setEnhancing(false)
+      preEnhanceText = null
+      cursor = undefined
+      history.reset()
+      if (textareaRef) {
+        textareaRef.value = draft
+        // Reset height then adjust
+        textareaRef.style.height = "auto"
+        textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, 200)}px`
+        textareaRef.scrollTop = scroll
+        if (highlightRef) highlightRef.scrollTop = scroll
+      }
+      window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { preserveCollapsed: true } }))
+    }),
+  )
+
+  let hydratedSharedKey: string | undefined
   const sharedContent = new Map<string, string>()
   let pendingSharedClear: { messageID: string; key: string; draftID?: string; revision: number } | undefined
   const surfaceKey = () => {
@@ -575,8 +614,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!messageID || !key || revision === undefined) return
     pendingSharedClear = { messageID, key, draftID, revision }
   }
-  const sharedReferences = (value: string) =>
-    [...value.matchAll(/(?:^|\s)([@$][^\s]+)/g)].flatMap((match) => (match[1] ? [match[1]] : []))
+  const sharedReferences = () => [...mention.mentionedPaths()].map((path) => `@${path}`)
   const sharedDraftContent = () => {
     const scope = sid()
     const selected = session.selected(scope)
@@ -585,7 +623,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       text: text(),
       reviewComments: reviewComments(),
       images: imageAttach.images(),
-      references: sharedReferences(text()),
+      references: sharedReferences(),
       inputScrollTop: textareaRef?.scrollTop ?? scrollDrafts.get(draftKey()) ?? 0,
       deepSeekHarness: surface.draft()?.content.deepSeekHarness,
       selection: selected
@@ -621,11 +659,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
   }
   const publishSharedDraft = () => {
+    const key = surfaceKey()
+    if (!key || hydratedSharedKey !== `${key}:${draftKey()}` || !surface.draft()) return
     const content = sharedDraftContent()
     surface.stageDraft(content)
-    if (!surface.canMutate() || !surface.draft()) return
-    const key = surfaceKey()
-    if (!key) return
+    if (!surface.canMutate()) return
     const serialized = JSON.stringify(content)
     if (pendingSharedClear?.key === key) {
       const empty = !content.text && content.reviewComments.length === 0 && content.images.length === 0
@@ -637,66 +675,76 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     surface.updateDraft(content)
   }
 
-  createEffect(() => {
-    const shared = surface.draft()
-    if (!shared) return
-    const content = shared.content
-    if (
-      pendingSharedClear?.key === `${shared.key.kind}:${shared.key.id}` &&
-      shared.revision > pendingSharedClear.revision &&
-      !content.text &&
-      content.reviewComments.length === 0 &&
-      content.images.length === 0
-    ) {
-      pendingSharedClear = undefined
-    }
-    if (
-      shared.revision === 0 &&
-      !content.text &&
-      content.reviewComments.length === 0 &&
-      content.images.length === 0 &&
-      (text() || reviewComments().length > 0 || imageAttach.images().length > 0)
-    ) {
-      publishSharedDraft()
-      return
-    }
-    const key = `${shared.key.kind}:${shared.key.id}`
-    const serialized = JSON.stringify(content)
-    if (serialized === sharedContent.get(key)) return
-    sharedContent.set(key, serialized)
-    const scope = sid()
-    if (scope && content.selection && shared.key.kind === "draft") {
-      session.setSessionAgent(scope, content.selection.agent ?? session.selectedAgent(scope))
-      if (content.selection.override) {
-        session.setSessionModel(scope, content.selection.providerID, content.selection.modelID)
-      }
-      if (content.selection.variant) {
-        session.setSessionVariant(
-          scope,
-          content.selection.providerID,
-          content.selection.modelID,
-          content.selection.variant,
-          content.selection.agent,
+  createEffect(
+    on(
+      () => [surface.draft(), draftKey()] as const,
+      ([shared]) => {
+        if (!shared || shared.key.id !== sid()) return
+        const identity = `${shared.key.kind}:${shared.key.id}:${draftKey()}`
+        const restoring = hydratedSharedKey !== identity
+        hydratedSharedKey = identity
+        const content = shared.content
+        if (
+          pendingSharedClear?.key === `${shared.key.kind}:${shared.key.id}` &&
+          shared.revision > pendingSharedClear.revision &&
+          !content.text &&
+          content.reviewComments.length === 0 &&
+          content.images.length === 0
+        ) {
+          pendingSharedClear = undefined
+        }
+        if (
+          shared.revision === 0 &&
+          !content.text &&
+          content.reviewComments.length === 0 &&
+          content.images.length === 0 &&
+          (text() || reviewComments().length > 0 || imageAttach.images().length > 0)
+        ) {
+          publishSharedDraft()
+          return
+        }
+        const key = `${shared.key.kind}:${shared.key.id}`
+        const serialized = JSON.stringify(content)
+        if (!restoring && serialized === sharedContent.get(key)) return
+        sharedContent.set(key, serialized)
+        const scope = sid()
+        if (scope && content.selection && shared.key.kind === "draft") {
+          session.setSessionAgent(scope, content.selection.agent ?? session.selectedAgent(scope))
+          if (content.selection.override) {
+            session.setSessionModel(scope, content.selection.providerID, content.selection.modelID)
+          }
+          if (content.selection.variant) {
+            session.setSessionVariant(
+              scope,
+              content.selection.providerID,
+              content.selection.modelID,
+              content.selection.variant,
+              content.selection.agent,
+            )
+          }
+        }
+        savePromptDraft(
+          draftKey(),
+          content.text,
+          content.reviewComments,
+          content.images as ImageAttachment[],
+          content.inputScrollTop,
         )
-      }
-    }
-    savePromptDraft(
-      draftKey(),
-      content.text,
-      content.reviewComments,
-      content.images as ImageAttachment[],
-      content.inputScrollTop,
-    )
-    setText(content.text)
-    setReviewComments(content.reviewComments)
-    imageAttach.replace(content.images as ImageAttachment[])
-    mention.seedFromText(content.text)
-    if (!textareaRef) return
-    textareaRef.value = content.text
-    textareaRef.scrollTop = content.inputScrollTop
-    adjustHeight()
-    if (highlightRef) highlightRef.scrollTop = content.inputScrollTop
-  })
+        setText(content.text)
+        setReviewComments(content.reviewComments)
+        imageAttach.replace(content.images as ImageAttachment[])
+        mention.seedFromParts(
+          content.references.filter((value) => value.startsWith("@")).map((value) => value.slice(1)),
+          content.text,
+        )
+        if (!textareaRef) return
+        textareaRef.value = content.text
+        textareaRef.scrollTop = content.inputScrollTop
+        adjustHeight()
+        if (highlightRef) highlightRef.scrollTop = content.inputScrollTop
+      },
+    ),
+  )
 
   createEffect(() => {
     text()
@@ -766,44 +814,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const removeReviewComment = (id: string) => {
     replaceReviewComments(reviewComments().filter((item) => item.id !== id))
   }
-
-  // Save/restore input text when switching sessions.
-  // Uses `on()` to track only draftKey — avoids re-running on every keystroke.
-  createEffect(
-    on(draftKey, (key, prev) => {
-      const next = handoff
-      handoff = undefined
-      if (next && prev !== undefined && prev !== key) {
-        saveDraft(prev, next.text, next.comments, next.images, next.scroll)
-        movePromptDraft({ text: drafts, comments: reviewDrafts, images: imageDrafts, scrolls: scrollDrafts }, prev, key)
-      } else if (prev !== undefined && prev !== key) {
-        saveDraft(prev, untrack(text), untrack(reviewComments), untrack(imageAttach.images))
-      }
-      if (next && (prev === undefined || prev === key)) {
-        saveDraft(key, next.text, next.comments, next.images, next.scroll)
-      }
-      const draft = next?.text ?? drafts.get(key) ?? ""
-      const pending = next?.comments ?? reviewDrafts.get(key) ?? []
-      const images = next?.images ?? imageDrafts.get(key) ?? []
-      const scroll = next?.scroll ?? scrollDrafts.get(key) ?? 0
-      setText(draft)
-      setReviewComments(pending)
-      imageAttach.replace(images)
-      setEnhancing(false)
-      preEnhanceText = null
-      cursor = undefined
-      history.reset()
-      if (textareaRef) {
-        textareaRef.value = draft
-        // Reset height then adjust
-        textareaRef.style.height = "auto"
-        textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, 200)}px`
-        textareaRef.scrollTop = scroll
-        if (highlightRef) highlightRef.scrollTop = scroll
-      }
-      window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { preserveCollapsed: true } }))
-    }),
-  )
 
   // Seed prompt history from the current session's user messages (e.g., when a
   // session is loaded that has existing conversation). Tracks userMessages()

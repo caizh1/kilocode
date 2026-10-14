@@ -48,6 +48,12 @@ const SurfaceFixture: Component<{
           },
         }),
       )
+      window.dispatchEvent(new MessageEvent("message", { data: {
+        type: "sessionSurface.draft.snapshot",
+        draft: { schemaVersion: 1, key, revision: 0, updatedAt: 1, content: {
+          boxId: "prompt:story-session", text: "", reviewComments: [], images: [], references: [], inputScrollTop: 0,
+        } },
+      } }))
     })
   })
   return <ChatView />

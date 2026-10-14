@@ -91,11 +91,7 @@ export const DesignView = Schema.Literals([
 ])
 export type DesignView = Types.DeepMutable<typeof DesignView.Type>
 
-export const DocumentProfile = Schema.Literals([
-  "artifact-set",
-  "source-backed-full",
-  "product-detailed-design-v2",
-])
+export const DocumentProfile = Schema.Literals(["artifact-set", "source-backed-full", "product-detailed-design-v2"])
 export type DocumentProfile = Types.DeepMutable<typeof DocumentProfile.Type>
 
 export const WorkItemPurpose = Schema.Union([
@@ -114,8 +110,8 @@ export const WorkItemPurpose = Schema.Union([
 export type WorkItemPurpose = Types.DeepMutable<typeof WorkItemPurpose.Type>
 
 export const ModelReference = Schema.Struct({
-  providerID: Schema.String,
-  modelID: Schema.String,
+  providerID: Schema.String.check(Schema.isPattern(/\S/)),
+  modelID: Schema.String.check(Schema.isPattern(/\S/)),
   variant: Schema.optional(Schema.String),
 }).annotate({ identifier: "DesignDocModelReference" })
 export type ModelReference = Types.DeepMutable<typeof ModelReference.Type>

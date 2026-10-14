@@ -1,8 +1,10 @@
+import { orderPermissions } from "@/chipmate/config/permission-order" // chipmate_change - preserve explicit permission priority
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import path from "path"
+import { replacePackagedConfigModels } from "@/chipmate/provider/model-replacements" // chipmate_change
 import { pathToFileURL } from "url"
 import os from "os"
 import { mergeDeep } from "remeda"
@@ -250,7 +252,13 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
   }
   // chipmate_change end
 
-  return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
+  // chipmate_change start - explicit tool edits must take precedence over older wildcard rules
+  const updated = Object.entries(patch).reduce(
+    (result, [key, value]) => patchJsonc(result, value, [...path, key]),
+    input,
+  )
+  return path.length === 0 ? orderPermissions(updated, patch) : updated
+  // chipmate_change end
 }
 
 function writable(info: Info) {
@@ -448,7 +456,7 @@ const layer = Layer.effect(
 
     const getGlobal = Effect.fn("Config.getGlobal")(function* () {
       yield* refreshGlobal() // chipmate_change
-      return yield* cachedGlobal
+      return replacePackagedConfigModels(yield* cachedGlobal) // chipmate_change
     })
 
     const ensureGitignore = Effect.fn("Config.ensureGitignore")(function* (dir: string) {
@@ -996,7 +1004,7 @@ const layer = Layer.effect(
         // chipmate_change end
 
         return {
-          config: result,
+          config: replacePackagedConfigModels(result), // chipmate_change
           directories,
           deps,
           warnings, // chipmate_change
@@ -1044,6 +1052,7 @@ const layer = Layer.effect(
       config: Info,
       options?: { sandbox?: boolean; indexing?: boolean },
     ) {
+      config = replacePackagedConfigModels(config)
       const ctx = yield* InstanceState.context
       yield* ChipMateConfig.updateProjectConfig({
         fs,
@@ -1063,7 +1072,7 @@ const layer = Layer.effect(
             type: Event.ConfigUpdated.type,
             properties: {
               sandbox: options?.sandbox ?? Object.hasOwn(config, "sandbox"),
-              ...(options?.indexing ?? Object.hasOwn(config, "indexing") ? { indexing: true as const } : {}),
+              ...((options?.indexing ?? Object.hasOwn(config, "indexing")) ? { indexing: true as const } : {}),
             },
           },
         }),
@@ -1087,6 +1096,7 @@ const layer = Layer.effect(
       config: Info,
       options?: { dispose?: boolean; deferred?: boolean; indexing?: boolean },
     ) {
+      config = replacePackagedConfigModels(config)
       const dispose = options?.dispose ?? true
       // chipmate_change end
       const file = globalConfigFile()
@@ -1140,7 +1150,7 @@ const layer = Layer.effect(
               properties: {
                 ...(options?.deferred ? { deferred: true } : {}),
                 sandbox: sandboxChanged,
-                ...(options?.indexing ?? Object.hasOwn(config, "indexing") ? { indexing: true as const } : {}),
+                ...((options?.indexing ?? Object.hasOwn(config, "indexing")) ? { indexing: true as const } : {}),
               },
             },
           }),
@@ -1160,7 +1170,7 @@ const layer = Layer.effect(
               properties: {
                 ...(options?.deferred ? { deferred: true } : {}),
                 sandbox: sandboxChanged,
-                ...(options?.indexing ?? Object.hasOwn(config, "indexing") ? { indexing: true as const } : {}),
+                ...((options?.indexing ?? Object.hasOwn(config, "indexing")) ? { indexing: true as const } : {}),
               },
             },
           }),

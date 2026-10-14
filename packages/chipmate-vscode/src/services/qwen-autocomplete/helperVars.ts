@@ -1,4 +1,5 @@
 import * as vscode from "vscode"
+import { QWEN_FIM_MODEL_ID } from "../../shared/qwen-autocomplete"
 import type { AutocompleteLanguageInfo } from "../autocomplete/continuedev/core/autocomplete/constants/AutocompleteLanguageInfo"
 import { constructInitialPrefixSuffix } from "./constructPrefixSuffix"
 import {
@@ -10,9 +11,7 @@ import {
 } from "./tokenPruning"
 import { qwenLanguage } from "./language"
 
-export type QwenHelperOptions = QwenTokenPruningOptions & {
-  modelName?: string
-}
+export type QwenHelperOptions = QwenTokenPruningOptions
 
 export type QwenAutocompleteHelperVars = {
   estimatedPrefixTokens: number
@@ -50,7 +49,7 @@ export function createQwenAutocompleteHelper(
   selected?: vscode.SelectedCompletionInfo,
   opts: QwenHelperOptions = QWEN_HELPER_DEFAULTS,
 ): QwenAutocompleteHelperVars {
-  const model = opts.modelName ?? "qwen-coder-30b0"
+  const model = QWEN_FIM_MODEL_ID
   const fileContents = document.getText()
   const fileLines = fileContents.split("\n")
   const filepath = document.uri.fsPath || document.uri.path

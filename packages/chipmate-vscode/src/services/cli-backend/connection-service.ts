@@ -1,4 +1,6 @@
+import { diagnosticConnectionEvent } from "../diagnostics/record"
 import * as vscode from "vscode"
+import path from "node:path"
 import { ServerManager, type ServerExitInfo } from "./server-manager"
 import { createChipMateClient, type ChipMateClient } from "@chipmate/sdk/v2/client"
 import { SdkSSEAdapter, type SSEPayload } from "./sdk-sse-adapter"
@@ -145,6 +147,7 @@ export class ChipMateConnectionService {
   private workspaceDir: string | null = null
   private readonly recovery = new CrashRecovery()
   private recovering = false
+  private documentDisposable?: vscode.Disposable
   private disposed = false
   private maintenancePromise: Promise<{ code: number; result: Record<string, unknown> | null }> | null = null
   private maintaining = false
@@ -156,6 +159,19 @@ export class ChipMateConnectionService {
         get: <T>(_key: string, fallback?: T) => fallback,
         update: async () => undefined,
       } satisfies Pick<vscode.Memento, "get" | "update">)
+    this.documentDisposable = vscode.workspace.onDidChangeTextDocument?.((event) => {
+      if (!event.document.isDirty || !event.contentChanges.length || event.document.uri.scheme !== "file" || !this.client) return
+      const file = event.document.uri.fsPath
+      const directories = [...this.directoryProviders].flatMap((provider) => provider())
+      const directory = directories.sort((a, b) => b.length - a.length).find((dir) => {
+        const relative = path.relative(dir, file)
+        return relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+      })
+      if (!directory) return
+      void this.client.turnChanges.external({ directory, file }, { throwOnError: true }).catch((error) => {
+        console.warn("[ChipMate New] 无法记录编辑器人工修改：", error)
+      })
+    })
     this.sandboxPreference = new SandboxPreference(state)
     this.serverManager = new ServerManager(context, (info) => this.handleServerExit(info))
     this.active = vscode.window.state.focused
@@ -817,6 +833,7 @@ export class ChipMateConnectionService {
       this.checkinTimer = null
     }
     this.windowStateDisposable?.dispose()
+    this.documentDisposable?.dispose()
     this.windowStateDisposable = null
     this.viewedDirty = false
     this.unsubRemote?.()
@@ -954,6 +971,7 @@ export class ChipMateConnectionService {
 
     // Wire SSE events → broadcast to all registered listeners
     sse.onEvent((event, directory) => {
+      diagnosticConnectionEvent(event, directory)
       if (this.sseClient !== sse) return
       this.handlePermissionEvent(event, directory)
       this.handleQuestionEvent(event, directory)

@@ -8,11 +8,13 @@ import { isRecord } from "@/util/record"
 import { parseReviewCommand, reviewCommandName } from "@/chipmate/review/command"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Exit } from "effect"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { EffectBridge } from "@/effect/bridge"
 import type { LLMEvent, ProviderMetadata, Usage } from "@opencode-ai/llm"
 import type { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionRetry } from "@/session/retry"
+import { recoveryBudget, type RecoveryBudget } from "./recovery"
+import { errorCategory } from "@opencode-ai/core/chipmate/diagnostics/errors"
+import { requestErrorMetadata } from "@/chipmate/provider/request-diagnostics"
 import {
   computeMetrics as computeMetricsHelper,
   finishStepPerformance as finishStepPerformanceHelper,
@@ -34,7 +36,6 @@ export type ReviewTelemetry = {
 export namespace ChipMateSessionProcessor {
   const log = Log.create({ service: "session.processor.chipmate" })
   const PAYLOAD_BYTES = 128_000
-  const PAYLOAD_RETRIES = 2
   export const INCOMPLETE_RESPONSE_RETRIES = 2
   export const INCOMPLETE_RESPONSE_MESSAGE =
     "The provider repeatedly ended the response before returning usable output."
@@ -213,11 +214,7 @@ export namespace ChipMateSessionProcessor {
   }
 
   /**
-   * Returns the ChipMate-specific retry policy options (limit + offline handler).
-   * Designed to be spread into SessionRetry.policy() opts.
-   *
-   * The `abort` signal is used by the offline handler to cancel the network
-   * reconnection wait when the session is interrupted.
+   * 返回当前负载适用的重试上限。聊天恢复只重试模型接口，不进入公共网络探测。
    */
   export function retryOpts(input: {
     sessionID: SessionID
@@ -227,27 +224,16 @@ export namespace ChipMateSessionProcessor {
     bytes?: number
     summary?: boolean
   }) {
-    const fallback = input.summary || (input.bytes ?? 0) >= PAYLOAD_BYTES ? PAYLOAD_RETRIES : undefined
-    const limit = Flag.CHIPMATE_SESSION_RETRY_LIMIT ?? fallback
+    const limit = recoveryBudget(input).limit
     return {
-      limit: limit === undefined ? undefined : Math.max(0, limit - (input.used ?? 0)),
-      offline: (info: { error: unknown; message: string }) =>
-        handleOffline({
-          error: info.error,
-          sessionID: input.sessionID,
-          abort: input.abort,
-          set: input.set,
-      }),
+      limit: Math.max(0, limit - (input.used ?? 0)),
     }
   }
 
-  export function compact(input: {
-    error: SessionRetry.Err
-    bytes: number
-    auto: boolean
-  }) {
+  export function compact(input: { error: SessionRetry.Err; bytes: number; auto: boolean }) {
     if (!input.auto || input.bytes < PAYLOAD_BYTES) return false
     if (!MessageV2.APIError.isInstance(input.error)) return false
+    if (input.error.data.metadata?.retryBlocked) return false
     const status = input.error.data.statusCode
     return status !== undefined && status >= 500
   }
@@ -270,8 +256,8 @@ export namespace ChipMateSessionProcessor {
   }
 
   export function observe(attempt: Attempt, event: LLMEvent) {
-    if (event.type === "text-delta" && event.text.trim()) attempt.text = true
-    if (event.type === "reasoning-delta" && event.text.trim()) attempt.reasoning = true
+    if (event.type === "text-delta" && event.text.length) attempt.text = true
+    if (event.type === "reasoning-delta" && event.text.length) attempt.reasoning = true
     if (event.type === "tool-call" || event.type === "tool-result" || event.type === "tool-error") attempt.tool = true
     if (event.type === "step-finish") {
       attempt.finished = true
@@ -297,7 +283,15 @@ export namespace ChipMateSessionProcessor {
 
   export function blockRetry(error: ReturnType<typeof MessageV2.fromError>) {
     const message = MessageV2.APIError.isInstance(error) ? error.data.message : "Response interrupted after output"
-    return new MessageV2.APIError({ message, isRetryable: false }).toObject()
+    return new MessageV2.APIError({
+      ...(MessageV2.APIError.isInstance(error) ? error.data : {}),
+      message: `响应已中断，已保留已接收内容。${message}`,
+      isRetryable: false,
+      metadata: {
+        ...(MessageV2.APIError.isInstance(error) ? error.data.metadata : {}),
+        retryBlocked: "已产生输出或工具调用，保留结果并停止自动重放",
+      },
+    }).toObject()
   }
 
   export function recover(input: {
@@ -305,6 +299,7 @@ export namespace ChipMateSessionProcessor {
     replayable: () => boolean
     discard: () => Effect.Effect<void>
     set: (info: { attempt: number; message: string; next: number }) => Effect.Effect<void>
+    budget?: RecoveryBudget
   }) {
     return Effect.gen(function* () {
       for (const index of Array.from({ length: INCOMPLETE_RESPONSE_RETRIES + 1 }, (_, index) => index)) {
@@ -314,17 +309,44 @@ export namespace ChipMateSessionProcessor {
         if (!error && !input.replayable()) return
 
         yield* input.discard()
-        if (index === INCOMPLETE_RESPONSE_RETRIES)
+        if (index === INCOMPLETE_RESPONSE_RETRIES || (input.budget && input.budget.used >= input.budget.limit))
           return yield* Effect.fail(error ?? new IncompleteResponseError())
-        const wait = SessionRetry.delay(index + 1)
-        yield* input.set({ attempt: index + 1, message: INCOMPLETE_RESPONSE_MESSAGE, next: Date.now() + wait })
+        const attempt = input.budget ? ++input.budget.used : index + 1
+        const wait = SessionRetry.delay(attempt)
+        yield* input.set({ attempt, message: INCOMPLETE_RESPONSE_MESSAGE, next: Date.now() + wait })
         yield* Effect.sleep(`${wait} millis`)
       }
     })
   }
 
   export function parseError(error: unknown, input: { providerID: ProviderV2.ID; aborted: boolean }) {
-    if (!(error instanceof IncompleteResponseError)) return MessageV2.fromError(error, input)
+    if (!(error instanceof IncompleteResponseError)) {
+      const metadata = requestErrorMetadata(error)
+      const original = MessageV2.fromError(error, input)
+      const parsed =
+        original.name === "UnknownError" && metadata
+          ? new MessageV2.APIError({ message: "模型请求失败：原因未明", isRetryable: false }).toObject()
+          : original
+      if (!MessageV2.APIError.isInstance(parsed)) return parsed
+      const category = metadata?.category ?? errorCategory(error)
+      const permanent = ["证书错误", "鉴权失败", "请求错误", "用户取消"].includes(category)
+      const wait = SessionRetry.delay(1, parsed)
+      const long = wait > 60_000
+      const summary = metadata
+        ? `模型请求失败：${category}${metadata.code ? `（${metadata.code}）` : ""}`
+        : parsed.data.message
+      return new MessageV2.APIError({
+        ...parsed.data,
+        message: long ? `${summary}；服务要求等待 ${Math.ceil(wait / 1000)} 秒，已停止自动重试` : summary,
+        isRetryable: permanent || long ? false : parsed.data.isRetryable,
+        metadata: {
+          ...parsed.data.metadata,
+          ...metadata,
+          category,
+          ...(permanent || long ? { retryBlocked: long ? "服务要求等待超过 60 秒" : category } : {}),
+        },
+      }).toObject()
+    }
     return new MessageV2.APIError({
       message: error.message,
       isRetryable: true,

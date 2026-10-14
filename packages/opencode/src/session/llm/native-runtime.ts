@@ -18,6 +18,7 @@ import {
 } from "@opencode-ai/llm"
 import type { LLMClientShape } from "@opencode-ai/llm/route"
 import { LLMNative } from "./native-request"
+import type { RequestTrace } from "@/chipmate/provider/request-diagnostics" // chipmate_change
 
 export type RuntimeStatus =
   | { readonly type: "supported"; readonly apiKey: string; readonly baseURL?: string }
@@ -27,6 +28,7 @@ export type StreamResult =
   | { readonly type: "unsupported"; readonly reason: string }
 
 type StreamInput = {
+  readonly trace?: RequestTrace // chipmate_change
   readonly model: Provider.Model
   readonly provider: Provider.Info
   readonly auth: Auth.Info | undefined
@@ -141,7 +143,22 @@ export function stream(input: StreamInput): StreamResult {
 
   return {
     ...current,
-    stream: fetch ? stream.pipe(Stream.provideService(FetchHttpClient.Fetch, fetch)) : stream,
+    // chipmate_change start - observe native transport without changing its route or credentials
+    stream: input.trace
+      ? stream.pipe(
+          Stream.provideService(
+            FetchHttpClient.Fetch,
+            Object.assign(
+              (url: RequestInfo | URL, init?: RequestInit) =>
+                input.trace!.transport(fetch ?? globalThis.fetch, url, init),
+              { preconnect: (fetch ?? globalThis.fetch).preconnect },
+            ),
+          ),
+        )
+      : fetch
+        ? stream.pipe(Stream.provideService(FetchHttpClient.Fetch, fetch))
+        : stream,
+    // chipmate_change end
   }
 }
 

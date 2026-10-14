@@ -17,7 +17,7 @@ const register = await Bun.file(new URL("../../src/patent-radar/register.ts", im
 
 describe("专利中心取消后重新扫描", () => {
   it("启动新扫描前清除旧运行，并立即展示准备状态", () => {
-    const start = component.slice(component.indexOf("const startScan = () =>"), component.indexOf("const run = (action:"))
+    const start = component.slice(component.indexOf("const startScan = ("), component.indexOf("const run = (action:"))
     expect(start).toContain("if (!analysisModel() || scanActionLoading()) return")
     expect(start).toContain("setActivity(null)")
     expect(start).toContain('action: "scan"')
@@ -40,7 +40,7 @@ describe("专利中心取消后重新扫描", () => {
   })
 
   it("弹窗重新开始复用同一启动流程", () => {
-    expect(component).toContain("onRestart={() => startScan()}")
+    expect(component).toContain("onRestart={() => startScan(activity()?.id)}")
   })
 
   it("模块扫描沿用专利中心已选择的分析模型", () => {

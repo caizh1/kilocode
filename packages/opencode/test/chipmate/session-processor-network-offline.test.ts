@@ -22,6 +22,7 @@ import { Session } from "../../src/session/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionNetwork } from "../../src/session/network"
+import { SessionRetry } from "../../src/session/retry"
 import { SessionProcessor } from "../../src/session/processor"
 import { MessageID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
@@ -136,7 +137,7 @@ const env = LayerNode.compile(root, [
 const it = testEffect(env)
 
 describe("session processor network offline", () => {
-  it.effect("enters offline state for provider connection message", () =>
+  it.effect("连接失败直接重试实际模型，不创建公共网络恢复等待", () =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
@@ -156,11 +157,8 @@ describe("session processor network offline", () => {
             ),
           )
 
-          // Auto-reply to network reconnect request
-          const offAsk = Bus.subscribe(SessionNetwork.Event.Asked, (event) => {
-            void SessionNetwork.reply({ requestID: event.properties.id })
-          })
-          const ask = spyOn(SessionNetwork, "ask")
+          const ask = spyOn(SessionNetwork, "ask").mockImplementation(async () => { throw new Error("聊天恢复不得调用公共网络探测") })
+          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
           const chat = yield* session.create({})
           const parent = yield* session.updateMessage({
@@ -207,15 +205,9 @@ describe("session processor network offline", () => {
           try {
             const result = yield* handle.process(input)
             expect(result).toBe("continue")
-            expect(ask).toHaveBeenCalledTimes(1)
-            // Verify the offline handler was invoked with the correct message
-            const call = ask.mock.calls[0]
-            expect(call[0]).toMatchObject({
-              sessionID: chat.id,
-              message: err.message,
-            })
+            expect(ask).not.toHaveBeenCalled()
           } finally {
-            offAsk()
+            delay.mockRestore()
             ask.mockRestore()
           }
         }),

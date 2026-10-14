@@ -1,6 +1,7 @@
 import type { ModelSelection, Provider } from "../types/messages"
 import { isModelValid } from "./provider-utils"
 import { isInternalModelHidden } from "../utils/internal-model-policy"
+import { internalModelReference } from "../../../src/shared/internal-offline"
 
 function validate(
   providers: Record<string, Provider>,
@@ -9,6 +10,7 @@ function validate(
   internal?: boolean,
 ): ModelSelection | null {
   if (!selection) return null
+  selection = internalModelReference(selection)
   if (isInternalModelHidden({ providerID: selection.providerID, modelID: selection.modelID }, internal)) return null
   if (Object.keys(providers).length === 0) return selection
   return isModelValid(providers, connected, selection, internal) ? selection : null
@@ -37,12 +39,17 @@ export function resolveModelSelection(input: {
   fallback?: ModelSelection | null
   internal?: boolean
 }): ModelSelection | null {
+  // 已选来源被删除后必须重新选择，不能把下一条消息自动发送到另一来源。
+  const explicit = input.override ?? input.mode ?? input.global
+  if (explicit && Object.keys(input.providers).length > 0 && !input.providers[explicit.providerID]) return null
   const fallback = isInternalModelHidden(
     { providerID: input.fallback?.providerID, modelID: input.fallback?.modelID },
     input.internal,
   )
     ? null
     : input.fallback
+      ? internalModelReference(input.fallback)
+      : input.fallback
   return (
     validate(input.providers, input.connected, input.override, input.internal) ??
     validate(input.providers, input.connected, input.mode, input.internal) ??

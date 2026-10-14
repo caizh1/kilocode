@@ -15,10 +15,15 @@ import { MCP } from "../mcp"
 import { zod } from "@opencode-ai/core/effect-zod"
 import { withStatics } from "@opencode-ai/core/schema"
 import z from "zod"
+import { errorCategory, errorChain } from "@opencode-ai/core/chipmate/diagnostics/errors" // chipmate_change
 
 export namespace SessionNetwork {
   const log = Log.create({ service: "session.network" })
   const codes = new Set([
+    "ConnectionRefused",
+    "ConnectionClosed",
+    "FailedToOpenSocket",
+    "EPIPE",
     "ECONNRESET",
     "ECONNREFUSED",
     "ENOTFOUND",
@@ -151,6 +156,9 @@ export namespace SessionNetwork {
   }
 
   export function disconnected(err: unknown) {
+    // 网关的 HTTP 错误和证书错误不等于客户端断网。
+    if (errorChain(err).some((entry) => typeof entry.httpStatus === "number")) return false
+    if (errorCategory(err) === "证书错误" || errorCategory(err) === "用户取消") return false
     for (const item of chain(err)) {
       const match = (item as { code?: unknown })?.code
       if (typeof match === "string" && codes.has(match)) return true

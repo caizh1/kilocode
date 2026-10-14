@@ -9,6 +9,7 @@ import {
 import {
   autocompleteAutomaticLabel,
   autocompleteSelectionLabel,
+  getAutocompleteSelection,
   qwenAutocompleteModels,
 } from "../../webview-ui/src/components/settings/autocomplete-model-selector"
 import {
@@ -31,30 +32,48 @@ afterEach(() => {
 })
 
 describe("autocomplete selection settings", () => {
-  it("keeps Automatic distinct from real Qwen models", () => {
+  it("lists connected compatible models with their real names and IDs", () => {
     const models = qwenAutocompleteModels([
       {
         id: "qwen-coder-30b0",
         name: "Raw model name",
         providerID: "completion",
         providerName: "completion",
+        api: { npm: "@ai-sdk/openai-compatible" },
       },
-    ] as never)
+      { id: "deployment/alpha", name: "Production alias", providerID: "completion", providerName: "completion", api: { npm: "@ai-sdk/openai-compatible" } },
+      { id: "deployment/alpha", name: "Other provider", providerID: "other", providerName: "other", api: { npm: "@ai-sdk/openai-compatible" } },
+      { id: "chat", name: "Wrong API", providerID: "completion", providerName: "completion", api: { npm: "@ai-sdk/openai" } },
+    ] as never, ["completion", "other"])
 
     expect(models).toMatchObject([
       {
         id: "qwen-coder-30b0",
-        name: "Qwen Coder FIM",
+        name: "Raw model name",
         providerID: "completion",
         providerName: "completion",
       },
+      { id: "deployment/alpha", name: "Production alias", providerID: "completion", providerName: "completion" },
+      { id: "deployment/alpha", name: "Other provider", providerID: "other", providerName: "other" },
     ])
     expect(autocompleteAutomaticLabel(true, "qwen-coder-30b0")).toBe("Automatic — Prefer Qwen → Qwen Coder FIM")
     expect(autocompleteAutomaticLabel(true, "mistralai/codestral-2508")).toBe("Automatic — Prefer Qwen → Codestral")
     expect(autocompleteAutomaticLabel(false, "qwen-coder-30b0")).toBe("Automatic — Prefer Qwen")
     expect(autocompleteSelectionLabel(true, "qwen-coder-30b0")).toBe("Automatic → Qwen Coder FIM")
-    expect(autocompleteSelectionLabel(true, "mistralai/codestral-2508")).toBe("Automatic → Codestral")
-    expect(autocompleteSelectionLabel(false, "qwen-coder-30b0")).toBe("Explicit → Qwen Coder FIM")
+    expect(autocompleteSelectionLabel(true, "mistralai/codestral-2508", "chipmate")).toBe("Automatic → Codestral")
+    expect(autocompleteSelectionLabel(false, "qwen-coder-30b0")).toBe("Explicit → Qwen FIM")
+    expect(autocompleteSelectionLabel(false, "codestral-like-alias", "completion")).toBe("Explicit → Qwen FIM")
+  })
+
+  it("preserves an unavailable saved alias instead of showing a builtin model", () => {
+    expect(getAutocompleteSelection("completion", "deployment/removed")).toEqual({
+      providerID: "completion",
+      modelID: "deployment/removed",
+    })
+    expect(getAutocompleteSelection("other", "qwen-coder-30b0")).toEqual({
+      providerID: "other",
+      modelID: "qwen-coder-30b0",
+    })
   })
 
   it("writes an explicit provider/model pair to the existing workspace-folder scope", async () => {
@@ -113,12 +132,21 @@ describe("autocomplete selection settings", () => {
     expect(ctx.data.get(QWEN_DEFAULT_STATE)).toBe(true)
   })
 
-  it("switches to Automatic only when the removed Provider is selected", async () => {
+  it("keeps an explicit model selected when its Provider is removed", async () => {
     const cfg = config("global", { provider: "qwen", model: "qwen-coder-30b0" })
     const ctx = context([[QWEN_DEFAULT_STATE, false]])
 
     expect(await resetAutocompleteAfterProviderRemoval(ctx.value, "other")).toBe(false)
     expect(cfg.updates).toEqual([])
+    expect(await resetAutocompleteAfterProviderRemoval(ctx.value, "qwen")).toBe(false)
+    expect(cfg.values).toEqual({ provider: "qwen", model: "qwen-coder-30b0" })
+    expect(ctx.data.get(QWEN_DEFAULT_STATE)).toBe(false)
+  })
+
+  it("switches an automatic selection when its Provider is removed", async () => {
+    const cfg = config("global", { provider: "qwen", model: "qwen-coder-30b0" })
+    const ctx = context([[QWEN_DEFAULT_STATE, true]])
+
     expect(await resetAutocompleteAfterProviderRemoval(ctx.value, "qwen")).toBe(true)
     expect(cfg.values).toEqual({})
     expect(ctx.data.get(QWEN_DEFAULT_STATE)).toBe(true)

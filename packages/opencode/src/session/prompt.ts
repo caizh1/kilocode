@@ -1154,13 +1154,20 @@ export const layer = Layer.effect(
                   })
                   if (result.attachments?.length) {
                     pieces.push(
-                      ...result.attachments.map((a) => ({
-                        ...a,
-                        synthetic: true,
-                        filename: a.filename ?? part.filename,
-                        messageID: info.id,
-                        sessionID: input.sessionID,
-                      })),
+                      // chipmate_change start - referenced images use the same validation as pasted images
+                      ...(yield* Effect.forEach(result.attachments, (a) => {
+                        const attachment: SessionV1.FilePart = {
+                          ...a,
+                          id: PartID.ascending(),
+                          filename: a.filename ?? part.filename,
+                          messageID: info.id,
+                          sessionID: input.sessionID,
+                        }
+                        return a.mime.startsWith("image/")
+                          ? image.normalize(attachment).pipe(Effect.orDie)
+                          : Effect.succeed(attachment)
+                      })).map((attachment) => ({ ...attachment, synthetic: true })),
+                      // chipmate_change end
                     )
                   } else {
                     pieces.push({ ...part, mime, messageID: info.id, sessionID: input.sessionID })
@@ -1672,7 +1679,8 @@ export const layer = Layer.effect(
               })
             : false
         // chipmate_change end
-        if (reportedTriggered && lastFinished) { // chipmate_change
+        if (reportedTriggered && lastFinished) {
+          // chipmate_change
           // chipmate_change start
           const guard = ChipMateSessionPrompt.guardCompactionAttempt({
             sessionID,
@@ -2096,7 +2104,10 @@ export const layer = Layer.effect(
         state.ensureRunning(
           input.sessionID,
           lastAssistant(input.sessionID).pipe(Effect.orDie),
-          runLoop(input).pipe(Effect.onExit((exit) => changes.complete(input.sessionID, exit, closeReasons.get(input.sessionID))), Effect.orDie), // chipmate_change
+          runLoop(input).pipe(
+            Effect.onExit((exit) => changes.complete(input.sessionID, exit, closeReasons.get(input.sessionID))),
+            Effect.orDie,
+          ), // chipmate_change
         ), // chipmate_change
         Effect.fnUntraced(function* (exit) {
           yield* ChipMateSession.publishTurnClose({
@@ -2187,22 +2198,30 @@ export const layer = Layer.effect(
             const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined
             if (code !== "ENOENT") {
               const error = new NamedError.Unknown({ message: "Unreadable Claude transcript directory" })
-              yield* events.publish(Session.Event.Error, { sessionID: input.cmdInput.sessionID, error: error.toObject() })
+              yield* events.publish(Session.Event.Error, {
+                sessionID: input.cmdInput.sessionID,
+                error: error.toObject(),
+              })
               return yield* Effect.fail(error)
             }
           }
         }
-        const codexExit = input.format === "codex"
-          ? yield* Effect.exit(Effect.promise(() => SessionResume.discoverCodex({ cwd, ...roots })))
-          : undefined
-        const codexFiles = (codexExit && Exit.isSuccess(codexExit)) ? codexExit.value : []
+        const codexExit =
+          input.format === "codex"
+            ? yield* Effect.exit(Effect.promise(() => SessionResume.discoverCodex({ cwd, ...roots })))
+            : undefined
+        const codexFiles = codexExit && Exit.isSuccess(codexExit) ? codexExit.value : []
 
         type Entry = { id: string; format: SessionResume.Format; mtime?: number }
         const entries: Entry[] = []
         for (const f of claudeFiles) {
           const id = path.basename(f, ".jsonl")
           let mtime: number | undefined
-          try { mtime = fs.statSync(f).mtimeMs } catch { mtime = undefined }
+          try {
+            mtime = fs.statSync(f).mtimeMs
+          } catch {
+            mtime = undefined
+          }
           entries.push({ id, format: "claude", mtime })
         }
         for (const f of codexFiles) {
@@ -2211,13 +2230,18 @@ export const layer = Layer.effect(
           const raw = base.slice("rollout-".length)
           const id = raw.split("-").slice(-5).join("-")
           let mtime: number | undefined
-          try { mtime = fs.statSync(f).mtimeMs } catch { mtime = undefined }
+          try {
+            mtime = fs.statSync(f).mtimeMs
+          } catch {
+            mtime = undefined
+          }
           entries.push({ id, format: "codex", mtime })
         }
 
         if (entries.length === 0) {
           const error = new NamedError.Unknown({
-            message: "No session transcripts found in the current directory. Use /resume-claude <uuid> or /resume-codex <uuid> with an explicit UUID.",
+            message:
+              "No session transcripts found in the current directory. Use /resume-claude <uuid> or /resume-codex <uuid> with an explicit UUID.",
           })
           yield* events.publish(Session.Event.Error, { sessionID: input.cmdInput.sessionID, error: error.toObject() })
           return yield* Effect.fail(error)
@@ -2274,9 +2298,10 @@ export const layer = Layer.effect(
 
       // Discover and parse
       const cwd = ctx.directory
-      const codexExit = input.format === "codex"
-        ? yield* Effect.exit(Effect.promise(() => SessionResume.discoverCodex({ cwd, id: uuid, ...roots })))
-        : undefined
+      const codexExit =
+        input.format === "codex"
+          ? yield* Effect.exit(Effect.promise(() => SessionResume.discoverCodex({ cwd, id: uuid, ...roots })))
+          : undefined
       let file: string | undefined
       if (input.format === "claude") {
         try {
@@ -2365,9 +2390,12 @@ export const layer = Layer.effect(
         const newID = MessageID.ascending()
         idMap.set(item.info.id as string, newID)
 
-        const parentID = item.info.role === "assistant"
-          ? (typeof item.info.parentID === "string" ? idMap.get(item.info.parentID) : undefined)
-          : undefined
+        const parentID =
+          item.info.role === "assistant"
+            ? typeof item.info.parentID === "string"
+              ? idMap.get(item.info.parentID)
+              : undefined
+            : undefined
 
         const info = {
           ...item.info,

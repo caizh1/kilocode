@@ -157,6 +157,40 @@ describe("autocomplete coordinator", () => {
     expect(logs).toContain("[Autocomplete] Selected Qwen Provider is temporarily unavailable")
   })
 
+  it("resolves an explicit deployment alias without rewriting it", async () => {
+    const alias = { providerID: "completion", modelID: "deployment/alpha" }
+    const cfg = config(alias)
+    const ctx = context([["chipmate.v2.autocomplete.qwenDefault", false]])
+    const seen: unknown[] = []
+    const coordinator = new Coordinator(ctx.value, {} as never, {
+      qwen: async (providerID, _directory, modelID) => {
+        seen.push([providerID, modelID])
+        return alias
+      },
+      manager: () => manager().value,
+    })
+
+    coordinator.schedule()
+    await coordinator.flush()
+    expect(seen).toEqual([["completion", "deployment/alpha"]])
+    expect(cfg.updates).toEqual([])
+    expect(cfg.values).toEqual({ provider: "completion", model: "deployment/alpha" })
+  })
+
+  it("does not migrate an explicitly selected legacy-looking deployment ID", async () => {
+    const alias = { providerID: "qwen", modelID: "qwen3-coder-30b0" }
+    const cfg = config(alias)
+    const ctx = context([["chipmate.v2.autocomplete.qwenDefault", false]])
+    const coordinator = new Coordinator(ctx.value, {} as never, {
+      qwen: async () => alias,
+      manager: () => manager().value,
+    })
+    coordinator.schedule()
+    await coordinator.flush()
+    expect(cfg.values.model).toBe(alias.modelID)
+    expect(cfg.updates).toEqual([])
+  })
+
   it("migrates the incorrect 0.0.48 and 0.0.49 Qwen model without changing the provider", async () => {
     const cfg = config({ providerID: "qwen", modelID: "qwen3-coder-30b0" })
     const ctx = context([["chipmate.v2.autocomplete.qwenDefault", true]])

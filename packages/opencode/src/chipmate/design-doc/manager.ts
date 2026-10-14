@@ -154,10 +154,7 @@ export namespace DesignDocManager {
       const config = yield* Effect.try({
         try: () => configFor(input, targetPath),
         catch: (error) =>
-          new DesignDocManagerError(
-            "UNSUPPORTED_CONFIG",
-            error instanceof Error ? error.message : String(error),
-          ),
+          new DesignDocManagerError("UNSUPPORTED_CONFIG", error instanceof Error ? error.message : String(error)),
       })
       const content = config.artifactTypes.filter((artifactType) => artifactType !== "review")
       if (!content.length) return yield* Effect.fail(new Error("至少选择一个 review 以外的设计产物"))
@@ -382,12 +379,20 @@ function configFor(input: CreateJobInput, targetPath: string): JobConfig {
     throw new Error("product-detailed-design-v2 不允许自动切换模型")
   }
   const requested = product
-    ? (["product-section", "overview", "business-flow", "execution-flow", "lifecycle", "data-flow", "review"] satisfies ArtifactType[])
+    ? ([
+        "product-section",
+        "overview",
+        "business-flow",
+        "execution-flow",
+        "lifecycle",
+        "data-flow",
+        "review",
+      ] satisfies ArtifactType[])
     : full
-    ? (["overview", "review"] satisfies ArtifactType[])
-    : input.artifactTypes?.length
-      ? input.artifactTypes
-      : [input.artifactType ?? "lifecycle"]
+      ? (["overview", "review"] satisfies ArtifactType[])
+      : input.artifactTypes?.length
+        ? input.artifactTypes
+        : [input.artifactType ?? "lifecycle"]
   return {
     targetPath,
     artifactTypes: [...new Set(requested)],
@@ -944,11 +949,7 @@ export function planEvidenceScopes(
   return bins.map((item) => item.scope)
 }
 
-function planProductSectionScopes(
-  extraction: DesignDocExtraction,
-  config: JobConfig,
-  purpose?: WorkItem["purpose"],
-) {
+function planProductSectionScopes(extraction: DesignDocExtraction, config: JobConfig, purpose?: WorkItem["purpose"]) {
   if (purpose?.kind !== "product-section") return []
   if (
     ![
@@ -966,9 +967,7 @@ function planProductSectionScopes(
       extraction.evidence
         .filter(
           (item) =>
-            item.confidence === "explicit" &&
-            typeof item.source.symbol === "string" &&
-            item.source.symbol.length > 0,
+            item.confidence === "explicit" && typeof item.source.symbol === "string" && item.source.symbol.length > 0,
         )
         .map((item) => item.source.symbol!),
     ),
@@ -1753,10 +1752,9 @@ function runJob(
     if (!packResult.ok) {
       if (packResult.error instanceof EvidenceBudgetError && !currentItem.evidenceScope) {
         const planned = planEvidenceScopes(artifactType, extractionResult.value, job.config, item.purpose)
-        const scopes =
-          isDocumentProfile(job.config.documentProfile)
-            ? selectDocumentScopes(module, artifactType, planned)
-            : planned
+        const scopes = isDocumentProfile(job.config.documentProfile)
+          ? selectDocumentScopes(module, artifactType, planned)
+          : planned
         if (scopes.length) {
           yield* replaceWithScopedWorkItems(workspace, jobID, item.id, scopes)
           yield* runJob(workspace, jobID, sourceRestarts)
@@ -2796,12 +2794,15 @@ function ensureRecovered(workspace: string) {
         }
         continue
       }
+      // 列表刷新只能恢复进程中断，不能复活终态或重置模型失败的重试预算。
+      if (["cancelled", "failed", "blocked", "paused"].includes(job.status)) continue
       if (hasModelUnavailableFailure(job)) {
         const unavailable = yield* modelAvailabilityIssue(provider, job)
-        if (unavailable) continue
-        job = yield* recoverModelUnavailableWorkItems(workspace, job.id)
+        if (unavailable) {
+          yield* blockInfrastructure(workspace, job.id, unavailable)
+          continue
+        }
       }
-      if (["cancelled", "failed", "blocked", "paused"].includes(job.status)) continue
       if (running.has(job.id)) continue
       const release = yield* Effect.promise(() => DesignDocStore.acquireRunLease(workspace, job.id))
       if (!release) continue
@@ -2826,28 +2827,24 @@ function ensureRecovered(workspace: string) {
 }
 
 function modelAvailabilityIssue(provider: Provider.Interface, job: DesignDocJob) {
-  if (job.config.documentProfile !== "product-detailed-design-v2") return Effect.succeed(undefined)
+  if (job.config.documentProfile !== "product-detailed-design-v2" && !hasModelUnavailableFailure(job))
+    return Effect.succeed(undefined)
   const model = job.config.modelPolicy.primary
-  return provider
-    .getModel(ProviderV2.ID.make(model.providerID), ModelV2.ID.make(model.modelID))
-    .pipe(
-      Effect.match({
-        onFailure: () =>
-          issue(
-            "MODEL_UNAVAILABLE",
-            `模型 ${model.providerID}/${model.modelID} 当前不可用，请检查 Provider 配置后恢复任务`,
-            false,
-          ),
-        onSuccess: () => undefined,
-      }),
-    )
+  return provider.getModel(ProviderV2.ID.make(model.providerID), ModelV2.ID.make(model.modelID)).pipe(
+    Effect.match({
+      onFailure: () =>
+        issue(
+          "MODEL_UNAVAILABLE",
+          `模型 ${model.providerID}/${model.modelID} 当前不可用，请检查 Provider 配置后恢复任务`,
+          false,
+        ),
+      onSuccess: () => undefined,
+    }),
+  )
 }
 
 function hasModelUnavailableFailure(job: DesignDocJob) {
-  return (
-    isModelUnavailableIssue(job.lastError) ||
-    job.workItems.some((item) => isModelUnavailableIssue(item.failure))
-  )
+  return isModelUnavailableIssue(job.lastError) || job.workItems.some((item) => isModelUnavailableIssue(item.failure))
 }
 
 function isModelUnavailableIssue(value?: ValidationIssue) {
@@ -2878,6 +2875,7 @@ function recoverModelUnavailableWorkItems(workspace: string, jobID: string) {
     workspace,
     jobID,
     (job) => {
+      if (job.status === "cancelled" || job.status === "completed") return job
       const globallyUnavailable = isModelUnavailableIssue(job.lastError)
       job.status = "discovering"
       if (globallyUnavailable) delete job.lastError

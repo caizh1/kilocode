@@ -16,6 +16,12 @@ import {
 import { autocompleteResource } from "../autocomplete/workspace"
 import type { Coexistence } from "../../chipmate/coexistence"
 
+const registrations = new Set<QwenAutocompleteRegistration>()
+
+export function refreshQwenAutocompleteProviders(): void {
+  for (const registration of registrations) registration.refresh()
+}
+
 export function registerQwenAutocompleteProvider(
   context: vscode.ExtensionContext,
   connection: ChipMateConnectionService,
@@ -44,11 +50,13 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
   private readonly watcher: vscode.Disposable
   private readonly selection: vscode.Disposable
   private readonly coexistence: vscode.Disposable
+  private readonly connectionListener: vscode.Disposable
   private readonly gate: Pick<Coexistence, "autocomplete">
   private edited = false
   private opened = false
   private imports = false
   private root = false
+  private target = ""
 
   constructor(context: vscode.ExtensionContext, connection: ChipMateConnectionService, gate?: Coexistence) {
     this.connection = connection
@@ -62,23 +70,33 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
     })
     this.selection = onDidUpdateAutocompleteSelection(() => this.sync()) ?? { dispose: () => undefined }
     this.coexistence = gate?.onDidChangeAutocomplete(() => this.sync()) ?? { dispose: () => undefined }
+    this.connectionListener = { dispose: connection.onStateChange(() => this.sync()) }
+    registrations.add(this)
     this.sync()
   }
 
   dispose(): void {
+    registrations.delete(this)
     this.disposeProvider()
     this.watcher.dispose()
     this.selection.dispose()
     this.coexistence.dispose()
+    this.connectionListener.dispose()
+  }
+
+  refresh(): void {
+    this.disposeProvider()
+    this.sync()
   }
 
   private sync(): void {
-    if (!this.gate.autocomplete()) {
+    if (!this.gate.autocomplete() || this.connection.getConnectionState() !== "connected") {
       this.disposeProvider()
       return
     }
     const cfg = readQwenAutocompleteConfig(autocompleteResource())
     const enabled = qwenAutocompleteEnabled(cfg)
+    const target = `${cfg.providerID}\u0000${cfg.model}`
     const edited = enabled && cfg.recentlyEditedEnabled
     const opened = enabled && cfg.recentlyOpenedEnabled
     const imports = enabled && cfg.importDefinitionsEnabled
@@ -86,6 +104,7 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
     if (
       enabled &&
       this.provider &&
+      this.target === target &&
       this.edited === edited &&
       this.opened === opened &&
       this.imports === imports &&
@@ -109,6 +128,7 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
         origin: this.origin,
       })
       this.registration = vscode.languages.registerInlineCompletionItemProvider(QWEN_DOCUMENT_SELECTOR, this.provider)
+      this.target = target
       this.edited = edited
       this.opened = opened
       this.imports = imports
@@ -126,5 +146,6 @@ export class QwenAutocompleteRegistration implements vscode.Disposable {
     this.opened = false
     this.imports = false
     this.root = false
+    this.target = ""
   }
 }

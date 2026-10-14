@@ -3,7 +3,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { NamedError } from "@opencode-ai/core/util/error"
 import { APICallError } from "ai"
-import { setTimeout as sleep } from "node:timers/promises"
+import { createServer } from "node:http" // chipmate_change
 import { Effect, Schedule, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { SessionRetry } from "../../src/session/retry"
@@ -277,27 +277,20 @@ describe("session.message-v2.fromError", () => {
   test.concurrent(
     "converts ECONNRESET socket errors to retryable APIError",
     async () => {
-      using server = Bun.serve({
-        port: 0,
-        idleTimeout: 8,
-        async fetch(_req) {
-          return new Response(
-            new ReadableStream({
-              async pull(controller) {
-                controller.enqueue("Hello,")
-                await sleep(10000)
-                controller.enqueue(" World!")
-                controller.close()
-              },
-            }),
-            { headers: { "Content-Type": "text/plain" } },
-          )
-        },
+      // chipmate_change start - 使用确定性真实断流，避免依赖 Bun 空闲计时器和本机 localhost 代理配置
+      const server = createServer((req, res) => {
+        res.writeHead(200, { "Content-Type": "text/plain" })
+        res.write("已接收的响应片段")
+        setTimeout(() => req.socket.destroy(), 20)
       })
-
-      const error = await fetch(new URL("/", server.url.origin))
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("未获取本地故障注入端口")
+      const error = await fetch(`http://127.0.0.1:${address.port}`)
         .then((res) => res.text())
         .catch((e) => e)
+        .finally(() => server.close())
+      // chipmate_change end
 
       const result = MessageV2.fromError(error, { providerID })
 

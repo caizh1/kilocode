@@ -39,9 +39,7 @@ function args(form: FormState) {
 
 describe("validateCustomProvider – variant name validation", () => {
   it("creates one editable model row for every selected discovered model", () => {
-    const current = [
-      { id: "", name: "", reasoning: false, supportsImages: false, modalities: {}, variants: [] },
-    ]
+    const current = [{ id: "", name: "", reasoning: false, supportsImages: false, modalities: {}, variants: [] }]
     const discovered = [
       { id: "glm-5.2", name: "GLM 5.2" },
       { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
@@ -106,6 +104,14 @@ describe("validateCustomProvider – variant name validation", () => {
     expect(validateCustomProvider(args(form)).result?.config.models).toEqual({
       "deepseek-v4-flash": { name: "DeepSeek V4 Flash", reasoning: true },
       "qwen-coder-30b0": { name: "Qwen Coder 30B" },
+    })
+  })
+
+  it("preserves a deployment ID even when it begins with the provider ID", () => {
+    const form = base()
+    form.models = [createAutocompleteModel("my-provider/deployment", "Production FIM")]
+    expect(validateCustomProvider(args(form)).result?.config.models).toEqual({
+      "my-provider/deployment": { name: "Production FIM" },
     })
   })
 
@@ -226,6 +232,40 @@ describe("validateCustomProvider – variant name validation", () => {
 
     expect(out.result).toBeDefined()
     expect(out.errors.apiKey).toBeUndefined()
+  })
+
+  for (const address of [undefined, "", "http://", "https//old.example/v1"]) {
+    it(`旧地址无效时必须重新填写凭据：${String(address)}`, () => {
+      const input = {
+        ...args(base()),
+        editing: true,
+        existingBaseURL: address,
+        existingHasCredential: true,
+        apiKeyChanged: false,
+      }
+      const rejected = validateCustomProvider(input)
+      expect(rejected.result).toBeUndefined()
+      expect(rejected.errors.apiKey).toBe("provider.custom.error.apiKey.originChanged")
+
+      for (const apiKey of ["qa-new", "{env:QA_NEW_KEY}"]) {
+        const accepted = validateCustomProvider({ ...input, form: { ...input.form, apiKey }, apiKeyChanged: true })
+        expect(accepted.result).toBeDefined()
+      }
+      expect(validateCustomProvider({ ...input, existingHasCredential: false }).result).toBeDefined()
+    })
+  }
+
+  it("密钥框明确清空时不恢复旧环境变量，未编辑时仍保留", () => {
+    for (const changed of [false, true]) {
+      const out = validateCustomProvider({
+        ...args(base()),
+        editing: true,
+        existingEnv: ["QA_OLD_KEY"],
+        apiKeyChanged: changed,
+      })
+      expect(out.result).toBeDefined()
+      expect(out.result?.config.env).toEqual(changed ? undefined : ["QA_OLD_KEY"])
+    }
   })
 
   it("accepts a new API key or environment credential for a different origin", () => {

@@ -26,7 +26,14 @@ import * as CrossSpawnSpawner from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
 
 const node = AppNodeBuilder.build(CrossSpawnSpawner.node)
-const it = testEffect(Layer.mergeAll(AppNodeBuilder.build(Agent.node), AppNodeBuilder.build(ToolRegistry.node), node))
+const it = testEffect(
+  Layer.mergeAll(
+    AppNodeBuilder.build(Agent.node),
+    AppNodeBuilder.build(ToolRegistry.node),
+    AppNodeBuilder.build(Config.node),
+    node,
+  ),
+)
 const ref = {
   providerID: ProviderV2.ID.make("test"),
   modelID: ModelV2.ID.make("test-model"),
@@ -108,7 +115,9 @@ describe("chipmate tool registry indexing", () => {
       () =>
         Effect.gen(function* () {
           const err = new Error("ready rejected")
-          const ready = spyOn(ChipMateIndexing, "ready").mockImplementation(() => Promise.reject(err) as unknown as boolean)
+          const ready = spyOn(ChipMateIndexing, "ready").mockImplementation(
+            () => Promise.reject(err) as unknown as boolean,
+          )
           const warn = spyOn(logger, "warn").mockImplementation(() => {})
 
           try {
@@ -153,7 +162,7 @@ describe("chipmate tool registry indexing", () => {
             documentReady.mockRestore()
           }
         }),
-      { git: true, config: { indexing: { enabled: true } } },
+      { git: true, config: { indexing: { enabled: true, documents: { enabled: true } } } },
     ),
   )
 
@@ -217,7 +226,7 @@ describe("chipmate tool registry indexing", () => {
             documentReady.mockRestore()
           }
         }),
-      { git: true, config: { indexing: { enabled: true } } },
+      { git: true, config: { indexing: { enabled: true, documents: { enabled: true } } } },
     ),
   )
 
@@ -360,6 +369,30 @@ describe("chipmate tool registry indexing", () => {
     ),
   )
 
+  it.live("QA-021 同一工具注册实例热启用及关闭文档检索", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const registry = yield* ToolRegistry.Service
+          const config = yield* Config.Service
+          expect(yield* registry.ids()).not.toContain("document_search")
+          yield* config.update({ indexing: { documents: { enabled: true } } })
+          expect(yield* registry.ids()).toContain("document_search")
+          const agent = yield* Agent.Service
+          const build = yield* agent.get("build")
+          const tools = yield* registry.tools({ ...ref, agent: build })
+          expect(tools.some((tool) => tool.id === "document_search")).toBe(true)
+          expect(tools.find((tool) => tool.id === "glob")?.description).toContain("document_search")
+          yield* config.update({ indexing: { documents: { enabled: false } } })
+          expect(yield* registry.ids()).not.toContain("document_search")
+          expect(
+            (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === "glob")?.description,
+          ).not.toContain("document_search")
+        }),
+      { git: true },
+    ),
+  )
+
   test("conditionally includes ChipMate registry extras", () => {
     const prev = process.env["CHIPMATE_CLIENT"]
     const def = (id: string): Tool.Def => ({
@@ -445,39 +478,39 @@ describe("chipmate tool registry indexing", () => {
         "notify_user",
         "send_file",
       ])
-      expect(ChipMateToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
-        [
-          "codebase_search",
-          "codebase_analysis",
-          "semantic_search",
-          "document_search",
-          "declare_artifact",
-          "list_artifacts",
-          "open_artifact",
-          "export_artifact_diagnostics",
-          "create_word_document",
-          "inspect_word_document",
-          "validate_word_document",
-          "apply_word_document_edits",
-          "apply_word_template_styles",
-          "materialize_word_fields",
-          "merge_word_documents",
-          "diff_word_documents",
-          "normalize_word_table_spec",
-          "render_word_document",
-          "validate_mermaid_diagram",
-          "render_mermaid_diagram",
-          "save_mermaid_artifact",
-          "insert_mermaid_into_word",
-          "chipmate_memory_recall",
-          "chipmate_memory_save",
-          "recall",
-          "background_process",
-          "interactive_terminal",
-          "notify_user",
-          "send_file",
-        ],
-      )
+      expect(
+        ChipMateToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id),
+      ).toEqual([
+        "codebase_search",
+        "codebase_analysis",
+        "semantic_search",
+        "document_search",
+        "declare_artifact",
+        "list_artifacts",
+        "open_artifact",
+        "export_artifact_diagnostics",
+        "create_word_document",
+        "inspect_word_document",
+        "validate_word_document",
+        "apply_word_document_edits",
+        "apply_word_template_styles",
+        "materialize_word_fields",
+        "merge_word_documents",
+        "diff_word_documents",
+        "normalize_word_table_spec",
+        "render_word_document",
+        "validate_mermaid_diagram",
+        "render_mermaid_diagram",
+        "save_mermaid_artifact",
+        "insert_mermaid_into_word",
+        "chipmate_memory_recall",
+        "chipmate_memory_save",
+        "recall",
+        "background_process",
+        "interactive_terminal",
+        "notify_user",
+        "send_file",
+      ])
       expect(
         ChipMateToolRegistry.extra(tools, { experimental: { codebase_search: true, image_generation: true } }).map(
           (tool) => tool.id,
@@ -516,41 +549,41 @@ describe("chipmate tool registry indexing", () => {
       ])
 
       process.env["CHIPMATE_CLIENT"] = "vscode"
-      expect(ChipMateToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id)).toEqual(
-        [
-          "codebase_search",
-          "codebase_analysis",
-          "semantic_search",
-          "document_search",
-          "declare_artifact",
-          "list_artifacts",
-          "open_artifact",
-          "export_artifact_diagnostics",
-          "create_word_document",
-          "inspect_word_document",
-          "validate_word_document",
-          "apply_word_document_edits",
-          "apply_word_template_styles",
-          "materialize_word_fields",
-          "merge_word_documents",
-          "diff_word_documents",
-          "normalize_word_table_spec",
-          "render_word_document",
-          "validate_mermaid_diagram",
-          "render_mermaid_diagram",
-          "save_mermaid_artifact",
-          "insert_mermaid_into_word",
-          "chipmate_memory_recall",
-          "chipmate_memory_save",
-          "recall",
-          "chart",
-          "background_process",
-          "agent_manager_models",
-          "agent_manager",
-          "notify_user",
-          "send_file",
-        ],
-      )
+      expect(
+        ChipMateToolRegistry.extra(tools, { experimental: { codebase_search: true } }).map((tool) => tool.id),
+      ).toEqual([
+        "codebase_search",
+        "codebase_analysis",
+        "semantic_search",
+        "document_search",
+        "declare_artifact",
+        "list_artifacts",
+        "open_artifact",
+        "export_artifact_diagnostics",
+        "create_word_document",
+        "inspect_word_document",
+        "validate_word_document",
+        "apply_word_document_edits",
+        "apply_word_template_styles",
+        "materialize_word_fields",
+        "merge_word_documents",
+        "diff_word_documents",
+        "normalize_word_table_spec",
+        "render_word_document",
+        "validate_mermaid_diagram",
+        "render_mermaid_diagram",
+        "save_mermaid_artifact",
+        "insert_mermaid_into_word",
+        "chipmate_memory_recall",
+        "chipmate_memory_save",
+        "recall",
+        "chart",
+        "background_process",
+        "agent_manager_models",
+        "agent_manager",
+        "notify_user",
+        "send_file",
+      ])
       expect(
         ChipMateToolRegistry.extra(tools, {
           experimental: { codebase_search: true, native_notebook_tools: true },
@@ -836,8 +869,8 @@ describe("chipmate tool registry indexing", () => {
     }
 
     const publicTools = await Effect.runPromise(ChipMateToolRegistry.resolve(tools, source, false))
-    expect(publicTools).toBe(tools)
-    expect(state.reads).toBe(0)
+    expect(publicTools.map((tool) => tool.id)).not.toContain("document_search")
+    expect(state.reads).toBe(2)
 
     const enabled = await Effect.runPromise(ChipMateToolRegistry.resolve(tools, source, true))
     expect(enabled.map((tool) => tool.id)).toEqual([

@@ -2,8 +2,23 @@ declare const __CHIPMATE_INTERNAL_OFFLINE__: boolean
 declare const __CHIPMATE_INTERNAL_INDEXING_OPENAI_COMPATIBLE_BASE_URL__: string | undefined
 declare const __CHIPMATE_INTERNAL_PROVIDER_API_BASE_URL__: string | undefined
 declare const __CHIPMATE_INTERNAL_PROVIDER_CHAT_MODEL__: string | undefined
+declare const __CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS__: string | undefined
 
 import { QWEN_FIM_MODEL_ID } from "./qwen-autocomplete"
+import {
+  parseModelReplacements,
+  replaceModelReference,
+  type ModelReference,
+} from "@opencode-ai/core/chipmate/model-replacements"
+
+export function internalModelReplacements(enabled = isInternalOfflineBuild()) {
+  if (!enabled || typeof __CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS__ === "undefined") return undefined
+  return parseModelReplacements(__CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS__)
+}
+
+export function internalModelReference<T extends ModelReference>(ref: T): T {
+  return replaceModelReference(ref, internalModelReplacements())
+}
 
 export const INTERNAL_OFFLINE_CONTEXT = "chipmate.v2.internalOffline"
 
@@ -41,6 +56,9 @@ export function internalOfflineEnv(
     CHIPMATE_INTERNAL_OFFLINE: "1",
     CHIPMATE_DISABLE_MODELS_FETCH: "1",
     ...(config ? { CHIPMATE_INTERNAL_PROVIDER_DEFAULTS: config } : {}),
+    ...(internalModelReplacements(enabled)
+      ? { CHIPMATE_INTERNAL_PROVIDER_MODEL_REPLACEMENTS: JSON.stringify(internalModelReplacements(enabled)) }
+      : {}),
   }
 }
 

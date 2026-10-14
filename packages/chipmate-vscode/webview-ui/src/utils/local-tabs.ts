@@ -67,11 +67,8 @@ export function restoreTabs(
   ids: string[] | undefined,
   active: string | undefined,
   pending: PendingTabFactory,
-  check: PendingTabCheck = isPendingTab,
 ): LocalTabState {
-  const tabs = ids?.filter((id) => !check(id)) ?? []
-  const tab = active && !check(active) ? active : undefined
-  return normalize(tabs, tab, pending)
+  return normalize(ids ?? [], active, pending)
 }
 
 // New composers become active immediately even before the backend creates a session.

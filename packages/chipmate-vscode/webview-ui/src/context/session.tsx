@@ -345,6 +345,7 @@ export const SessionProvider: ParentComponent = (props) => {
   const [submissionMap, setSubmissionMap] = createStore<Record<string, number>>({})
   const pendingSubmissions = new Map<string, string>()
   const aborts = createAbortState()
+  const stoppedPrompts = new Set<string>()
 
   const idle: SessionStatusInfo = { type: "idle" }
 
@@ -1753,6 +1754,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function handlePermissionRequest(permission: PermissionRequest) {
+    if (aborts.has(permission.sessionID) || stoppedPrompts.has(permission.id)) return
     setPermissions((prev) => upsertPermission(prev, permission))
   }
 
@@ -1784,6 +1786,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function handleQuestionRequest(question: QuestionRequest) {
+    if (aborts.has(question.sessionID) || stoppedPrompts.has(question.id)) return
     setQuestions((prev) => {
       const idx = prev.findIndex((q) => q.id === question.id)
       if (idx === -1) return [...prev, question]
@@ -2453,6 +2456,13 @@ export const SessionProvider: ParentComponent = (props) => {
     }
     const messageID = [...pendingSubmissions].reverse().find(([, sid]) => sid === scope)?.[0]
     if (!aborts.request(scope, status(), messageID) || !sessionID) return
+    const family = sessionFamily(sessionID)
+    for (const prompt of [...permissions(), ...questions()]) {
+      if (family.has(prompt.sessionID)) stoppedPrompts.add(prompt.id)
+    }
+    while (stoppedPrompts.size > 4096) stoppedPrompts.delete(stoppedPrompts.values().next().value!)
+    setPermissions((pending) => pending.filter((permission) => !family.has(permission.sessionID)))
+    setQuestions((pending) => pending.filter((question) => !family.has(question.sessionID)))
 
     vscode.postMessage({
       type: "abort",

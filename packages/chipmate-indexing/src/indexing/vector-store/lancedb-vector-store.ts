@@ -414,6 +414,7 @@ export class LanceDBVectorStore implements IVectorStore {
       let rebuildReason: string | undefined
 
       if (!vectorTableExists) {
+        if (metadataTableExists) await native(() => db.dropTable(this.metadataTableName))
         await this._createVectorTable(db)
         await this._createMetadataTable(db)
         this.setDecision({ action: "rebuild", reason: "missing vector table", created: true })

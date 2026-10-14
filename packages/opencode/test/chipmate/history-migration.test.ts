@@ -289,7 +289,10 @@ describe("ChipMate 聊天历史统一迁移", () => {
     const sanitized = new Database(snapshot, { readonly: true })
     expect(
       sanitized
-        .query<{ count: number }, []>("SELECT count(*) count FROM sqlite_master WHERE type='table' AND name='credential'")
+        .query<
+          { count: number },
+          []
+        >("SELECT count(*) count FROM sqlite_master WHERE type='table' AND name='credential'")
         .get()?.count,
     ).toBe(0)
     sanitized.close()
@@ -345,4 +348,56 @@ describe("ChipMate 聊天历史统一迁移", () => {
     ).toBe(1)
     target.close()
   })
+})
+
+test("QA-016 损坏的消息片段拒绝整棵会话，保留目标库既有历史", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "chipmate-损坏历史-"))
+  cleanup.push(root)
+  const old = await database(path.join(root, "kilo.db"))
+  seed(old, "broken", "损坏片段")
+  old
+    .query("UPDATE part SET data=?")
+    .run(JSON.stringify({ type: "text", text: "损坏片段", time: { start: "不是时间戳" } }))
+  old.close()
+  const target = await database(path.join(root, "chipmate.db"))
+  seed(target, "original", "既有历史")
+  target.close()
+  const result = await ChatHistoryMigration.migrate({ data: root })
+  expect(result.imported).toBe(0)
+  expect(result.failed).toBe(1)
+  const actual = new Database(path.join(root, "chipmate.db"))
+  expect(actual.query("SELECT id FROM session").all()).toEqual([{ id: "ses_testoriginal" }])
+  expect(actual.query("SELECT json_extract(data,'$.text') text FROM part").all()).toEqual([{ text: "既有历史" }])
+  actual.close()
+})
+
+test("QA-013 缺少时间字段的旧 JSON 重复导入保持幂等", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "chipmate-旧版幂等-"))
+  cleanup.push(root)
+  const files = {
+    "project/pro_legacy.json": { id: "pro_legacy", worktree: "/测试", sandboxes: [] },
+    "session/pro_legacy/ses_legacy.json": {
+      id: "ses_legacy",
+      projectID: "pro_legacy",
+      directory: "/测试",
+      title: "无时间旧会话",
+      version: "1.0.0",
+    },
+    "message/ses_legacy/msg_legacy.json": { id: "msg_legacy", sessionID: "ses_legacy", role: "user" },
+    "part/msg_legacy/prt_legacy.json": {
+      id: "prt_legacy",
+      sessionID: "ses_legacy",
+      messageID: "msg_legacy",
+      type: "text",
+      text: "旧消息",
+    },
+  }
+  for (const [file, data] of Object.entries(files))
+    await Bun.write(path.join(root, "storage", file), JSON.stringify(data))
+  expect((await ChatHistoryMigration.migrate({ data: root })).imported).toBe(1)
+  const repeated = await ChatHistoryMigration.migrate({ data: root })
+  expect(repeated.imported).toBe(0)
+  const target = new Database(path.join(root, "chipmate.db"))
+  expect(target.query("SELECT id FROM session").all()).toEqual([{ id: "ses_legacy" }])
+  target.close()
 })

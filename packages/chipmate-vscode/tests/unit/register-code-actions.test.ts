@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
 import { registerCodeActions } from "../../src/services/code-actions/register-code-actions"
 
+import { focusChatSurface, clearChatSurface } from "../../src/services/code-actions/focused-surface"
+
 type Command = (...args: unknown[]) => unknown
 
 type Api = typeof vscode & {
@@ -98,8 +100,7 @@ function setup(active = false, agentReady = true, tabActive = false) {
     uri.fsPath === "/repo" || uri.fsPath.startsWith("/repo/") || /^[A-Za-z]:[\\/]repo(?:[\\/]|$)/.test(uri.fsPath)
       ? ({ uri: vscode.Uri.file("/repo"), name: "repo", index: 0 } as vscode.WorkspaceFolder)
       : undefined
-  api.workspace.asRelativePath = (uri) =>
-    uri.fsPath.replace(/^\/repo\//, "").replace(/^[A-Za-z]:[\\/]repo[\\/]/, "")
+  api.workspace.asRelativePath = (uri) => uri.fsPath.replace(/^\/repo\//, "").replace(/^[A-Za-z]:[\\/]repo[\\/]/, "")
   api.workspace.fs.stat = async (uri) => ({
     type: uri.fsPath === "/repo" || uri.fsPath.endsWith("/folder") ? vscode.FileType.Directory : vscode.FileType.File,
     ctime: 0,
@@ -109,10 +110,11 @@ function setup(active = false, agentReady = true, tabActive = false) {
 
   registerCodeActions(context, provider as never, agent as never, () => (tabActive ? (tab as never) : undefined))
 
-  return { commands, events, executed, posts, waits }
+  return { commands, events, executed, posts, waits, provider, agent, tab }
 }
 
 afterEach(() => {
+  clearChatSurface()
   api.commands.registerCommand = original.register
   api.commands.executeCommand = original.execute
   api.window.activeTextEditor = original.editor
@@ -248,4 +250,18 @@ describe("registerCodeActions", () => {
     expect(state.events).toEqual(["wait"])
     expect(state.posts).toEqual([])
   })
+})
+
+it("QA-043 编辑区为 Agent Manager 时搜索仍路由到实际聚焦的侧栏", async () => {
+  const state = setup(true)
+  focusChatSurface(state.provider as never)
+  await state.commands.get("chipmate.v2.toggleChatSearch")?.()
+  expect(state.waits).toEqual(["provider"])
+  expect(state.posts).toEqual([{ type: "action", action: "focusSearch" }])
+  state.waits.length = 0
+  state.posts.length = 0
+  focusChatSurface(state.agent as never)
+  await state.commands.get("chipmate.v2.toggleChatSearch")?.()
+  expect(state.waits).toEqual(["agent"])
+  expect(state.posts).toEqual([{ type: "action", action: "focusSearch" }])
 })

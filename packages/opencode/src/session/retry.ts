@@ -1,9 +1,8 @@
 import type { NamedError } from "@opencode-ai/core/util/error"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
-import { MessageV2 } from "./message-v2"
 import { isChipMateError } from "@/chipmate/chipmate-errors" // chipmate_change
-import { SessionNetwork } from "./network" // chipmate_change
+import type { RecoveryBudget } from "@/chipmate/session/recovery" // chipmate_change
 import { iife } from "@/util/iife"
 import { isRecord } from "@/util/record"
 
@@ -38,16 +37,18 @@ export function delay(attempt: number, error?: SessionV1.APIError) {
     if (headers) {
       const retryAfterMs = headers["retry-after-ms"]
       if (retryAfterMs) {
-        const parsedMs = Number.parseFloat(retryAfterMs)
-        if (!Number.isNaN(parsedMs)) {
+        const parsedMs = /^\d+(?:\.\d+)?$/.test(retryAfterMs.trim()) ? Number(retryAfterMs) : NaN // chipmate_change
+        if (Number.isFinite(parsedMs) && parsedMs >= 0) {
+          // chipmate_change - reject invalid retry delays
           return cap(parsedMs)
         }
       }
 
       const retryAfter = headers["retry-after"]
       if (retryAfter) {
-        const parsedSeconds = Number.parseFloat(retryAfter)
-        if (!Number.isNaN(parsedSeconds)) {
+        const parsedSeconds = /^\d+(?:\.\d+)?$/.test(retryAfter.trim()) ? Number(retryAfter) : NaN // chipmate_change
+        if (Number.isFinite(parsedSeconds) && parsedSeconds >= 0) {
+          // chipmate_change
           // convert seconds to milliseconds
           return cap(Math.ceil(parsedSeconds * 1000))
         }
@@ -71,13 +72,19 @@ export function retryable(error: Err, _provider?: string): Retryable | undefined
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
     const status = error.data.statusCode
+    // chipmate_change start - irreversible output and permanent failures take precedence over SDK retry hints
+    if (error.data.metadata?.retryBlocked) return undefined
+    if (status !== undefined && status < 500 && status !== 408 && status !== 429) return undefined
+    if (status === 501 || status === 505) return undefined
+    // chipmate_change end
     // chipmate_change start - Current ChipMate errors require user action (login/signup), don't retry
     if (isChipMateError(error)) return undefined
     // chipmate_change end
 
     // 5xx errors are transient server failures and should always be retried,
     // even when the provider SDK doesn't explicitly mark them as retryable.
-    if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
+    if (!error.data.isRetryable && !(status !== undefined && (status >= 500 || status === 408 || status === 429)))
+      return undefined // chipmate_change
 
     // chipmate_change start - ChipMate does not support OpenCode Go upsells. FreeUsageLimitError is not retryable: retrying
     // the same capped model is futile and the backoff loop cannot be broken by switching models in the chat selector
@@ -133,13 +140,14 @@ export function policy(opts: {
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
   // chipmate_change start
   limit?: number
-  offline?: (input: { error: unknown; message: string }) => Effect.Effect<"retry" | "blocked" | "aborted">
+  budget?: RecoveryBudget
   // chipmate_change end
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
       // chipmate_change start — enforce retry limit
-      if (opts.limit !== undefined && meta.attempt > opts.limit) {
+      const attempt = opts.budget ? opts.budget.used + 1 : meta.attempt
+      if (attempt > (opts.budget?.limit ?? opts.limit ?? 3)) {
         return Cause.done(meta.attempt)
       }
       // chipmate_change end
@@ -148,24 +156,14 @@ export function policy(opts: {
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        // chipmate_change start — handle network disconnect via offline handler
-        if (opts.offline && SessionNetwork.disconnected(meta.input)) {
-          const result = yield* opts.offline({
-            error: meta.input,
-            message: SessionNetwork.message(meta.input),
-          })
-          if (result !== "retry") {
-            return yield* Cause.done(meta.attempt)
-          }
-          yield* opts.set({ attempt: 0, message: "Reconnected", next: Date.now() })
-          return [0, Duration.zero] as [number, Duration.Duration]
-        }
+        // chipmate_change start - retry the actual provider request; public reachability does not prove recovery
+        const wait = delay(attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
+        if (wait > 60_000) return yield* Cause.done(meta.attempt)
+        if (opts.budget) opts.budget.used = attempt
         // chipmate_change end
-
-        const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
         yield* opts.set({
-          attempt: meta.attempt,
+          attempt, // chipmate_change - cumulative across empty-response and transport retries
           message: retry.message,
           action: retry.action,
           next: now + wait,

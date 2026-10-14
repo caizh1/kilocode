@@ -11,6 +11,20 @@ import { tmpdir, provideTestInstance, disposeTestRuntime } from "../../fixture/f
 
 const runtime = makeRuntime(Changes.Service, AppNodeBuilderV1.build(Changes.node))
 
+async function 写入工具(session: SessionID, file: string, text: string) {
+  const tools: Record<string, Tool> = {
+    write: {
+      inputSchema: jsonSchema({ type: "object" }),
+      execute: async () => {
+        await Bun.write(file, text)
+        return "已写入"
+      },
+    },
+  }
+  await runtime.runPromise((service) => service.wrapTools(tools, session))
+  await tools.write!.execute!({}, { toolCallId: crypto.randomUUID(), messages: [] })
+}
+
 test("同一会话按用户消息分别结算，后一轮报错也不丢失已写入内容", async () => {
   await using temporary = await tmpdir({ git: true })
   await provideTestInstance({
@@ -23,12 +37,12 @@ test("同一会话按用户消息分别结算，后一轮报错也不丢失已�
       const source = Array.from({ length: 40 }, (_, index) => `第 ${index + 1} 行\n`).join("")
       await Bun.write(file, source)
       await runtime.runPromise((service) => service.enter(session, first))
-      await Bun.write(file, source.replace("第 2 行", "第一轮修改"))
+      await 写入工具(session, file, source.replace("第 2 行", "第一轮修改"))
       await runtime.runPromise((service) => service.enter(session, second))
       const previous = await runtime.runPromise((service) => service.get(session, first))
       expect(previous?.phase).toBe("ready")
       expect(previous?.canRevert).toBe(false)
-      await Bun.write(file, source.replace("第 2 行", "第一轮修改").replace("第 38 行", "第二轮修改"))
+      await 写入工具(session, file, source.replace("第 2 行", "第一轮修改").replace("第 38 行", "第二轮修改"))
       await runtime.runPromise((service) => service.complete(session, Exit.fail(new Error("摘要前失败"))))
       const latest = await runtime.runPromise((service) => service.get(session, second))
       expect(latest?.outcome).toBe("error")
@@ -111,7 +125,7 @@ test("仍运行的受控后台终端阻止历史撤销，退出后重新开放",
       const session = SessionID.make("ses_" + crypto.randomUUID())
       const message = MessageID.ascending()
       await runtime.runPromise((service) => service.enter(session, message))
-      await Bun.write(path.join(temporary.path, "历史.txt"), "历史轮次的实际修改")
+      await 写入工具(session, path.join(temporary.path, "历史.txt"), "历史轮次的实际修改")
       await runtime.runPromise((service) => service.complete(session, Exit.succeed(undefined)))
       expect((await runtime.runPromise((service) => service.get(session, message)))?.canRevert).toBe(true)
       const background = await BackgroundProcess.start({
@@ -172,6 +186,34 @@ test("子任务改动归入父轮，删除子任务不会释放父轮原始内�
       )
       expect(await Bun.file(path.join(temporary.path, "子任务.txt")).exists()).toBe(false)
       await runtime.runPromise((service) => service.remove(parent))
+    },
+  })
+}, 30_000)
+
+test("QA-009 无写入工具的任务不能撤销同期人工修改", async () => {
+  await using temporary = await tmpdir({ git: true })
+  await provideTestInstance({
+    directory: temporary.path,
+    fn: async () => {
+      const session = SessionID.make("ses_" + crypto.randomUUID())
+      const message = MessageID.ascending()
+      const file = path.join(temporary.path, "人工修改.txt")
+      await Bun.write(file, "原文")
+      await runtime.runPromise((service) => service.enter(session, message))
+      await Bun.write(file, "用户新内容")
+      await runtime.runPromise((service) => service.complete(session, Exit.succeed(undefined)))
+      const summary = await runtime.runPromise((service) => service.get(session, message))
+      expect(summary?.canRevert).toBe(false)
+      expect(summary?.reason).toContain("没有执行写入工具")
+      const denied = await runtime.runPromiseExit((service) =>
+        service.mutate(session, message, {
+          revision: summary!.revision,
+          requestID: "不能撤销人工修改",
+          action: "revert",
+        }),
+      )
+      expect(Exit.isFailure(denied)).toBe(true)
+      expect(await Bun.file(file).text()).toBe("用户新内容")
     },
   })
 }, 30_000)

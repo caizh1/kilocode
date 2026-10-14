@@ -139,7 +139,9 @@ const layer = Layer.effect(
     const suggesttool = yield* SuggestTool
     const manager = Option.getOrUndefined(yield* Effect.serviceOption(AgentManager.Service))
     const notebook = Option.getOrUndefined(yield* Effect.serviceOption(Notebook.Service))
-    const chipmateToolInfos = yield* ChipMateToolRegistry.infos(manager, notebook).pipe(Effect.provide(MemoryService.layer))
+    const chipmateToolInfos = yield* ChipMateToolRegistry.infos(manager, notebook).pipe(
+      Effect.provide(MemoryService.layer),
+    )
     // chipmate_change end
 
     const state = yield* InstanceState.make<State>(
@@ -268,30 +270,27 @@ const layer = Layer.effect(
         return {
           custom,
           // chipmate_change start
-          builtin: ChipMateToolRegistry.describe(
-            [
-              tool.invalid,
-              ...(questionEnabled ? [tool.question] : []),
-              tool.shell,
-              tool.read,
-              tool.glob,
-              tool.grep,
-              tool.edit,
-              tool.write,
-              tool.task,
-              tool.fetch,
-              tool.todo,
-              tool.search,
-              ...(flags.experimentalScout ? [tool.clone, tool.overview] : []), // chipmate_change
-              tool.skill,
-              tool.patch,
-              tool.plan,
-              ...(["cli", "vscode"].includes(flags.client) ? [tool.suggest] : []),
-              ...ChipMateToolRegistry.extra(chipmate, cfg),
-              ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ],
-            chipmate,
-          ),
+          builtin: [
+            tool.invalid,
+            ...(questionEnabled ? [tool.question] : []),
+            tool.shell,
+            tool.read,
+            tool.glob,
+            tool.grep,
+            tool.edit,
+            tool.write,
+            tool.task,
+            tool.fetch,
+            tool.todo,
+            tool.search,
+            ...(flags.experimentalScout ? [tool.clone, tool.overview] : []), // chipmate_change
+            tool.skill,
+            tool.patch,
+            tool.plan,
+            ...(["cli", "vscode"].includes(flags.client) ? [tool.suggest] : []),
+            ...ChipMateToolRegistry.extra(chipmate, cfg),
+            ...(flags.experimentalLspTool ? [tool.lsp] : []),
+          ],
           // chipmate_change end
           task: tool.task,
           read: tool.read,
@@ -301,7 +300,10 @@ const layer = Layer.effect(
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
-      return [...s.builtin.map(ToolNetwork.builtin), ...s.custom] as Tool.Def[] // chipmate_change
+      return yield* ChipMateToolRegistry.resolve(
+        [...s.builtin.map(ToolNetwork.builtin), ...s.custom] as Tool.Def[],
+        config,
+      ) // chipmate_change
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {

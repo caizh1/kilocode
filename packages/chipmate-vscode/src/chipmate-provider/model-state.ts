@@ -90,10 +90,12 @@ export async function handleMessage(
       return true
     await mutate(client, (data) => {
       const model = validateModelSelections(data.model)
-      model[message.agent as string] = {
-        providerID: message.providerID as string,
-        modelID: message.modelID as string,
-      }
+      model[message.agent as string] = validateModelSelections({
+        selected: {
+          providerID: message.providerID as string,
+          modelID: message.modelID as string,
+        },
+      }).selected!
       data.model = model
     })
     return true

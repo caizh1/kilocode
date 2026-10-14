@@ -33,7 +33,7 @@ type Manager = Pick<AutocompleteServiceManager, "dispose" | "load">
 
 type Options = {
   manager?: () => Manager
-  qwen?: (providerID?: string, directory?: string) => Promise<Target | undefined>
+  qwen?: (providerID?: string, directory?: string, modelID?: string) => Promise<Target | undefined>
   gateway?: () => Promise<boolean>
   directory?: () => string | undefined
   internal?: boolean
@@ -62,6 +62,7 @@ async function qwen(
   connection: ChipMateConnectionService,
   providerID?: string,
   directory?: string,
+  modelID = QWEN_FIM_MODEL_ID,
 ): Promise<Target | undefined> {
   if (!directory) return undefined
   const client = await connection.getClientAsync()
@@ -72,10 +73,10 @@ async function qwen(
     if (!(data?.connected ?? []).includes(provider.id)) continue
     if (
       Object.values(provider.models).some(
-        (model) => model.id === QWEN_FIM_MODEL_ID && model.api?.npm === "@ai-sdk/openai-compatible",
+        (model) => model.id === modelID && model.api?.npm === "@ai-sdk/openai-compatible",
       )
     ) {
-      return { providerID: provider.id, modelID: QWEN_FIM_MODEL_ID }
+      return { providerID: provider.id, modelID }
     }
   }
   return undefined
@@ -90,7 +91,7 @@ async function gateway(connection: ChipMateConnectionService): Promise<boolean> 
 export class Coordinator implements vscode.Disposable {
   private readonly context: vscode.ExtensionContext
   private readonly managerFactory: () => Manager
-  private readonly resolver: (providerID?: string, directory?: string) => Promise<Target | undefined>
+  private readonly resolver: (providerID?: string, directory?: string, modelID?: string) => Promise<Target | undefined>
   private readonly gateway: () => Promise<boolean>
   private readonly directory: () => string | undefined
   private readonly internal: boolean
@@ -112,7 +113,7 @@ export class Coordinator implements vscode.Disposable {
     this.context = context
     this.managerFactory = options.manager ?? (() => new AutocompleteServiceManager(context, connection))
     this.directory = options.directory ?? autocompleteDirectory
-    this.resolver = options.qwen ?? ((providerID, directory) => qwen(connection, providerID, directory))
+    this.resolver = options.qwen ?? ((providerID, directory, modelID) => qwen(connection, providerID, directory, modelID))
     this.gateway = options.gateway ?? (() => gateway(connection))
     this.internal = options.internal ?? isInternalOfflineBuild()
     this.notify = options.notify ?? ((message) => void vscode.window.showInformationMessage?.(message))
@@ -210,7 +211,7 @@ export class Coordinator implements vscode.Disposable {
 
     if (isQwenFimTarget(providerID, modelID)) {
       this.disposeManager()
-      const result = await this.resolve(providerID)
+      const result = await this.resolve(providerID, modelID)
       if (!result.ok) return
       if (result.target) {
         this.notice = undefined
@@ -281,16 +282,23 @@ export class Coordinator implements vscode.Disposable {
     automatic: boolean,
     scope?: AutocompleteScope,
   ): Promise<boolean> {
-    if (!providerID || modelID !== LEGACY_QWEN_FIM_MODEL_ID) return false
+    if (!automatic || !providerID || modelID !== LEGACY_QWEN_FIM_MODEL_ID) return false
     await this.write({ providerID, modelID: QWEN_FIM_MODEL_ID }, automatic, scope)
     return true
   }
 
-  private async resolve(providerID?: string): Promise<Resolution> {
+  private async resolve(providerID?: string, modelID?: string): Promise<Resolution> {
     if (!this.gate.autocomplete()) return { ok: false }
+    const config = autocompleteConfig()
+    const current = key(config.get<string>("provider"), config.get<string>("model"))
     try {
-      const target = await this.resolver(providerID, this.directory())
+      const target = await this.resolver(providerID, this.directory(), modelID)
       if (!this.gate.autocomplete()) return { ok: false }
+      const latest = autocompleteConfig()
+      if (key(latest.get<string>("provider"), latest.get<string>("model")) !== current) {
+        this.schedule()
+        return { ok: false }
+      }
       return { ok: true, target }
     } catch (err) {
       this.log("[Autocomplete] unable to resolve Qwen autocomplete target", err)

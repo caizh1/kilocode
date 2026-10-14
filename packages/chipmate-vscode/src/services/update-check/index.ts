@@ -134,6 +134,7 @@ export class UpdateCheckService implements vscode.Disposable {
   private timer: ReturnType<typeof setTimeout> | undefined
   private readonly disposables: vscode.Disposable[] = []
   private readonly controllers = new Set<AbortController>()
+  private readonly downloads = new Set<AbortController>()
   private readonly transactions = new Map<string, Transaction>()
   private readonly reloads = new Map<string, Promise<void>>()
   private readonly candidates = new Map<string, Candidate>()
@@ -291,6 +292,10 @@ export class UpdateCheckService implements vscode.Disposable {
     this.reloads.clear()
     for (const item of this.disposables) item.dispose()
     if (this.owns) this.deps.log.dispose?.()
+  }
+
+  cancelDownload(): void {
+    for (const controller of this.downloads) controller.abort()
   }
 
   showLog(): void {
@@ -548,6 +553,7 @@ export class UpdateCheckService implements vscode.Disposable {
 
     this.info(`开始下载 VSIX：版本 ${item.version}，地址 ${safeUrl(url)}。`)
     const ctrl = this.controller()
+    this.downloads.add(ctrl)
     const header = setTimeout(() => ctrl.abort(), cfg.timeoutMs)
     const total = setTimeout(() => ctrl.abort(), cfg.downloadTimeoutMs)
     try {
@@ -568,7 +574,9 @@ export class UpdateCheckService implements vscode.Disposable {
         throw new UpdateError("sha256", "VSIX sha256 verification failed.")
       }
       this.info(`SHA-256 校验通过：${result.digest.toLowerCase()}。`)
+      ctrl.signal.throwIfAborted()
       await this.verify(tmp, item)
+      ctrl.signal.throwIfAborted()
       await fs.rm(file, { force: true })
       await fs.rename(tmp, file)
       return file
@@ -580,6 +588,7 @@ export class UpdateCheckService implements vscode.Disposable {
       clearTimeout(header)
       clearTimeout(total)
       this.controllers.delete(ctrl)
+      this.downloads.delete(ctrl)
     }
   }
 
@@ -862,7 +871,12 @@ function updateManifestUrl(): string {
 export function createUpdateLog(): UpdateLog {
   const channel = vscode.window.createOutputChannel("ChipMate 更新", { log: true })
   const emit = (level: "info" | "warn" | "error", value: unknown) => {
-    diagnostic("更新阶段", { message: String(value) }, level === "error" ? "ERROR" : level === "warn" ? "WARN" : "INFO", "update")
+    diagnostic(
+      "更新阶段",
+      { message: String(value) },
+      level === "error" ? "ERROR" : level === "warn" ? "WARN" : "INFO",
+      "update",
+    )
     const raw = sanitize(String(value).replace(/^\[ChipMate New\]\s*/, ""))
     for (const line of raw.split(/\r?\n/)) {
       channel[level](`[ChipMate New] [${new Date().toISOString()}] ${line}`)

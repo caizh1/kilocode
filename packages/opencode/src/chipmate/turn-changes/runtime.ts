@@ -27,6 +27,7 @@ type Run = {
   messageID: MessageID
   pending: Set<Promise<unknown>>
   closing: boolean
+  wrote?: boolean
   deleted?: boolean
 }
 const stores = new Map<string, TurnStore>()
@@ -168,6 +169,7 @@ export const wrapTools = (tools: Record<string, Tool>, sessionID: SessionID) =>
           .then(async () => {
             await bridge.promise(prepare(run, name, args))
             if (run.closing || options.abortSignal?.aborted) throw new Error("本轮已停止，未执行工具")
+            if (!["read", "glob", "grep", "list", "question", "todowrite", "todoread"].includes(name)) run.wrote = true
             return execute(args, options)
           })
           .finally(async () => {
@@ -234,7 +236,7 @@ export const finish = (sessionID: SessionID, outcome: "completed" | "interrupted
           yield* Effect.promise(() =>
             store.phase(sessionID, run.messageID, "unavailable", "Agent 终端或后台进程仍在运行，无法确认写入已停止"),
           )
-        yield* Effect.promise(() => store.capture(sessionID, run.messageID, after, outcome))
+        yield* Effect.promise(() => store.capture(sessionID, run.messageID, after, outcome, run.wrote === true))
         if (run.deleted) yield* Effect.promise(() => store.remove(sessionID))
         yield* emit(run)
       }),

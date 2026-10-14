@@ -285,16 +285,12 @@ export class CodeIndexServiceFactory {
 
   public usesAdaptiveEmbedding(): boolean {
     const config = this.configManager.getConfig()
-    return (
-      internal() &&
-      config.embedderProvider === "openai-compatible" &&
-      (config.modelId ?? "").toLowerCase() === "qwen3-embedding-8b"
-    )
+    return config.embedderProvider === "openai-compatible"
   }
 
   public async prepareEmbeddingRuntime(): Promise<PreparedEmbeddingRuntime> {
     if (!this.usesAdaptiveEmbedding()) {
-      throw new Error("Adaptive embedding runtime is only available for the internal Qwen3 embedding profile.")
+      throw new Error("自动维度探测仅适用于 OpenAI 兼容嵌入服务。")
     }
     const config = this.configManager.getConfig()
     const endpoint = config.openAiCompatibleOptions?.baseUrl
@@ -306,7 +302,7 @@ export class CodeIndexServiceFactory {
       dimensionMode: config.dimensionMode ?? "auto",
       requestedDimension: config.modelDimension,
       endpoint,
-      instructions: true,
+      instructions: (config.modelId ?? "").toLowerCase() === "qwen3-embedding-8b",
       previous,
     })
   }

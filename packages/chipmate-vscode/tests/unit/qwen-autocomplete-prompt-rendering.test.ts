@@ -205,6 +205,19 @@ describe("qwen prompt rendering", () => {
     expect(prompt.promptRendererMode).toBe("qwen-multifile-fim")
   })
 
+  it("uses qwen multifile FIM for a deployment alias without qwen in its name", () => {
+    const prompt = buildQwenPromptPlan({
+      cfg: { ...active(), model: "deployment/alpha" },
+      helper: state(doc("int main(void) {\n  ret\n}\n")),
+      snippets: recent(),
+    })
+
+    expect(prompt.promptRendererMode).toBe("qwen-multifile-fim")
+    expect(prompt.snippetsInjectedIntoPrompt).toBe(true)
+    expect(prompt.prompt).toContain("<|file_sep|>recent.c")
+    expect(prompt.prompt).toContain("<|fim_middle|>")
+  })
+
   it("renders combined recently edited and recently opened snippets through the same qwen multifile FIM path", () => {
     const document = doc("int main(void) {\n  ret\n}\n")
     const helper = state(document)
@@ -434,7 +447,6 @@ function opts(config: QwenAutocompleteConfig) {
   return {
     maxPromptTokens: config.maxPromptTokens,
     maxSuffixPercentage: config.maxSuffixPercentage,
-    modelName: config.model,
     prefixPercentage: config.prefixPercentage,
   }
 }

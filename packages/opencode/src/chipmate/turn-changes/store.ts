@@ -143,7 +143,13 @@ export class TurnStore {
     await this.save(record)
   }
 
-  async capture(sessionID: string, messageID: string, after: string | undefined, outcome?: Stored["outcome"]) {
+  async capture(
+    sessionID: string,
+    messageID: string,
+    after: string | undefined,
+    outcome?: Stored["outcome"],
+    owned = true,
+  ) {
     const record = await this.load(sessionID, messageID)
     if (!record) return
     if (record.before && after) {
@@ -151,6 +157,7 @@ export class TurnStore {
       await this.git(["update-ref", `refs/chipmate/turn-changes/${key}/after`, after])
       record.after = after
       record.files = await this.entries(record.before, after)
+      if (!owned && record.files.length) record.reason = "本轮没有执行写入工具，检测到的工作区修改不能归为本轮撤销"
       for (const file of record.files) {
         file.beforePermission = record.permissions?.[file.oldFile ?? file.file]
         file.afterPermission = (await fs.lstat(path.join(this.root, file.file)).catch(() => undefined))?.mode

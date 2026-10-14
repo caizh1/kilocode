@@ -7,6 +7,9 @@ export function createAbortState() {
   const entries = new Map<string, Entry>()
 
   return {
+    has(id: string) {
+      return entries.has(id)
+    },
     request(id: string, status: string, messageID?: string) {
       const entry = entries.get(id)
       if (entry?.phase === "active") return status !== "idle"

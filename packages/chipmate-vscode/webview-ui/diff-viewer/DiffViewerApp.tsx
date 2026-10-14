@@ -285,15 +285,18 @@ const DiffViewerShell: Component = () => {
 
   return (
     <LanguageProvider vscodeLanguage={server.vscodeLanguage} languageOverride={server.languageOverride}>
-      <DiffComponentProvider component={Diff}>
-        <CodeComponentProvider component={Code}>
-          <FileComponentProvider component={File}>
-            <MarkedProvider>
-              <DiffViewerContent />
-            </MarkedProvider>
-          </FileComponentProvider>
-        </CodeComponentProvider>
-      </DiffComponentProvider>
+      <ConfigProvider>
+        <SpeechToTextPrewarm />
+        <DiffComponentProvider component={Diff}>
+          <CodeComponentProvider component={Code}>
+            <FileComponentProvider component={File}>
+              <MarkedProvider>
+                <DiffViewerContent />
+              </MarkedProvider>
+            </FileComponentProvider>
+          </CodeComponentProvider>
+        </DiffComponentProvider>
+      </ConfigProvider>
     </LanguageProvider>
   )
 }
@@ -305,10 +308,7 @@ export const DiffViewerApp: Component = () => {
         <VSCodeProvider>
           <ServerProvider>
             <ProviderProvider>
-              <ConfigProvider>
-                <SpeechToTextPrewarm />
-                <DiffViewerShell />
-              </ConfigProvider>
+              <DiffViewerShell />
             </ProviderProvider>
           </ServerProvider>
         </VSCodeProvider>

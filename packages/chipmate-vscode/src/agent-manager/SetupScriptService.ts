@@ -120,3 +120,16 @@ export class SetupScriptService {
     console.log(`[SetupScriptService] ${message}`)
   }
 }
+
+
+/** 通过宿主正式入口打开或创建准备脚本，错误保留在调用方日志中。 */
+export async function openSetupScript(service: SetupScriptService | undefined, open: (file: string) => Promise<unknown>, log: (message: string) => void): Promise<void> {
+  if (!service) return
+  try {
+    if (!service.hasScript()) await service.createDefaultScript()
+    const script = service.resolveScript()
+    if (script) await open(script.path)
+  } catch (error) {
+    log(`Failed to open setup script: ${error}`)
+  }
+}

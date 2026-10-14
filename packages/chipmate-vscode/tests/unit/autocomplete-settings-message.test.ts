@@ -74,9 +74,9 @@ describe("validAutocompleteSetting", () => {
     expect(validAutocompleteSetting("model", "mercury-edit-2")).toBe(true)
   })
 
-  it("allows configured provider IDs while rejecting unknown models", () => {
+  it("allows configured provider and model IDs", () => {
     expect(validAutocompleteSetting("provider", "openrouter")).toBe(true)
-    expect(validAutocompleteSetting("model", "gpt-5")).toBe(false)
+    expect(validAutocompleteSetting("model", "deployment/alias")).toBe(true)
   })
 
   it("rejects non-boolean toggle updates", () => {

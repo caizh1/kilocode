@@ -12,7 +12,8 @@ function Fixture() {
     window.addEventListener("验收选择会话", select)
     onCleanup(() => window.removeEventListener("验收选择会话", select))
   })
-  return <ChatView />
+  // 复用正式聊天容器的确定高度，让低高度布局回归覆盖实际 flex 收缩。
+  return <div class="container" style={{ height: "100dvh" }}><ChatView /></div>
 }
 
 const meta = {

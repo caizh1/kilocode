@@ -143,6 +143,13 @@ export const openapi = {
     { name: "administration" },
   ],
   paths: {
+    "/api/v1/diagnostics/bundles": {
+      get: { operationId: "listDiagnostics", tags: ["diagnostics"], security: [{ bearerKey: [] }, { cookieSession: [] }], parameters: [param("q", "query"), param("version", "query"), param("platform", "query"), param("after", "query"), param("before", "query"), param("cursor", "query")], responses: ok({ type: "object", required: ["items"], properties: { items: { type: "array", items: ref("DiagnosticBundle") }, nextCursor: { type: "string" } } }) },
+      post: { operationId: "submitDiagnostics", tags: ["diagnostics"], security: [{ bearerKey: [] }, { cookieSession: [] }], parameters: [param("Idempotency-Key", "header", true), param("X-Content-SHA256", "header", true)], requestBody: { required: true, content: { "application/vnd.chipmate.diagnostics+zip": { schema: { type: "string", format: "binary" } } } }, responses: { ...ok(ref("DiagnosticBundle")), "201": { description: "诊断包已校验并保存", content: json(ref("DiagnosticBundle")) }, "410": { description: "诊断编号已到期" }, "503": { description: "容量不足、繁忙或结果需要查询" } } },
+    },
+    "/api/v1/diagnostics/bundles/{id}": { get: { operationId: "getDiagnostic", tags: ["diagnostics"], security: [{ bearerKey: [] }, { cookieSession: [] }], parameters: [param("id", "path")], responses: ok({ oneOf: [ref("DiagnosticBundle"), { type: "object", required: ["id", "status"], properties: { id: { type: "string" }, status: { const: "uploading" } } }] }) } },
+    "/api/v1/diagnostics/bundles/{id}/archive": { get: { operationId: "downloadDiagnostic", tags: ["diagnostics"], security: [{ bearerKey: [] }, { cookieSession: [] }], parameters: [param("id", "path")], responses: { ...ok({ type: "string", format: "binary" }), "200": { description: "鉴权后的诊断 ZIP", content: { "application/zip": { schema: { type: "string", format: "binary" } } } } } } },
+
     "/api/v1/capabilities": {
       get: {
         operationId: "getCapabilities",
@@ -913,6 +920,9 @@ export const openapi = {
       bearerKey: { type: "http", scheme: "bearer" },
       cookieSession: { type: "apiKey", in: "cookie", name: "chipmate_market_session" },
     },
-    schemas,
+    schemas: { ...schemas, DiagnosticBundle: { type: "object", required: ["id", "ownerId", "ownerName", "createdAt", "expiresAt", "size", "sha256", "version", "platform", "from", "to", "summary", "partial", "sources", "status"], properties: {
+      ...Object.fromEntries(["id", "ownerId", "ownerName", "createdAt", "expiresAt", "sha256", "version", "platform", "from", "to", "summary"].map((name) => [name, { type: "string" }])),
+      size: { type: "integer" }, partial: { type: "boolean" }, status: { const: "submitted" }, sources: { type: "array", items: { type: "object", required: ["name", "status"], properties: { name: { type: "string" }, status: { enum: ["ok", "partial", "missing"] }, message: { type: "string" } } } },
+    } } },
   },
 } as const

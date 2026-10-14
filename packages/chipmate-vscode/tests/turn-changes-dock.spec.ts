@@ -33,7 +33,8 @@ async function collapsed(page: Page) {
   expect(r.toggle.height).toBe(16)
   expect(Math.abs(r.toggle.left + r.toggle.width / 2 - r.prompt.left - r.prompt.width / 2)).toBeLessThanOrEqual(1)
   expect(r.padding).toBe("8px")
-  await expect(page.locator(".working-indicator-slot")).toHaveCount(0)
+  await expect(page.locator(".message-list .working-indicator-slot")).toHaveCount(1)
+  await expect(page.locator(".working-indicator")).toBeVisible()
   await expect(page.locator('[data-component="turn-changes"]')).toHaveCount(0)
   return r
 }
@@ -80,6 +81,7 @@ test("阅读历史时展开收起不跳动，延迟收尾完成后结果留在�
   await collapsed(page)
   expect(Math.abs((await list.evaluate((e) => e.scrollTop)) - top)).toBeLessThanOrEqual(2)
   await phase(page, "settling", true)
+  await expect(page.locator(".working-indicator-slot")).toHaveCount(0)
   await expect(page.locator(selectors.toggle)).toBeVisible()
   await expect(page.locator('[data-component="turn-changes"]')).toHaveCount(0)
   await phase(page, "ready", true)
@@ -92,7 +94,7 @@ test("阅读历史时展开收起不跳动，延迟收尾完成后结果留在�
   await expect(page.locator('[data-slot="turn-changes-file"]')).toHaveCount(1)
 })
 
-test("布局断言能识别收起仍占位和旧状态栏回归", async ({ page }) => {
+test("布局断言能识别收起仍占位和运行状态行缺失", async ({ page }) => {
   await page.goto(url)
   await expect(page.locator(selectors.toggle)).toBeVisible()
   await collapsed(page)
@@ -106,16 +108,11 @@ test("布局断言能识别收起仍占位和旧状态栏回归", async ({ page 
     detected = true
   }
   expect(detected).toBe(true)
-  await style.evaluate((e) => e.remove())
+  await style.evaluate((e) => e.parentNode?.removeChild(e))
   await collapsed(page)
-  await page.evaluate(() => {
-    const e = document.createElement("div")
-    e.className = "working-indicator-slot"
-    document.querySelector(".message-list-content")!.append(e)
-  })
-  await expect(page.locator(".working-indicator-slot")).toHaveCount(1)
-  // 与正例相同的“旧状态组件数量为零”断言在该反例下必然不成立。
-  expect((await page.locator(".working-indicator-slot").count()) === 0).toBe(false)
+  // 移除真实状态组件，模拟此前删除挂载点的回归；相同验收必须失败。
+  await page.locator(".working-indicator-slot").evaluate((element) => element.remove())
+  await expect(collapsed(page)).rejects.toThrow()
 })
 
 test("浅色放大显示保留多行草稿与输入焦点，支持键盘伸缩", async ({ page }) => {
@@ -126,7 +123,9 @@ test("浅色放大显示保留多行草稿与输入焦点，支持键盘伸缩",
     document.body.style.zoom = "1.25"
   })
   await expect(page.locator(selectors.toggle)).toBeVisible()
-  await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { data: { type: "connectionState", state: "connected" } })))
+  await page.evaluate(() =>
+    window.dispatchEvent(new MessageEvent("message", { data: { type: "connectionState", state: "connected" } })),
+  )
   const input = page.locator("textarea.prompt-input")
   await input.fill("第一行草稿\n第二行草稿")
   await input.focus()

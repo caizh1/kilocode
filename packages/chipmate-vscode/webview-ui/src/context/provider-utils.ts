@@ -17,12 +17,7 @@ export function flattenModels(providers: Record<string, Provider>, internal?: bo
     const provider = providers[providerID]!
     for (const modelID of Object.keys(provider.models)) {
       const model = provider.models[modelID]!
-      if (
-        isInternalModelHidden(
-          { providerID, providerName: provider.name, modelID, modelName: model.name },
-          internal,
-        )
-      )
+      if (isInternalModelHidden({ providerID, providerName: provider.name, modelID, modelName: model.name }, internal))
         continue
       result.push({
         ...model,
@@ -36,7 +31,18 @@ export function flattenModels(providers: Record<string, Provider>, internal?: bo
       })
     }
   }
-  return result
+  const labels = new Map<string, number>()
+  for (const provider of Object.values(providers)) labels.set(provider.name, (labels.get(provider.name) ?? 0) + 1)
+  return result.map((model) => ({
+    ...model,
+    providerName:
+      (labels.get(providers[model.providerID]!.name) ?? 0) > 1
+        ? `${model.providerName}（${model.providerID}）`
+        : model.providerName,
+    name: result.some((other) => other !== model && other.providerID === model.providerID && other.name === model.name)
+      ? `${model.name}（${model.id}）`
+      : model.name,
+  }))
 }
 
 /**

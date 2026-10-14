@@ -3,6 +3,11 @@
  * These are pure async functions that operate on the SDK client — no vscode dependency.
  */
 import type { Config, ChipMateClient } from "@chipmate/sdk/v2"
+import {
+  customProviderAuthMetadata,
+  customProviderCredentialGuard,
+  providerCredentialGuardMatches,
+} from "@opencode-ai/core/chipmate/provider-auth"
 import { validateProviderID as validateProviderIDShared } from "./shared/custom-provider"
 import {
   providerOriginsDiffer,
@@ -12,7 +17,7 @@ import {
 } from "./shared/custom-provider"
 import type { SanitizedProviderConfig } from "./shared/custom-provider"
 import { isCustomProviderPackage, CHIPMATE_PROVIDER_ID, parseModelString } from "./shared/provider-model"
-import { isInternalOfflineBuild } from "./shared/internal-offline"
+import { isInternalOfflineBuild, internalModelReference } from "./shared/internal-offline"
 import { configFeatures } from "./features"
 import * as MemoryDebug from "./services/memory-debug"
 
@@ -40,26 +45,11 @@ function customProvider(config: unknown) {
   return record(config) && isCustomProviderPackage(config.npm)
 }
 
-function normalizeCustomProviderModelIDs<T extends { models: Record<string, unknown> }>(
-  providerID: string,
-  config: T,
-): T {
-  const prefix = `${providerID}/`
-  const models = Object.fromEntries(
-    Object.entries(config.models).map(([modelID, model]) => [
-      modelID.startsWith(prefix) ? modelID.slice(prefix.length) : modelID,
-      model,
-    ]),
-  )
-  return { ...config, models }
-}
-
 function resolveActivation<T extends { models: Record<string, unknown> }>(
-  providerID: string,
   config: T,
   modelID?: string,
 ) {
-  const value = normalizeCustomProviderModelIDs(providerID, config)
+  const value = config
   const model = modelID?.trim()
   if (model && !value.models[model]) {
     return { error: "The model selected for activation is not part of this provider" }
@@ -207,13 +197,15 @@ export function validateRecents(raw: unknown): Array<{ providerID: string; model
   return raw
     .filter(isModelSelection)
     .slice(0, 5)
-    .map((r) => ({ providerID: r.providerID, modelID: r.modelID }))
+    .map((r) => internalModelReference({ providerID: r.providerID, modelID: r.modelID }))
 }
 
 /** Validate and sanitize favorite model selections from untrusted sources. */
 export function validateFavorites(raw: unknown): Array<{ providerID: string; modelID: string }> {
   if (!Array.isArray(raw)) return []
-  return raw.filter(isModelSelection).map((r) => ({ providerID: r.providerID, modelID: r.modelID }))
+  return raw
+    .filter(isModelSelection)
+    .map((r) => internalModelReference({ providerID: r.providerID, modelID: r.modelID }))
 }
 
 /** Validate and sanitize per-mode model selections from untrusted sources. */
@@ -222,7 +214,7 @@ export function validateModelSelections(raw: unknown): Record<string, { provider
   const result: Record<string, { providerID: string; modelID: string }> = {}
   for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
     if (isModelSelection(val)) {
-      result[key] = { providerID: val.providerID, modelID: val.modelID }
+      result[key] = internalModelReference({ providerID: val.providerID, modelID: val.modelID })
     }
   }
   return result
@@ -234,8 +226,8 @@ export function computeDefaultSelection(
   vscodeMID: string,
 ): { providerID: string; modelID: string } | null {
   const configured = parseModelString(cachedConfig?.config?.model)
-  if (configured) return configured
-  if (vscodePID && vscodeMID) return { providerID: vscodePID, modelID: vscodeMID }
+  if (configured) return internalModelReference(configured)
+  if (vscodePID && vscodeMID) return internalModelReference({ providerID: vscodePID, modelID: vscodeMID })
   return null
 }
 
@@ -512,12 +504,52 @@ async function changedOriginCredentialError(input: {
   const effective = (input.merged.provider as Record<string, unknown> | undefined)?.[input.id]
   const options = record(effective) && record(effective.options) ? effective.options : undefined
   if (!providerOriginsDiffer(options?.baseURL, input.provider.options.baseURL)) return
+  if (input.apiKeyChanged && (input.apiKey?.trim() || input.provider.env?.length)) return
 
   const existingEnv = record(effective) && Array.isArray(effective.env) && effective.env.length > 0
-  const { authStates } = await fetchProviderData(input.ctx.client, input.ctx.workspaceDir)
-  if (!existingEnv && authStates[input.id] !== "api") return
-  if (input.apiKeyChanged && (input.apiKey?.trim() || input.provider.env?.length)) return
+  // 禁用项不一定出现在已加载提供商中，必须直接核对存储；读取失败不能当成无凭据。
+  const [{ data: auth }, { authStates }] = await Promise.all([
+    input.ctx.client.auth.get({ providerID: input.id }, { throwOnError: true }),
+    fetchProviderData(input.ctx.client, input.ctx.workspaceDir),
+  ])
+  if (!existingEnv && !options?.apiKey && auth?.type !== "api" && authStates[input.id] !== "api") return
   return "A new API key or environment credential is required when the provider URL origin changes"
+}
+
+function customProviderPatch(
+  global: Config,
+  merged: Config | undefined,
+  id: string,
+  next: SanitizedProviderConfig,
+  changed: boolean,
+) {
+  const previous = merged?.provider?.[id]
+  const reset = changed || providerOriginsDiffer(previous?.options?.baseURL, next.options.baseURL)
+  const patch = withCustomProviderDeletions(global.provider?.[id], next, reset)
+  const inline = !reset ? previous?.options?.apiKey : undefined
+  const expected = {
+    env: next.env ?? (!reset ? previous?.env : undefined),
+    models: Object.fromEntries(
+      Object.keys(next.models).map((model) => [
+        model,
+        { headers: !reset ? previous?.models?.[model]?.headers : undefined },
+      ]),
+    ),
+  }
+  return {
+    ...patch,
+    // 首次写入的全局项也可能覆盖项目配置，必须显式声明不再使用环境凭据。
+    ...(reset ? { env: next.env ?? [] } : {}),
+    options: {
+      ...patch.options,
+      chipmateCredentialGuard: customProviderCredentialGuard({ ...next.options, apiKey: inline }, expected),
+    },
+  }
+}
+
+function customProviderConfigurationMatches(config: Config | undefined, id: string) {
+  const provider = config?.provider?.[id]
+  return providerCredentialGuardMatches(provider?.options, provider ?? undefined)
 }
 
 export async function saveCustomProvider(
@@ -540,7 +572,7 @@ export async function saveCustomProvider(
     return
   }
 
-  const activation = resolveActivation(id, sanitized.value, activateModelID)
+  const activation = resolveActivation(sanitized.value, activateModelID)
   if (activation.error || !activation.value) {
     postError(ctx, requestId, providerID, "connect", activation.error ?? "Invalid model activation")
     return
@@ -574,17 +606,7 @@ export async function saveCustomProvider(
     }
     const disabled = globalConfig.disabled_providers ?? []
     const nextDisabled = disabled.filter((item: string) => item !== id)
-    const existing = (globalConfig.provider as Record<string, unknown> | undefined)?.[id]
-    const patch = withCustomProviderDeletions(existing, normalized)
-    const { data: updated } = await ctx.client.global.config.update(
-      {
-        config: {
-          provider: { [id]: patch },
-          disabled_providers: nextDisabled,
-        },
-      },
-      { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
-    )
+    const patch = customProviderPatch(globalConfig, merged, id, normalized, apiKeyChanged)
 
     const refresh = async (global: unknown) => {
       void MemoryDebug.append({
@@ -604,6 +626,7 @@ export async function saveCustomProvider(
         operationId: operation,
         data: { provider: MemoryDebug.hash(id) },
       })
+      return merged.data
     }
 
     const auth = resolveCustomProviderAuth(apiKey, apiKeyChanged)
@@ -611,7 +634,10 @@ export async function saveCustomProvider(
     try {
       if (auth.mode === "set") {
         await ctx.client.auth.set(
-          { providerID: id, auth: { type: "api", key: auth.key } },
+          {
+            providerID: id,
+            auth: { type: "api", key: auth.key, metadata: customProviderAuthMetadata(normalized.options.baseURL) },
+          },
           { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
         )
       }
@@ -622,7 +648,7 @@ export async function saveCustomProvider(
         )
       }
     } catch (error) {
-      await refresh(updated)
+      await refresh(globalConfig)
       void MemoryDebug.append({
         event: "provider.custom.auth.failed",
         operationId: operation,
@@ -632,12 +658,33 @@ export async function saveCustomProvider(
       return
     }
 
+    // 先保存绑定目标源的密钥，再发布地址。中途失败或并发读取时，后端拒绝源不匹配的凭据。
+    const { data: updated } = await ctx.client.global.config
+      .update(
+        { config: { provider: { [id]: patch }, disabled_providers: nextDisabled } },
+        { throwOnError: true, headers: MemoryDebug.deferredHeader(operation) },
+      )
+      .catch(async (error) => {
+        await refresh(globalConfig)
+        throw error
+      })
+
     const active = await activateModel(ctx, operation, id, activation.model, updated).catch(async (error) => {
       await refresh(updated)
       throw error
     })
 
-    await refresh(active)
+    const current = await refresh(active)
+    if (!customProviderConfigurationMatches(current, id)) {
+      postError(
+        ctx,
+        requestId,
+        providerID,
+        "connect",
+        "其他配置覆盖了已保存的地址或鉴权信息，已停止此提供商的请求。请检查项目配置后重新保存。",
+      )
+      return
+    }
     void MemoryDebug.append({
       event: "provider.custom.save.end",
       operationId: operation,

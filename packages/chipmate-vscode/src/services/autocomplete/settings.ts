@@ -1,6 +1,5 @@
 import * as vscode from "vscode"
-import { validAutocompleteModel, validAutocompleteProvider } from "../../shared/autocomplete-models"
-import { QWEN_FIM_MODEL_ID } from "../../shared/qwen-autocomplete"
+import { validAutocompleteProvider } from "../../shared/autocomplete-models"
 import { autocompleteResource } from "./workspace"
 
 export const QWEN_DEFAULT_STATE = "chipmate.v2.autocomplete.qwenDefault"
@@ -133,6 +132,7 @@ export async function resetAutocompleteAfterProviderRemoval(
   providerID: string,
 ): Promise<boolean> {
   if (autocompleteConfig().get<string>("provider") !== providerID) return false
+  if (!context.globalState.get<boolean>(QWEN_DEFAULT_STATE, false)) return false
   await updateAutocompleteSelection(context, { automatic: true })
   return true
 }
@@ -141,7 +141,7 @@ export function validAutocompleteSetting(key: string, value: unknown) {
   if (key === "model") {
     // Allow clearing back to the server-side default.
     if (value === null || value === undefined) return true
-    return validAutocompleteModel(value) || value === QWEN_FIM_MODEL_ID
+    return typeof value === "string" && value.trim().length > 0
   }
 
   if (key === "provider") {

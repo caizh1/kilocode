@@ -57,3 +57,39 @@ test("普通切换等待 500ms 草稿 ACK，期间不提前清空输入或切换
   await expect(state).toHaveAttribute("data-status", "switched")
   await expect(state).toHaveAttribute("data-active", "session:story-session-b")
 })
+
+test("QA-005 实际输入组件恢复完整中文空格引用，后续输入不会拆断文件绑定", async ({ page }) => {
+  await page.addInitScript(() => {
+    const requests: unknown[] = []
+    Object.assign(window, { 草稿验收请求: requests, acquireVsCodeApi: () => ({
+      postMessage: (message: { type: string; key?: unknown; clientSeq?: number }) => {
+        requests.push(message)
+        // 按真实宿主协议确认草稿保存，避免未确认本地改动遮住后续快照。
+        if (message.type === "sessionSurface.draft.update") queueMicrotask(() => window.dispatchEvent(new MessageEvent("message", { data: {
+          type: "sessionSurface.draft.ack", key: message.key, clientSeq: message.clientSeq, revision: message.clientSeq,
+        } })))
+      }, getState: () => undefined, setState: () => {},
+    }) })
+  })
+  await page.goto("/iframe.html?id=chat-session-surface--sidebar-owner&viewMode=story")
+  const input = page.locator("textarea.prompt-input")
+  await expect(input).toBeVisible()
+  await page.evaluate(() => window.dispatchEvent(new MessageEvent("message", { data: { type: "connectionState", state: "connected" } })))
+  const text = "请检查 @中文 目录/同名 文件.ts 梧桐962 🌲"
+  const reference = "@中文 目录/同名 文件.ts"
+  await page.evaluate(({ text, reference }) => window.dispatchEvent(new MessageEvent("message", { data: {
+    type: "sessionSurface.draft.snapshot",
+    draft: { schemaVersion: 1, key: { kind: "session", id: "story-session" }, revision: 2, updatedAt: 2, content: {
+      boxId: "prompt:story-session", text, reviewComments: [], images: [], references: [reference], inputScrollTop: 0,
+    } },
+  } })), { text, reference })
+  await expect(input).toHaveValue(text).catch(async (error) => {
+    console.log("草稿回归宿主请求", await page.evaluate(() => (window as unknown as { 草稿验收请求: unknown[] }).草稿验收请求))
+    throw error
+  })
+  await input.fill(`${text}，保留绑定。`)
+  await expect.poll(() => page.evaluate(() => {
+    const messages = (window as unknown as { 草稿验收请求: Array<{ type: string; content?: { references: string[]; text: string } }> }).草稿验收请求
+    return messages.filter((message) => message.type === "sessionSurface.draft.update").at(-1)?.content
+  })).toMatchObject({ text: `${text}，保留绑定。`, references: [reference] })
+})

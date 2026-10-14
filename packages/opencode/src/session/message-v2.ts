@@ -773,7 +773,7 @@ export function fromError(
           message: SessionNetwork.message(e), // chipmate_change end
           isRetryable: true,
           metadata: {
-            code: (e as SystemError).code ?? "",
+            code: SessionNetwork.code(e) ?? (e instanceof Error ? e.name : ""), // chipmate_change - DOMException.code 是数字，APIError.metadata 只接受字符串
             syscall: (e as SystemError).syscall ?? "",
             message: (e as SystemError).message ?? "",
           },

@@ -18,8 +18,7 @@ export async function handleForkSession(ctx: ForkContext, sessionId: string, aft
   if (ctx.coordinator) {
     ctx.post({ type: "sessionForkState", sessionID: sessionId, afterMessageID: afterMessageId, state: "pending" })
     const slow = setTimeout(
-      () =>
-        ctx.post({ type: "sessionForkState", sessionID: sessionId, afterMessageID: afterMessageId, state: "slow" }),
+      () => ctx.post({ type: "sessionForkState", sessionID: sessionId, afterMessageID: afterMessageId, state: "slow" }),
       10_000,
     )
     try {
@@ -30,13 +29,20 @@ export async function handleForkSession(ctx: ForkContext, sessionId: string, aft
         ownerID: ctx.ownerID,
         boundary: afterMessageId ? { type: "after", messageID: afterMessageId } : { type: "full" },
       })
-      if (!ctx.coordinator.claim(session.id, ctx.ownerID)) return
-      ctx.register(session)
-      ctx.forked(session, sessionId)
+      if (ctx.coordinator.claim(session.id, ctx.ownerID)) {
+        ctx.register(session)
+        ctx.forked(session, sessionId)
+      }
       ctx.post({ type: "sessionForkState", sessionID: sessionId, afterMessageID: afterMessageId, state: "complete" })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      ctx.post({ type: "sessionForkState", sessionID: sessionId, afterMessageID: afterMessageId, state: "error", message })
+      ctx.post({
+        type: "sessionForkState",
+        sessionID: sessionId,
+        afterMessageID: afterMessageId,
+        state: "error",
+        message,
+      })
       ctx.post({ type: "error", message: `创建分支失败：${message}` })
     } finally {
       clearTimeout(slow)

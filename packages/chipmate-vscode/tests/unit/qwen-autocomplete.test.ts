@@ -284,8 +284,18 @@ function stubRegistration(calls: Array<{ selector: vscode.DocumentSelector; prov
 }
 
 function connection() {
+  let state = "connected"
+  let listener: (() => void) | undefined
   return {
-    getConnectionState: () => "connected",
+    getConnectionState: () => state,
+    onStateChange: (callback: () => void) => {
+      listener = callback
+      return () => { listener = undefined }
+    },
+    change: (value: string) => {
+      state = value
+      listener?.()
+    },
   } as never
 }
 
@@ -353,7 +363,7 @@ describe("qwen autocomplete config and prompt", () => {
     expect(readQwenAutocompleteConfig().debounceMs).toBe(42)
   })
 
-  it("uses only the canonical target and requires the exact Qwen model", async () => {
+  it("accepts an explicitly selected Qwen FIM deployment alias", async () => {
     const { readQwenAutocompleteConfig, qwenAutocompleteEnabled } = await import(
       "../../src/services/qwen-autocomplete/config"
     )
@@ -362,7 +372,11 @@ describe("qwen autocomplete config and prompt", () => {
     expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(false)
 
     stubConfig({ enabled: true, providerID: "qwen", model: "qwen3-coder-30b" })
-    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(false)
+    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(true)
+    expect(readQwenAutocompleteConfig().model).toBe("qwen3-coder-30b")
+
+    stubConfig({ enabled: true, providerID: "qwen", model: "deployment/alpha" })
+    expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(true)
 
     stubConfig({ enabled: true, providerID: "qwen", model: "qwen-coder-30b0" })
     expect(qwenAutocompleteEnabled(readQwenAutocompleteConfig())).toBe(true)
@@ -572,7 +586,7 @@ describe("qwen autocomplete registration", () => {
     reg.dispose()
   })
 
-  it("does not register the incorrect 0.0.48 and 0.0.49 Qwen model before coordinator migration", async () => {
+  it("registers an explicitly configured Qwen FIM alias", async () => {
     const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
     stubConfig({ enabled: true, providerID: "qwen", model: "qwen3-coder-30b0" })
     stubRegistration(calls)
@@ -583,7 +597,7 @@ describe("qwen autocomplete registration", () => {
       connection(),
     )
 
-    expect(calls).toHaveLength(0)
+    expect(calls).toHaveLength(1)
     reg.dispose()
   })
 
@@ -617,6 +631,63 @@ describe("qwen autocomplete registration", () => {
     values.model = undefined
     events.fire("chipmate.v2.autocomplete")
     expect(events.disposed()).toBe(1)
+    reg.dispose()
+  })
+
+  it("replaces the provider on model switch to discard old requests and cache", async () => {
+    const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
+    const values: Record<string, unknown> = { enabled: true, providerID: "qwen", model: "qwen-coder-30b0" }
+    stubConfig(values)
+    const events = stubRegistration(calls)
+    const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
+    const old = calls[0]!.provider as ChipMateQwenInlineCompletionProvider
+    values.model = "deployment/alpha"
+    events.fire("chipmate.v2.autocomplete")
+    expect(calls).toHaveLength(2)
+    expect(calls[1]!.provider).not.toBe(old)
+    expect(events.disposed()).toBe(1)
+    reg.dispose()
+  })
+
+  it("discards the provider and its cache on disconnect, then registers a fresh provider", async () => {
+    const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
+    stubConfig({ enabled: true, providerID: "qwen", model: "deployment/alpha" })
+    stubRegistration(calls)
+    const { registerQwenAutocompleteProvider } = await import("../../src/services/qwen-autocomplete")
+    const link = connection() as unknown as { change: (value: string) => void }
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      link as never,
+    )
+
+    const previous = calls[0]!.provider
+    link.change("disconnected")
+    link.change("connected")
+
+    expect(calls).toHaveLength(2)
+    expect(calls[1]!.provider).not.toBe(previous)
+    reg.dispose()
+  })
+
+  it("discards an in-flight provider and cache after the Provider catalog refreshes", async () => {
+    const calls: Array<{ selector: vscode.DocumentSelector; provider: unknown }> = []
+    stubConfig({ enabled: true, providerID: "qwen", model: "deployment/removed" })
+    const events = stubRegistration(calls)
+    const { registerQwenAutocompleteProvider, refreshQwenAutocompleteProviders } = await import("../../src/services/qwen-autocomplete")
+    const reg = registerQwenAutocompleteProvider(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      connection(),
+    )
+
+    const previous = calls[0]!.provider
+    refreshQwenAutocompleteProviders()
+
+    expect(events.disposed()).toBe(1)
+    expect(calls[1]!.provider).not.toBe(previous)
     reg.dispose()
   })
 })
@@ -1000,7 +1071,7 @@ describe("ChipMateQwenInlineCompletionProvider", () => {
     const dir = await tempWorkspace()
     let seen: QwenFimCompleteInput | undefined
     const provider = new ChipMateQwenInlineCompletionProvider({
-      read: () => ({ ...cfg, cacheEnabled: false, trace: true, logLevel: "debug" }),
+      read: () => ({ ...cfg, providerID: "completion", model: "deployment/alpha", cacheEnabled: false, trace: true, logLevel: "debug" }),
       guard: () => false,
       client: {
         complete: async (input: QwenFimCompleteInput) => {
@@ -1023,10 +1094,13 @@ describe("ChipMateQwenInlineCompletionProvider", () => {
     expect(items).toHaveLength(1)
     expect(seen).toMatchObject({
       directory: dir,
-      providerID: "qwen",
-      modelID: "qwen-coder-30b0",
+      providerID: "completion",
+      modelID: "deployment/alpha",
       stop: continueQwenCoderEffectiveStops,
     })
+    expect(seen?.prompt).toContain("<|fim_prefix|>")
+    expect(seen?.prompt).toContain("<|fim_middle|>")
+    expect(items[0]?.insertText).toBe("return editor_ok;")
     expect(seen?.signal).toBeInstanceOf(AbortSignal)
     const { qwenDiagnosticsForTests } = await import("../../src/services/qwen-autocomplete/diagnostics")
     const lines = qwenDiagnosticsForTests()
@@ -1531,6 +1605,50 @@ describe("ChipMateQwenInlineCompletionProvider", () => {
     )
 
     expect(items).toEqual([])
+  })
+
+  it("drops a late response after Provider catalog refresh disposes the old provider", async () => {
+    let release: ((value: string) => void) | undefined
+    let started: (() => void) | undefined
+    const begun = new Promise<void>((resolve) => { started = resolve })
+    const pending = new Promise<string>((resolve) => { release = resolve })
+    const provider = new ChipMateQwenInlineCompletionProvider({
+      read: () => ({ ...cfg, model: "deployment/removed" }),
+      client: { complete: async () => { started?.(); return pending } } as unknown as QwenFimClient,
+      log: () => {},
+    })
+    const task = provider.provideInlineCompletionItems(
+      doc("int main() {\n  \n}"),
+      new vscode.Position(1, 2),
+      {} as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+    await begun
+    provider.dispose()
+    release?.("return old;")
+    expect(await task).toEqual([])
+  })
+
+  it("does not start a request when selection switches during the safety check", async () => {
+    let release: (() => void) | undefined
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    let calls = 0
+    const provider = new ChipMateQwenInlineCompletionProvider({
+      read: () => cfg,
+      guard: async () => { await pending; return false },
+      client: { complete: async () => { calls++; return "return old;" } } as unknown as QwenFimClient,
+      log: () => {},
+    })
+    const task = provider.provideInlineCompletionItems(
+      doc("int main() {\n  \n}"),
+      new vscode.Position(1, 2),
+      {} as vscode.InlineCompletionContext,
+      token().value as vscode.CancellationToken,
+    )
+    provider.dispose()
+    release?.()
+    expect(await task).toEqual([])
+    expect(calls).toBe(0)
   })
 
   it("aborts the prior request when a newer request starts", async () => {

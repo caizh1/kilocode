@@ -554,6 +554,10 @@ export namespace ChipMateConfig {
       const cloned = { ...existingPerm }
       for (const [key, value] of Object.entries(patchPerm)) {
         const existing = cloned[key]
+        if (key !== "*" && Object.hasOwn(cloned, key)) {
+          delete cloned[key]
+          cloned[key] = existing
+        }
         if (typeof existing === "string" && isRecord(value)) {
           cloned[key] = { "*": existing }
         }

@@ -264,7 +264,7 @@ export namespace ChipMateToolRegistry {
           : yield* indexingReady(loaders)
       const analysis = yield* analysisTool(deps, loaders, ready.analysis)
       const semantic = yield* semanticTool(deps, loaders, ready.semantic)
-      const document = yield* documentTool(deps, loaders, ready.document)
+      const document = yield* documentTool(deps, loaders, true)
       const artifacts = yield* artifactTools(deps, loaders)
       const word = yield* wordTools(deps, loaders)
       const excel = yield* excelTools(deps, loaders)
@@ -273,22 +273,23 @@ export namespace ChipMateToolRegistry {
       const plantumlSource = yield* plantumlSourceTool(deps, loaders)
       const ultra = ProductProfile.chipmate
         ? yield* Effect.gen(function* () {
-              const info = yield* UltraVerifyTool(deps.task).pipe(
-                Effect.provideService(Agent.Service, deps.agent),
-                Effect.provideService(Truncate.Service, deps.truncate),
-              )
-              return [yield* Tool.init(info)]
-            })
-        : []
-      const ufs = ProductProfile.chipmate && tools.reviewSessions
-        ? yield* Effect.gen(function* () {
-            const info = yield* UfsReviewTool(tools.reviewSessions!).pipe(
+            const info = yield* UltraVerifyTool(deps.task).pipe(
               Effect.provideService(Agent.Service, deps.agent),
               Effect.provideService(Truncate.Service, deps.truncate),
             )
             return [yield* Tool.init(info)]
           })
         : []
+      const ufs =
+        ProductProfile.chipmate && tools.reviewSessions
+          ? yield* Effect.gen(function* () {
+              const info = yield* UfsReviewTool(tools.reviewSessions!).pipe(
+                Effect.provideService(Agent.Service, deps.agent),
+                Effect.provideService(Truncate.Service, deps.truncate),
+              )
+              return [yield* Tool.init(info)]
+            })
+          : []
       return {
         ...base,
         terminal,
@@ -645,7 +646,9 @@ export namespace ChipMateToolRegistry {
       ...(Flag.CHIPMATE_CLIENT === "cli" && tools.terminal ? [tools.terminal] : []),
       // Agent Manager tools are useful only when the extension can create and display their sessions.
       ...(Flag.CHIPMATE_CLIENT === "vscode" ? [tools.managerModels, tools.manager] : []),
-      ...(Flag.CHIPMATE_CLIENT === "vscode" && opts.market !== false && tools.markets ? Object.values(tools.markets) : []),
+      ...(Flag.CHIPMATE_CLIENT === "vscode" && opts.market !== false && tools.markets
+        ? Object.values(tools.markets)
+        : []),
       ...(Flag.CHIPMATE_CLIENT === "vscode" &&
       cfg.experimental?.native_notebook_tools === true &&
       tools.notebookRead &&
@@ -722,11 +725,9 @@ export namespace ChipMateToolRegistry {
    * effective config on every model step. Runtime indexing readiness never controls visibility here. */
   export function resolve(tools: Tool.Def[], source: ConfigSource, enabled = internal()) {
     return Effect.gen(function* () {
-      if (!enabled) return tools
-
       const cfg = yield* source.get()
       const global = yield* source.getGlobal()
-      const indexing = applyInternalIndexingDefaults({ ...global.indexing, ...cfg.indexing }, true)
+      const indexing = applyInternalIndexingDefaults({ ...global.indexing, ...cfg.indexing }, enabled)
       const plugins = [...(global.plugin ?? []), ...(cfg.plugin ?? [])]
       const allow = {
         codebase_analysis: hasIndexingPlugin(plugins),
@@ -734,8 +735,8 @@ export namespace ChipMateToolRegistry {
         document_search: indexing?.documents?.enabled === true,
       }
       const filtered = tools.filter((tool) => {
-        if (tool.id === "codebase_analysis") return allow.codebase_analysis
-        if (tool.id === "semantic_search") return allow.semantic_search
+        if (enabled && tool.id === "codebase_analysis") return allow.codebase_analysis
+        if (enabled && tool.id === "semantic_search") return allow.semantic_search
         if (tool.id === "document_search") return allow.document_search
         return true
       })

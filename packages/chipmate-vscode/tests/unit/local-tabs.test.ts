@@ -298,3 +298,8 @@ describe("tracked tab reconcile", () => {
     })
   })
 })
+
+it("QA-001 重载保留未发送草稿的原始 ID 和选中标签", () => {
+  const ids = ["ses_已有", "sidebar-pending:中文草稿", "sidebar-pending:另一个"]
+  expect(restoreTabs(ids, ids[1], () => "不应新建")).toEqual({ ids, active: ids[1] })
+})

@@ -127,7 +127,7 @@ export const MarketCapabilitiesSchema = Type.Object(
   {
     mode: literals(["aligned-v1", "legacy"] as const),
     apiVersion: Type.String({ minLength: 1 }),
-    diagnostics: Type.Optional(Type.Object({ enabled: Type.Boolean(), schemaVersion: Type.Integer(), maxBytes: Type.Integer(), retentionDays: Type.Integer() })),
+    diagnostics: Type.Optional(Type.Object({ enabled: Type.Boolean(), schemaVersion: Type.Integer(), maxBytes: Type.Integer(), maxExpandedBytes: Type.Integer(), retentionDays: Type.Integer() })),
     catalogVersion: Type.String({ minLength: 1 }),
     skillSpecVersion: Type.Optional(Type.String({ minLength: 1 })),
     features: Type.Object(
