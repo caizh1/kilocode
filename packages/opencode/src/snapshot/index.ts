@@ -19,6 +19,7 @@ import { DiffFull } from "../chipmate/snapshot/diff-full"
 import { ChipMateSnapshotTrack } from "../chipmate/snapshot/track"
 import { ChipMateSnapshotSeed } from "../chipmate/snapshot/seed"
 import { ChipMateSnapshotMaterialize } from "../chipmate/snapshot/materialize"
+import { SnapshotGit } from "../chipmate/snapshot/git"
 import type { MessageID, SessionID } from "../session/schema"
 import { withStatics } from "@opencode-ai/core/schema"
 import { zod } from "@opencode-ai/core/effect-zod"
@@ -111,7 +112,6 @@ export const layer: Layer.Layer<Service, never, Requirements> =
           const args = (cmd: string[]) => ["--git-dir", state.gitdir, "--work-tree", state.worktree, ...cmd]
 
           const feed = (list: string[]) => list.join("\0") + "\0"
-          const literal = (list: string[]) => feed(list.map((file) => `:(top,literal)${file}`))
 
           const git = Effect.fnUntraced(
             function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
@@ -133,6 +133,8 @@ export const layer: Layer.Layer<Service, never, Requirements> =
               }),
             ),
           )
+
+          const update = SnapshotGit.make((cmd, opts) => git([...cfg, ...args(cmd)], opts)) // chipmate_change - old Git compatibility
 
           const ignore = Effect.fnUntraced(function* (files: string[]) {
             if (!files.length) return new Set<string>()
@@ -167,17 +169,7 @@ export const layer: Layer.Layer<Service, never, Requirements> =
 
           const drop = Effect.fnUntraced(function* (files: string[]) {
             if (!files.length) return
-            yield* git(
-              [
-                ...cfg,
-                ...args(["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
-              ],
-              {
-                // :(top,literal) pathspecs and --full-name candidates are both worktree-relative
-                cwd: state.worktree,
-                stdin: literal(files),
-              },
-            )
+            yield* update("rm", files, { cwd: state.worktree }) // chipmate_change - negotiate git rm pathspec support
           })
 
           // chipmate_change start
@@ -188,16 +180,10 @@ export const layer: Layer.Layer<Service, never, Requirements> =
             // chipmate_change end
             if (!files.length) return
             // chipmate_change start
-            // A new root snapshot covers the full worktree, so a single pathspec avoids
-            // quadratic matching against every tracked path in very large repositories.
-            const cmd = opts?.root
-              ? ["add", "--all", "--sparse", "--", "."]
-              : ["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"]
-
-            const result = yield* git([...cfg, ...args(cmd)], {
+            const result = yield* update("add", files, {
               cwd: state.directory,
               env: opts?.env,
-              stdin: opts?.root ? undefined : literal(files),
+              root: opts?.root,
             })
             // chipmate_change end
             if (result.code === 0) return
@@ -311,7 +297,12 @@ export const layer: Layer.Layer<Service, never, Requirements> =
                 { concurrency: 8 },
               )).filter((item): item is string => Boolean(item)),
             )
-            const block = new Set(untracked.filter((item) => large.has(item)))
+            // chipmate_change start
+            // Untracked nested repositories are reported as directories. Keep them out of
+            // both explicit pathspecs and root staging: an unborn repository aborts the
+            // entire git add, including otherwise valid files in the parent workspace.
+            const block = new Set(untracked.filter((item) => large.has(item) || item.endsWith("/")))
+            // chipmate_change end
             yield* sync(Array.from(block))
             // Stage only the allowed candidate paths so snapshot updates stay scoped.
             // chipmate_change start - initial seeded writes stay protected by the source pin

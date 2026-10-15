@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test"
+import { $ } from "bun"
 import path from "node:path"
 import { Server } from "../../../src/server/server"
 import { tmpdir, disposeTestRuntime } from "../../fixture/fixture"
@@ -17,9 +18,14 @@ const wait = async (predicate: () => Promise<boolean>, milliseconds = 20_000) =>
   throw new Error("等待真实调用链超时")
 }
 
-test.each(["write", "bash"] as const)(
-  "真实提示入口执行 %s，停止后经正式接口审阅、撤销及恢复",
-  async (tool) => {
+test.each([
+  ["write", "write", false, false],
+  ["bash", "bash", false, false],
+  ["write ignored", "write", true, false],
+  ["write beside an unborn repository", "write", false, true],
+] as const)(
+  "真实提示入口执行 %s，停止后验证审阅与撤销",
+  async (_, tool, ignored, nested) => {
     const proxy = { NO_PROXY: process.env.NO_PROXY, no_proxy: process.env.no_proxy }
     process.env.NO_PROXY = [proxy.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",")
     process.env.no_proxy = process.env.NO_PROXY
@@ -85,6 +91,11 @@ test.each(["write", "bash"] as const)(
         init: async (directory) => {
           filepath = path.join(directory, "main.ts")
           await Bun.write(filepath, "const value = 1\n")
+          if (ignored) {
+            await $`git add main.ts`.cwd(directory).quiet()
+            await Bun.write(path.join(directory, ".gitignore"), "main.ts\n")
+          }
+          if (nested) await $`git init --quiet incomplete-checkout`.cwd(directory).quiet()
           await Bun.write(
             path.join(directory, "chipmate.json"),
             JSON.stringify({
@@ -135,9 +146,26 @@ test.each(["write", "bash"] as const)(
         let review: Result | undefined
         await wait(async () => {
           review = await api(url)
-          return review?.summary?.phase === "ready"
+          return review?.summary?.phase === (ignored ? "unavailable" : "ready")
         })
         expect(review?.summary?.outcome).toBe("interrupted")
+        if (ignored) {
+          expect(review?.summary?.reason).toBe("文件已发生变化，但未被快照完整收录，暂不能撤销：main.ts")
+          expect(review?.summary?.files).toEqual([])
+          expect(review?.summary?.canRevert).toBe(false)
+          const denied: Result = await api(url, {
+            revision: review!.summary!.revision,
+            requestID: "拒绝撤销未收录文件",
+            action: "revert",
+          })
+          expect(denied.ok).toBe(false)
+          expect(await Bun.file(filepath).text()).toBe("const value = 2\n")
+          await Server.Default().app.request(`/session/${session.id}`, {
+            method: "DELETE",
+            headers: { "x-chipmate-directory": temporary.path },
+          })
+          return
+        }
         expect(review?.summary?.files.map((file) => file.file)).toEqual(["main.ts"])
         expect(review?.summary?.canRevert).toBe(true)
         const detail: Result = await api(`${url}/file/${review!.summary!.files[0]!.id}`)

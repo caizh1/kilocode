@@ -3,6 +3,7 @@ import path from "path"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Log from "@opencode-ai/core/util/log"
 import { ChipMateSnapshotMaterialize } from "./materialize"
+import { SnapshotGit } from "./git"
 
 export namespace ChipMateSnapshotSeed {
   const log = Log.create({ service: "snapshot.seed" })
@@ -45,6 +46,7 @@ export namespace ChipMateSnapshotSeed {
 
   export const seed = Effect.fnUntraced(function* (input: Input) {
     const started = Date.now()
+    const update = SnapshotGit.make((cmd, opts) => input.git(snap(input, cmd), opts))
     const alt = path.join(input.gitdir, "objects", "info", "alternates")
     const pending = `${alt}.seed`
     const temp = path.join(input.gitdir, "seed.index")
@@ -183,10 +185,7 @@ export namespace ChipMateSnapshotSeed {
 
       const dropped = Array.from(new Set([...list(ignored.text), ...large]))
       if (dropped.length) {
-        const result = yield* input.git(
-          snap(input, ["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
-          { cwd: input.dir, stdin: feed(dropped) },
-        )
+        const result = yield* update("rm", dropped, { cwd: input.dir })
         if (result.code !== 0) return yield* reset("drop", true)
       }
 
