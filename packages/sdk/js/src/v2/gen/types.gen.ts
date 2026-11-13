@@ -94,6 +94,8 @@ export type Event =
   | EventServerConnected1
   | EventGlobalDisposed1
   | EventGlobalConfigUpdated1
+  | EventScheduledTaskChanged
+  | EventScheduledRunChanged
   | EventServerInstanceDisposed
   | EventSessionTurnOpen
   | EventSessionTurnClose
@@ -1387,6 +1389,8 @@ export type GlobalEvent = {
   project?: string
   workspace?: string
   payload:
+    | EventScheduledTaskChanged
+    | EventScheduledRunChanged
     | EventServerInstanceDisposed
     | EventSessionTurnOpen
     | EventSessionTurnClose
@@ -5475,6 +5479,22 @@ export type SkillV2Source = SkillV2DirectorySource | SkillV2UrlSource | SkillV2E
 
 export type MoveSessionDestination = {
   directory: string
+}
+
+export type EventScheduledTaskChanged = {
+  id: string
+  type: "scheduled_task.changed"
+  properties: {
+    taskID: string
+  }
+}
+
+export type EventScheduledRunChanged = {
+  id: string
+  type: "scheduled_run.changed"
+  properties: {
+    runID: string
+  }
 }
 
 export type EventServerInstanceDisposed = {
@@ -16112,6 +16132,435 @@ export type TurnChangesExternalResponses = {
 }
 
 export type TurnChangesExternalResponse = TurnChangesExternalResponses[keyof TurnChangesExternalResponses]
+
+export type ScheduledTaskRegisterData = {
+  body?: {
+    clientID: string
+    profile: string
+    active: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/scheduled-task/register"
+}
+
+export type ScheduledTaskRegisterErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ScheduledTaskRegisterError = ScheduledTaskRegisterErrors[keyof ScheduledTaskRegisterErrors]
+
+export type ScheduledTaskRegisterResponses = {
+  /**
+   * Success
+   */
+  200: {
+    state: {
+      tasks: Array<{
+        name: string
+        prompt: string
+        timezone: string
+        schedule:
+          | {
+              kind: "once"
+              at: string
+            }
+          | {
+              kind: "interval"
+              minutes: number
+              anchor: string
+            }
+          | {
+              kind: "weekly"
+              days: Array<number>
+              time: string
+            }
+          | {
+              kind: "monthly"
+              day: number
+              time: string
+            }
+        agent: string
+        model: {
+          providerID: string
+          modelID: string
+        }
+        variant?: string
+        sessionID?: string
+        timeoutMinutes: number
+        id: string
+        directory: string
+        version: number
+        status: "enabled" | "paused" | "finished" | "deleted"
+        nextAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      runs: Array<{
+        directory: string
+        id: string
+        taskID: string
+        taskVersion: number
+        scheduledAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted" | "skipped"
+        reason?: string
+        sessionID?: string
+        messageID: string
+        owner: string
+        snapshot: {
+          name: string
+          prompt: string
+          timezone: string
+          schedule:
+            | {
+                kind: "once"
+                at: string
+              }
+            | {
+                kind: "interval"
+                minutes: number
+                anchor: string
+              }
+            | {
+                kind: "weekly"
+                days: Array<number>
+                time: string
+              }
+            | {
+                kind: "monthly"
+                day: number
+                time: string
+              }
+          agent: string
+          model: {
+            providerID: string
+            modelID: string
+          }
+          variant?: string
+          sessionID?: string
+          timeoutMinutes: number
+        }
+        missedCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        missedThrough?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      serverTime: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+    result?: unknown
+    error?: string
+  }
+}
+
+export type ScheduledTaskRegisterResponse = ScheduledTaskRegisterResponses[keyof ScheduledTaskRegisterResponses]
+
+export type ScheduledTaskTickData = {
+  body?: {
+    clientID: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/scheduled-task/tick"
+}
+
+export type ScheduledTaskTickErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ScheduledTaskTickError = ScheduledTaskTickErrors[keyof ScheduledTaskTickErrors]
+
+export type ScheduledTaskTickResponses = {
+  /**
+   * Success
+   */
+  200: {
+    state: {
+      tasks: Array<{
+        name: string
+        prompt: string
+        timezone: string
+        schedule:
+          | {
+              kind: "once"
+              at: string
+            }
+          | {
+              kind: "interval"
+              minutes: number
+              anchor: string
+            }
+          | {
+              kind: "weekly"
+              days: Array<number>
+              time: string
+            }
+          | {
+              kind: "monthly"
+              day: number
+              time: string
+            }
+        agent: string
+        model: {
+          providerID: string
+          modelID: string
+        }
+        variant?: string
+        sessionID?: string
+        timeoutMinutes: number
+        id: string
+        directory: string
+        version: number
+        status: "enabled" | "paused" | "finished" | "deleted"
+        nextAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      runs: Array<{
+        directory: string
+        id: string
+        taskID: string
+        taskVersion: number
+        scheduledAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted" | "skipped"
+        reason?: string
+        sessionID?: string
+        messageID: string
+        owner: string
+        snapshot: {
+          name: string
+          prompt: string
+          timezone: string
+          schedule:
+            | {
+                kind: "once"
+                at: string
+              }
+            | {
+                kind: "interval"
+                minutes: number
+                anchor: string
+              }
+            | {
+                kind: "weekly"
+                days: Array<number>
+                time: string
+              }
+            | {
+                kind: "monthly"
+                day: number
+                time: string
+              }
+          agent: string
+          model: {
+            providerID: string
+            modelID: string
+          }
+          variant?: string
+          sessionID?: string
+          timeoutMinutes: number
+        }
+        missedCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        missedThrough?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      serverTime: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+    result?: unknown
+    error?: string
+  }
+}
+
+export type ScheduledTaskTickResponse = ScheduledTaskTickResponses[keyof ScheduledTaskTickResponses]
+
+export type ScheduledTaskCommandData = {
+  body?: {
+    clientID: string
+    command: {
+      action:
+        | "create"
+        | "list"
+        | "get"
+        | "update"
+        | "pause"
+        | "resume"
+        | "delete"
+        | "run_now"
+        | "runs"
+        | "get_run"
+        | "cancel_run"
+        | "preview"
+      taskID?: string
+      runID?: string
+      version?: number
+      key?: string
+      definition?: {
+        name: string
+        prompt: string
+        timezone: string
+        schedule:
+          | {
+              kind: "once"
+              at: string
+            }
+          | {
+              kind: "interval"
+              minutes: number
+              anchor: string
+            }
+          | {
+              kind: "weekly"
+              days: Array<number>
+              time: string
+            }
+          | {
+              kind: "monthly"
+              day: number
+              time: string
+            }
+        agent: string
+        model: {
+          providerID: string
+          modelID: string
+        }
+        variant?: string
+        sessionID?: string
+        timeoutMinutes: number
+      }
+    }
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/scheduled-task/command"
+}
+
+export type ScheduledTaskCommandErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ScheduledTaskCommandError = ScheduledTaskCommandErrors[keyof ScheduledTaskCommandErrors]
+
+export type ScheduledTaskCommandResponses = {
+  /**
+   * Success
+   */
+  200: {
+    state: {
+      tasks: Array<{
+        name: string
+        prompt: string
+        timezone: string
+        schedule:
+          | {
+              kind: "once"
+              at: string
+            }
+          | {
+              kind: "interval"
+              minutes: number
+              anchor: string
+            }
+          | {
+              kind: "weekly"
+              days: Array<number>
+              time: string
+            }
+          | {
+              kind: "monthly"
+              day: number
+              time: string
+            }
+        agent: string
+        model: {
+          providerID: string
+          modelID: string
+        }
+        variant?: string
+        sessionID?: string
+        timeoutMinutes: number
+        id: string
+        directory: string
+        version: number
+        status: "enabled" | "paused" | "finished" | "deleted"
+        nextAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      runs: Array<{
+        directory: string
+        id: string
+        taskID: string
+        taskVersion: number
+        scheduledAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted" | "skipped"
+        reason?: string
+        sessionID?: string
+        messageID: string
+        owner: string
+        snapshot: {
+          name: string
+          prompt: string
+          timezone: string
+          schedule:
+            | {
+                kind: "once"
+                at: string
+              }
+            | {
+                kind: "interval"
+                minutes: number
+                anchor: string
+              }
+            | {
+                kind: "weekly"
+                days: Array<number>
+                time: string
+              }
+            | {
+                kind: "monthly"
+                day: number
+                time: string
+              }
+          agent: string
+          model: {
+            providerID: string
+            modelID: string
+          }
+          variant?: string
+          sessionID?: string
+          timeoutMinutes: number
+        }
+        missedCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        missedThrough?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      serverTime: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+    result?: unknown
+    error?: string
+  }
+}
+
+export type ScheduledTaskCommandResponse = ScheduledTaskCommandResponses[keyof ScheduledTaskCommandResponses]
 
 export type CommitMessageGenerateData = {
   body?: {

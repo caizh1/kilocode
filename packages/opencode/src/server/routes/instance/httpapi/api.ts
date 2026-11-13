@@ -1,3 +1,4 @@
+import { ScheduledTaskApi } from "@/chipmate/server/httpapi/groups/scheduled-task" // chipmate_change
 import { TurnChangesApi } from "@/chipmate/server/httpapi/groups/turn-changes" // chipmate_change
 import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
@@ -104,6 +105,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(BackgroundProcessApi)
   .addHttpApi(BranchNameApi)
   .addHttpApi(TurnChangesApi)
+  .addHttpApi(ScheduledTaskApi) // chipmate_change
   .addHttpApi(CommitMessageApi)
   .addHttpApi(ConfigConsoleApi)
   .addHttpApi(DesignDocApi)

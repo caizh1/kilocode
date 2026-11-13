@@ -423,6 +423,12 @@ import type {
   SandboxSupportResponses,
   SandboxToggleErrors,
   SandboxToggleResponses,
+  ScheduledTaskCommandErrors,
+  ScheduledTaskCommandResponses,
+  ScheduledTaskRegisterErrors,
+  ScheduledTaskRegisterResponses,
+  ScheduledTaskTickErrors,
+  ScheduledTaskTickResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -6642,6 +6648,178 @@ export class TurnChanges extends HeyApiClient {
         },
       },
     )
+  }
+}
+
+export class ScheduledTask extends HeyApiClient {
+  /**
+   * 管理当前项目的定时任务
+   */
+  public register<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      clientID?: string
+      profile?: string
+      active?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "clientID" },
+            { in: "body", key: "profile" },
+            { in: "body", key: "active" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ScheduledTaskRegisterResponses,
+      ScheduledTaskRegisterErrors,
+      ThrowOnError
+    >({
+      url: "/scheduled-task/register",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * 管理当前项目的定时任务
+   */
+  public tick<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      clientID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "clientID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ScheduledTaskTickResponses, ScheduledTaskTickErrors, ThrowOnError>({
+      url: "/scheduled-task/tick",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * 管理当前项目的定时任务
+   */
+  public command<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      clientID?: string
+      command?: {
+        action:
+          | "create"
+          | "list"
+          | "get"
+          | "update"
+          | "pause"
+          | "resume"
+          | "delete"
+          | "run_now"
+          | "runs"
+          | "get_run"
+          | "cancel_run"
+          | "preview"
+        taskID?: string
+        runID?: string
+        version?: number
+        key?: string
+        definition?: {
+          name: string
+          prompt: string
+          timezone: string
+          schedule:
+            | {
+                kind: "once"
+                at: string
+              }
+            | {
+                kind: "interval"
+                minutes: number
+                anchor: string
+              }
+            | {
+                kind: "weekly"
+                days: Array<number>
+                time: string
+              }
+            | {
+                kind: "monthly"
+                day: number
+                time: string
+              }
+          agent: string
+          model: {
+            providerID: string
+            modelID: string
+          }
+          variant?: string
+          sessionID?: string
+          timeoutMinutes: number
+        }
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "clientID" },
+            { in: "body", key: "command" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ScheduledTaskCommandResponses,
+      ScheduledTaskCommandErrors,
+      ThrowOnError
+    >({
+      url: "/scheduled-task/command",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
   }
 }
 
@@ -12949,6 +13127,11 @@ export class ChipMateClient extends HeyApiClient {
   private _turnChanges?: TurnChanges
   get turnChanges(): TurnChanges {
     return (this._turnChanges ??= new TurnChanges({ client: this.client }))
+  }
+
+  private _scheduledTask?: ScheduledTask
+  get scheduledTask(): ScheduledTask {
+    return (this._scheduledTask ??= new ScheduledTask({ client: this.client }))
   }
 
   private _commitMessage?: CommitMessage

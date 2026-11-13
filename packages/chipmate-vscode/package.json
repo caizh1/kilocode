@@ -618,6 +618,12 @@
       {
         "command": "chipmate.v2.diagnostics.export",
         "title": "ChipMate: 保存日志包"
+      },
+      {
+        "command": "chipmate.v2.scheduledTasks",
+        "title": "定时任务",
+        "category": "ChipMate",
+        "icon": "$(clock)"
       }
     ],
     "submenus": [
@@ -721,6 +727,11 @@
           "command": "chipmate.v2.openInTab",
           "group": "navigation@7",
           "when": "view == chipmate.v2.SidebarProvider"
+        },
+        {
+          "command": "chipmate.v2.scheduledTasks",
+          "when": "view == chipmate.v2.SidebarProvider",
+          "group": "navigation@9"
         }
       ],
       "scm/title": [

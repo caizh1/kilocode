@@ -239,17 +239,20 @@ export namespace ChipMateSessionPromptQueue {
         ),
       (slot) =>
         Effect.sync(() => {
-          slot.done.resolve()
-          if (tails.get(sessionID) !== slot.tail) return
-          tails.delete(sessionID)
-          versions.delete(sessionID)
-          targets.delete(sessionID)
-          dropped.delete(sessionID)
-          latest.delete(sessionID)
-          activeSince.delete(sessionID)
-          // Last slot of the session finished cleanly;
-          // drop any lingering waiting entry and clear internal state.
-          waiting.delete(sessionID)
+          const remaining = snapshot(sessionID).filter((id) => id !== target)
+          publishIfChanged(sessionID, remaining)
+          // 中间轮次被取消时，后继仍须等待前驱结束，最后再释放全部队列状态。
+          void settle(slot.previous).then(() => {
+            slot.done.resolve()
+            if (tails.get(sessionID) !== slot.tail) return
+            tails.delete(sessionID)
+            versions.delete(sessionID)
+            targets.delete(sessionID)
+            dropped.delete(sessionID)
+            latest.delete(sessionID)
+            activeSince.delete(sessionID)
+            waiting.delete(sessionID)
+          })
         }),
     )
   }

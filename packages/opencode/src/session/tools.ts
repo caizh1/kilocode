@@ -1,3 +1,4 @@
+import { isScheduledTurn, assertLease } from "@/chipmate/scheduler/execution" // chipmate_change
 import * as TurnChanges from "@/chipmate/turn-changes/runtime" // chipmate_change
 import { Agent } from "@/agent/agent"
 import { ChipMateSessionPrompt } from "@/chipmate/session/prompt" // chipmate_change
@@ -163,6 +164,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   })
   // chipmate_change end
   for (const item of visible) {
+    if (item.id === "scheduled_task" && isScheduledTurn(input.session.id, input.processor.message.parentID)) continue // chipmate_change
     // chipmate_change end
     // chipmate_change start - SWE-Pruner (experimental): advertise the focus parameter on prunable tools
     const pruner = swe && SwePruner.prunable(item.id)
@@ -175,6 +177,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
+            yield* assertLease(input.session.id, input.processor.message.parentID) // chipmate_change
             const ctx = context(args, options)
             yield* plugin.trigger(
               "tool.execute.before",
@@ -491,6 +494,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           item,
           Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
+            yield* assertLease(input.session.id, input.processor.message.parentID) // chipmate_change
             return yield* Effect.promise(() => execute(args, opts))
           }),
         ).pipe(

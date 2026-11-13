@@ -7,6 +7,7 @@
  * upstream tool registrations have run (i.e. after importing message-part).
  */
 
+import { ScheduledTaskCard } from "../../../scheduled-tasks/ScheduledTaskCard"
 import { createMemo, For, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { BasicTool } from "@chipmate/chipmate-ui/basic-tool"
@@ -152,6 +153,10 @@ function BackgroundProcessTool(props: ToolProps) {
 }
 
 export function registerVscodeToolOverrides() {
+  if (!registered.has("scheduled_task")) {
+    ToolRegistry.register({ name: "scheduled_task", render: ScheduledTaskCard })
+    registered.add("scheduled_task")
+  }
   if (!registered.has("background_process")) {
     ToolRegistry.register({
       name: "background_process",

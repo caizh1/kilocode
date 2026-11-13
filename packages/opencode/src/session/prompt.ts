@@ -1,3 +1,4 @@
+import { isScheduledTurn } from "@/chipmate/scheduler/execution" // chipmate_change
 import * as TurnChanges from "@/chipmate/turn-changes/runtime" // chipmate_change
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // chipmate_change
@@ -1444,6 +1445,7 @@ export const layer = Layer.effect(
         // Otherwise the old turn can resume from a dismissed question and start another
         // LLM step before hasFollowup observes the replacement prompt.
         const dismiss = Effect.gen(function* () {
+          if (isScheduledTurn(input.sessionID, ChipMateSessionPromptQueue.active(input.sessionID))) return // chipmate_change
           yield* Effect.promise(() => Suggestion.dismissAll(input.sessionID)).pipe(Effect.orDie)
           yield* question.dismissAll(input.sessionID)
         })
@@ -1974,7 +1976,7 @@ export const layer = Layer.effect(
           // the time we get here, so nothing is cut off. The close reason is
           // "superseded", not "interrupted": this is a deliberate queue handoff,
           // not a premature stop, so clients must not flash an interruption warning.
-          if (ChipMateSessionPromptQueue.hasFollowup(sessionID)) {
+          if (ChipMateSessionPromptQueue.hasFollowup(sessionID) && !isScheduledTurn(sessionID, ChipMateSessionPromptQueue.active(sessionID))) {
             closeReasons.set(sessionID, "superseded")
             return "break" as const
           }

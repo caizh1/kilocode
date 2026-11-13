@@ -1,3 +1,4 @@
+import { registerScheduler } from "./services/scheduler"
 import { initializeDiagnostics, diagnostic } from "./services/diagnostics/record"
 import { initializeDiagnosticService } from "./services/diagnostics/service"
 import { disposeAppearance } from "./appearance"
@@ -776,6 +777,7 @@ async function activateDiagnosticHost(source: vscode.ExtensionContext) {
   registerHeapSnapshot(context, connectionService)
   registerChatHistoryMigration(context, connectionService)
   registerPatentRadar(context, connectionService)
+  registerScheduler(context, connectionService)
 
   context.subscriptions.push(
     vscode.commands.registerCommand("chipmate.v2.reload", () => {
@@ -831,6 +833,7 @@ async function activateDiagnosticHost(source: vscode.ExtensionContext) {
   if (context.extensionMode === vscode.ExtensionMode.Test) {
     return {
       __sessionSurfaceTest: {
+        context,
         connectionService,
         provider,
         sessionSurfaces,

@@ -158,7 +158,14 @@ function renderStatements(sql: string) {
     .split("--> statement-breakpoint")
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0)
-    .map(renderRun)
+    // chipmate_change start - 生成迁移时保留 ChipMate 表的归属标记。
+    .map((statement) => {
+      const rendered = renderRun(statement)
+      return statement.includes("chipmate_")
+        ? `      // chipmate_change start\n${rendered}\n      // chipmate_change end`
+        : rendered
+    })
+    // chipmate_change end
     .join("\n")
 }
 
@@ -189,7 +196,7 @@ function renderRegistry(names: string[]) {
 
 export const migrations = (
   await Promise.all([
-${names.map((name) => `    import("./migration/${name}"),`).join("\n")}
+${names.map((name) => `    import("./migration/${name}"),${name.includes("chipmate") ? " // chipmate_change" : ""}`).join("\n")}
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
 `

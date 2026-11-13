@@ -377,6 +377,7 @@ async function main() {
   const designDocCtx = await createBrowserWebviewContext("webview-ui/design-doc/index.tsx", "dist/design-doc.js")
 
   // Build Patent Radar 本地证据评审面板。
+  const scheduledTasksCtx = await createBrowserWebviewContext("webview-ui/scheduled-tasks/index.tsx", "dist/scheduled-tasks.js")
   const patentRadarCtx = await createBrowserWebviewContext(
     "webview-ui/patent-radar/index.tsx",
     "dist/patent-radar.js",
@@ -406,6 +407,7 @@ async function main() {
       marketplaceCtx.watch(),
       designDocCtx.watch(),
       patentRadarCtx.watch(),
+      scheduledTasksCtx.watch(),
       shikiWorkerCtx.watch(),
       markdownShikiWorkerCtx.watch(),
     ])
@@ -418,6 +420,7 @@ async function main() {
       marketplaceCtx.rebuild(),
       designDocCtx.rebuild(),
       patentRadarCtx.rebuild(),
+      scheduledTasksCtx.rebuild(),
       diffViewerCtx.rebuild(),
       diffVirtualCtx.rebuild(),
       shikiWorkerCtx.rebuild(),
@@ -434,6 +437,7 @@ async function main() {
       marketplaceCtx.dispose(),
       designDocCtx.dispose(),
       patentRadarCtx.dispose(),
+      scheduledTasksCtx.dispose(),
       shikiWorkerCtx.dispose(),
       markdownShikiWorkerCtx.dispose(),
     ])

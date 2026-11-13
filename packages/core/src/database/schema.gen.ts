@@ -56,6 +56,47 @@ export default {
           CONSTRAINT \`control_account_pk\` PRIMARY KEY(\`email\`, \`url\`)
         );
       `)
+      // chipmate_change start
+      yield* tx.run(`
+        CREATE TABLE \`chipmate_scheduled_run\` (
+          \`id\` text PRIMARY KEY,
+          \`scope\` text NOT NULL,
+          \`directory\` text NOT NULL,
+          \`task_id\` text NOT NULL,
+          \`occurrence\` text NOT NULL,
+          \`data\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`owner\` text NOT NULL,
+          \`lease_until\` integer NOT NULL,
+          \`cancel_requested\` integer DEFAULT 0 NOT NULL
+        );
+      `)
+      // chipmate_change end
+      // chipmate_change start
+      yield* tx.run(`
+        CREATE TABLE \`chipmate_scheduled_task\` (
+          \`id\` text PRIMARY KEY,
+          \`scope\` text NOT NULL,
+          \`directory\` text NOT NULL,
+          \`version\` integer NOT NULL,
+          \`status\` text NOT NULL,
+          \`definition\` text NOT NULL,
+          \`next_at\` integer,
+          \`created_at\` integer NOT NULL,
+          \`request_key\` text NOT NULL
+        );
+      `)
+      // chipmate_change end
+      // chipmate_change start
+      yield* tx.run(`
+        CREATE TABLE \`chipmate_scheduler_client\` (
+          \`id\` text PRIMARY KEY,
+          \`scope\` text NOT NULL,
+          \`directory\` text NOT NULL,
+          \`lease_until\` integer NOT NULL
+        );
+      `)
+      // chipmate_change end
       yield* tx.run(`
         CREATE TABLE \`credential\` (
           \`id\` text PRIMARY KEY,
@@ -236,6 +277,31 @@ export default {
           CONSTRAINT \`fk_session_share_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      // chipmate_change start
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`scheduled_run_occurrence\` ON \`chipmate_scheduled_run\` (\`task_id\`,\`occurrence\`);`,
+      )
+      // chipmate_change end
+      // chipmate_change start
+      yield* tx.run(
+        `CREATE INDEX \`scheduled_run_scope\` ON \`chipmate_scheduled_run\` (\`scope\`,\`directory\`,\`status\`);`,
+      )
+      // chipmate_change end
+      // chipmate_change start
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`scheduled_task_request\` ON \`chipmate_scheduled_task\` (\`scope\`,\`request_key\`);`,
+      )
+      // chipmate_change end
+      // chipmate_change start
+      yield* tx.run(
+        `CREATE INDEX \`scheduled_task_due\` ON \`chipmate_scheduled_task\` (\`scope\`,\`directory\`,\`next_at\`);`,
+      )
+      // chipmate_change end
+      // chipmate_change start
+      yield* tx.run(
+        `CREATE INDEX \`scheduler_client_scope\` ON \`chipmate_scheduler_client\` (\`scope\`,\`directory\`);`,
+      )
+      // chipmate_change end
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(

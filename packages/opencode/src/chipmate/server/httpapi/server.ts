@@ -1,3 +1,4 @@
+import { scheduledTaskHandlers } from "./handlers/scheduled-task"
 import * as TurnChanges from "@/chipmate/turn-changes/runtime"
 import { turnChangesHandlers } from "./handlers/turn-changes"
 import { Layer } from "effect"
@@ -36,6 +37,7 @@ import { telemetryHandlers } from "./handlers/telemetry"
 
 export const provide = Layer.provide([
   agentBuilderHandlers,
+  scheduledTaskHandlers,
   anacondaDesktopHandlers.pipe(Layer.provide(AnacondaDesktop.liveLayer)),
   backgroundProcessHandlers,
   branchNameHandlers,

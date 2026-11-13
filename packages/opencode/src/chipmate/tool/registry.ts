@@ -1,3 +1,4 @@
+import { ScheduledTaskTool } from "./scheduled-task"
 import { CodebaseSearchTool } from "../../tool/warpgrep"
 import { RecallTool } from "../../tool/recall"
 import { AgentManagerModelsTool } from "./agent-manager-models"
@@ -132,6 +133,7 @@ export namespace ChipMateToolRegistry {
   export function infos(host?: AgentManager.Interface, notebook?: Notebook.Interface, market?: SkillMarket.Interface) {
     return Effect.gen(function* () {
       const codebase = yield* CodebaseSearchTool
+      const scheduled = yield* ScheduledTaskTool
       const recall = yield* RecallTool
       const managerModels = yield* AgentManagerModelsTool
       const memory = yield* MemoryRecallTool
@@ -151,6 +153,7 @@ export namespace ChipMateToolRegistry {
       )
       if (!notebook)
         return {
+          scheduled,
           codebase,
           recall,
           managerModels,
@@ -173,6 +176,7 @@ export namespace ChipMateToolRegistry {
         notebookExecute: NotebookExecuteTool,
       }).pipe(Effect.provideService(Notebook.Service, notebook))
       return {
+        scheduled,
         codebase,
         recall,
         managerModels,
@@ -197,6 +201,7 @@ export namespace ChipMateToolRegistry {
    * it has no Service deps beyond what Tool.init itself needs. */
   export function build(
     tools: {
+      scheduled?: Tool.Info
       codebase: Tool.Info
       recall: Tool.Info
       managerModels: Tool.Info
@@ -227,6 +232,7 @@ export namespace ChipMateToolRegistry {
   ) {
     return Effect.gen(function* () {
       const base = yield* Effect.all({
+        ...(tools.scheduled ? { scheduled: Tool.init(tools.scheduled) } : {}),
         codebase: Tool.init(tools.codebase),
         recall: Tool.init(tools.recall),
         managerModels: Tool.init(tools.managerModels),
@@ -560,6 +566,7 @@ export namespace ChipMateToolRegistry {
     tool: Pick<Tool.Def, "id">,
     agent: Pick<Agent.Info, "name" | "mode" | "native" | "options">,
   ) {
+    if (tool.id === "scheduled_task") return agent.mode === "primary" && Flag.CHIPMATE_CLIENT === "vscode"
     if (UfsReviewAgent.active(agent))
       return new Set(["ufs_review", "question", "read", "grep", "glob", "list", "bash"]).has(tool.id)
     if (tool.id === "ufs_review") return false
@@ -586,6 +593,7 @@ export namespace ChipMateToolRegistry {
   /** ChipMate-specific tools to append to the builtin list */
   export function extra(
     tools: {
+      scheduled?: Tool.Def
       codebase: Tool.Def
       analysis?: Tool.Def
       semantic?: Tool.Def
@@ -624,6 +632,7 @@ export namespace ChipMateToolRegistry {
     opts: { market?: boolean } = {},
   ): Tool.Def[] {
     return [
+      ...(Flag.CHIPMATE_CLIENT === "vscode" && tools.scheduled ? [tools.scheduled] : []),
       ...(cfg.experimental?.codebase_search === true ? [tools.codebase] : []),
       ...(tools.analysis ? [tools.analysis] : []),
       ...(cfg.experimental?.image_generation === true ? [tools.image] : []),

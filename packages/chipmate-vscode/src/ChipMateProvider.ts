@@ -1394,6 +1394,9 @@ export class ChipMateProvider implements vscode.WebviewViewProvider, TelemetryPr
         case "reload":
           this.handleReload().catch((e) => console.error("[ChipMate New] ChipMateProvider: Reload failed:", e))
           break
+        case "scheduledTaskAction":
+          await vscode.commands.executeCommand("chipmate.v2.scheduledTaskAction", { action: message.action, taskID: message.taskID, directory: this.projectDirectory })
+          break
         case "openSubAgentViewer":
           vscode.commands.executeCommand("chipmate.v2.openSubAgentViewer", message.sessionID, message.title)
           break

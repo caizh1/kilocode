@@ -1,6 +1,7 @@
 import { diagnosticConnectionEvent } from "../diagnostics/record"
 import * as vscode from "vscode"
 import path from "node:path"
+import { randomUUID } from "node:crypto"
 import { ServerManager, type ServerExitInfo } from "./server-manager"
 import { createChipMateClient, type ChipMateClient } from "@chipmate/sdk/v2/client"
 import { SdkSSEAdapter, type SSEPayload } from "./sdk-sse-adapter"
@@ -96,6 +97,7 @@ async function drainNetworkWaits(client: ChipMateClient, dir: string, signal?: A
  * Multiple ChipMateProvider instances subscribe to it for SSE events and state changes.
  */
 export class ChipMateConnectionService {
+  private readonly schedulerClientID = randomUUID()
   readonly sandboxPreference: SandboxPreference
   private readonly serverManager: ServerManager
   private client: ChipMateClient | null = null
@@ -940,6 +942,7 @@ export class ChipMateConnectionService {
     this.info = { port: server.port }
 
     const config: ServerConfig = {
+      clientID: this.schedulerClientID,
       baseUrl: `http://127.0.0.1:${server.port}`,
       password: server.password,
     }
@@ -952,6 +955,7 @@ export class ChipMateConnectionService {
       baseUrl: config.baseUrl,
       headers: {
         Authorization: authHeader,
+        "x-chipmate-client-id": config.clientID!,
       },
     })
     const sse = new SdkSSEAdapter(client)

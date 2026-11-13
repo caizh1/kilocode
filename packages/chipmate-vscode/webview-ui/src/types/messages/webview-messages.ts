@@ -1413,6 +1413,7 @@ export interface DismissAgentMigrationBannerMessage {
 }
 
 export type WebviewMessage =
+  | { type: "scheduledTaskAction"; action: "open" | "run_now"; taskID?: string }
   | DiagnosticRequest
   | AppearanceRequest
   | TurnChangesRequest

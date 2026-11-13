@@ -1,0 +1,163 @@
+[data-component="scheduled-tasks"] {
+  max-width: 1200px;
+  margin: auto;
+  padding: 28px;
+  color: var(--text-base, var(--vscode-foreground));
+  font: 13px/1.6 var(--font-family-sans, var(--vscode-font-family));
+  display: grid;
+  gap: 24px;
+}
+[data-component="scheduled-tasks"] h1 {
+  font-size: 23px;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+[data-component="scheduled-tasks"] h2 {
+  font-size: 16px;
+  margin: 0;
+}
+[data-component="scheduled-tasks"] p {
+  margin: 4px 0;
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+}
+.schedule-header,
+.schedule-row,
+.schedule-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.schedule-header {
+  justify-content: space-between;
+}
+.schedule-list,
+.schedule-editor,
+.schedule-detail {
+  border: 1px solid var(--border-base, var(--vscode-panel-border));
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--surface-raised-base, var(--vscode-editor-background));
+  box-shadow: 0 3px 16px #17264008;
+}
+.schedule-row {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-base, var(--vscode-panel-border));
+}
+.schedule-row:last-child {
+  border-bottom: 0;
+}
+.schedule-summary {
+  flex: 1 1 230px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.schedule-title {
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+}
+.schedule-title:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 3px;
+}
+.schedule-summary small,
+.schedule-summary > span {
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+}
+.schedule-status {
+  border-radius: 20px;
+  padding: 3px 10px;
+  background: var(--surface-base, var(--vscode-badge-background));
+  white-space: nowrap;
+}
+.schedule-status[data-status="completed"] {
+  color: var(--vscode-testing-iconPassed, #208548);
+}
+.schedule-status[data-status="failed"],
+.schedule-error {
+  color: var(--vscode-errorForeground, #bd3434);
+}
+.schedule-status[data-status="waiting"] {
+  color: var(--vscode-textLink-foreground, #286dd6);
+}
+.schedule-actions {
+  flex: 0 1 auto;
+  gap: 8px;
+}
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.schedule-editor {
+  display: grid;
+  gap: 18px;
+  max-width: 880px;
+}
+.schedule-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.schedule-field > span {
+  font-weight: 500;
+}
+.schedule-field button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.schedule-empty {
+  text-align: center;
+  padding: 50px 16px;
+}
+.schedule-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--surface-base, var(--vscode-textCodeBlock-background));
+}
+.schedule-detail pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.schedule-error {
+  padding: 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  [data-component="scheduled-tasks"] {
+    padding: 14px;
+    gap: 16px;
+  }
+  .schedule-grid {
+    grid-template-columns: 1fr;
+  }
+  .schedule-actions {
+    width: 100%;
+  }
+  .schedule-list,
+  .schedule-editor,
+  .schedule-detail {
+    padding: 14px;
+  }
+  .schedule-actions > * {
+    flex-shrink: 0;
+  }
+}

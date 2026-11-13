@@ -9,6 +9,7 @@ import type { IndexingStatus as SdkIndexingStatus } from "@chipmate/sdk/v2/clien
 
 /** Connection config used by the extension to reach the local CLI server */
 export interface ServerConfig {
+  clientID?: string
   baseUrl: string
   password: string
 }

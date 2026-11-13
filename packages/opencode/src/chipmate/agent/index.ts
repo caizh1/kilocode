@@ -152,6 +152,7 @@ export const readOnlyBash: Record<string, "allow" | "ask" | "deny"> = {
 function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
   return Permission.fromConfig({
     "*": "deny",
+    scheduled_task: "allow",
     bash: readOnlyBash,
     read: {
       "*": "allow",
