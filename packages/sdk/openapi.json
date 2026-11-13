@@ -12304,6 +12304,2000 @@
         ]
       }
     },
+    "/scheduled-task/register": {
+      "post": {
+        "tags": ["scheduled-task"],
+        "operationId": "scheduledTask.register",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "object",
+                      "properties": {
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "prompt": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "schedule": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["once"]
+                                      },
+                                      "at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "at"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["interval"]
+                                      },
+                                      "minutes": {
+                                        "type": "integer"
+                                      },
+                                      "anchor": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "minutes", "anchor"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["weekly"]
+                                      },
+                                      "days": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "days", "time"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["monthly"]
+                                      },
+                                      "day": {
+                                        "type": "integer"
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "day", "time"],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "agent": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "object",
+                                "properties": {
+                                  "providerID": {
+                                    "type": "string"
+                                  },
+                                  "modelID": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["providerID", "modelID"],
+                                "additionalProperties": false
+                              },
+                              "variant": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "timeoutMinutes": {
+                                "type": "integer"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "directory": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["enabled", "paused", "finished", "deleted"]
+                              },
+                              "nextAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "prompt",
+                              "timezone",
+                              "schedule",
+                              "agent",
+                              "model",
+                              "timeoutMinutes",
+                              "id",
+                              "directory",
+                              "version",
+                              "status",
+                              "nextAt",
+                              "createdAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "runs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "directory": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "taskID": {
+                                "type": "string"
+                              },
+                              "taskVersion": {
+                                "type": "integer"
+                              },
+                              "scheduledAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "startedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "endedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "waiting",
+                                  "completed",
+                                  "failed",
+                                  "cancelled",
+                                  "interrupted",
+                                  "skipped"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "messageID": {
+                                "type": "string"
+                              },
+                              "owner": {
+                                "type": "string"
+                              },
+                              "snapshot": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "type": "string"
+                                  },
+                                  "timezone": {
+                                    "type": "string"
+                                  },
+                                  "schedule": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["once"]
+                                          },
+                                          "at": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "at"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["interval"]
+                                          },
+                                          "minutes": {
+                                            "type": "integer"
+                                          },
+                                          "anchor": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "minutes", "anchor"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["weekly"]
+                                          },
+                                          "days": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "time": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "days", "time"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["monthly"]
+                                          },
+                                          "day": {
+                                            "type": "integer"
+                                          },
+                                          "time": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "day", "time"],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "agent": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "object",
+                                    "properties": {
+                                      "providerID": {
+                                        "type": "string"
+                                      },
+                                      "modelID": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["providerID", "modelID"],
+                                    "additionalProperties": false
+                                  },
+                                  "variant": {
+                                    "type": "string"
+                                  },
+                                  "sessionID": {
+                                    "type": "string"
+                                  },
+                                  "timeoutMinutes": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "prompt",
+                                  "timezone",
+                                  "schedule",
+                                  "agent",
+                                  "model",
+                                  "timeoutMinutes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "missedCount": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "missedThrough": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "directory",
+                              "id",
+                              "taskID",
+                              "taskVersion",
+                              "scheduledAt",
+                              "createdAt",
+                              "status",
+                              "messageID",
+                              "owner",
+                              "snapshot"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "serverTime": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["tasks", "runs", "serverTime"],
+                      "additionalProperties": false
+                    },
+                    "result": {},
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["state"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "管理当前项目的定时任务",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientID": {
+                    "type": "string"
+                  },
+                  "profile": {
+                    "type": "string"
+                  },
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["clientID", "profile", "active"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.scheduledTask.register({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/scheduled-task/tick": {
+      "post": {
+        "tags": ["scheduled-task"],
+        "operationId": "scheduledTask.tick",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "object",
+                      "properties": {
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "prompt": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "schedule": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["once"]
+                                      },
+                                      "at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "at"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["interval"]
+                                      },
+                                      "minutes": {
+                                        "type": "integer"
+                                      },
+                                      "anchor": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "minutes", "anchor"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["weekly"]
+                                      },
+                                      "days": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "days", "time"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["monthly"]
+                                      },
+                                      "day": {
+                                        "type": "integer"
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "day", "time"],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "agent": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "object",
+                                "properties": {
+                                  "providerID": {
+                                    "type": "string"
+                                  },
+                                  "modelID": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["providerID", "modelID"],
+                                "additionalProperties": false
+                              },
+                              "variant": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "timeoutMinutes": {
+                                "type": "integer"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "directory": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["enabled", "paused", "finished", "deleted"]
+                              },
+                              "nextAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "prompt",
+                              "timezone",
+                              "schedule",
+                              "agent",
+                              "model",
+                              "timeoutMinutes",
+                              "id",
+                              "directory",
+                              "version",
+                              "status",
+                              "nextAt",
+                              "createdAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "runs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "directory": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "taskID": {
+                                "type": "string"
+                              },
+                              "taskVersion": {
+                                "type": "integer"
+                              },
+                              "scheduledAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "startedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "endedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "waiting",
+                                  "completed",
+                                  "failed",
+                                  "cancelled",
+                                  "interrupted",
+                                  "skipped"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "messageID": {
+                                "type": "string"
+                              },
+                              "owner": {
+                                "type": "string"
+                              },
+                              "snapshot": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "type": "string"
+                                  },
+                                  "timezone": {
+                                    "type": "string"
+                                  },
+                                  "schedule": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["once"]
+                                          },
+                                          "at": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "at"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["interval"]
+                                          },
+                                          "minutes": {
+                                            "type": "integer"
+                                          },
+                                          "anchor": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "minutes", "anchor"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["weekly"]
+                                          },
+                                          "days": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "time": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "days", "time"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["monthly"]
+                                          },
+                                          "day": {
+                                            "type": "integer"
+                                          },
+                                          "time": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "day", "time"],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "agent": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "object",
+                                    "properties": {
+                                      "providerID": {
+                                        "type": "string"
+                                      },
+                                      "modelID": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["providerID", "modelID"],
+                                    "additionalProperties": false
+                                  },
+                                  "variant": {
+                                    "type": "string"
+                                  },
+                                  "sessionID": {
+                                    "type": "string"
+                                  },
+                                  "timeoutMinutes": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "prompt",
+                                  "timezone",
+                                  "schedule",
+                                  "agent",
+                                  "model",
+                                  "timeoutMinutes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "missedCount": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "missedThrough": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "directory",
+                              "id",
+                              "taskID",
+                              "taskVersion",
+                              "scheduledAt",
+                              "createdAt",
+                              "status",
+                              "messageID",
+                              "owner",
+                              "snapshot"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "serverTime": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["tasks", "runs", "serverTime"],
+                      "additionalProperties": false
+                    },
+                    "result": {},
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["state"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "管理当前项目的定时任务",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientID": {
+                    "type": "string"
+                  }
+                },
+                "required": ["clientID"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.scheduledTask.tick({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/scheduled-task/command": {
+      "post": {
+        "tags": ["scheduled-task"],
+        "operationId": "scheduledTask.command",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "object",
+                      "properties": {
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "prompt": {
+                                "type": "string"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "schedule": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["once"]
+                                      },
+                                      "at": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "at"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["interval"]
+                                      },
+                                      "minutes": {
+                                        "type": "integer"
+                                      },
+                                      "anchor": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "minutes", "anchor"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["weekly"]
+                                      },
+                                      "days": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "days", "time"],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": ["monthly"]
+                                      },
+                                      "day": {
+                                        "type": "integer"
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["kind", "day", "time"],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "agent": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "object",
+                                "properties": {
+                                  "providerID": {
+                                    "type": "string"
+                                  },
+                                  "modelID": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["providerID", "modelID"],
+                                "additionalProperties": false
+                              },
+                              "variant": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "timeoutMinutes": {
+                                "type": "integer"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "directory": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": ["enabled", "paused", "finished", "deleted"]
+                              },
+                              "nextAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "prompt",
+                              "timezone",
+                              "schedule",
+                              "agent",
+                              "model",
+                              "timeoutMinutes",
+                              "id",
+                              "directory",
+                              "version",
+                              "status",
+                              "nextAt",
+                              "createdAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "runs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "directory": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "taskID": {
+                                "type": "string"
+                              },
+                              "taskVersion": {
+                                "type": "integer"
+                              },
+                              "scheduledAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "createdAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "startedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "endedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "queued",
+                                  "running",
+                                  "waiting",
+                                  "completed",
+                                  "failed",
+                                  "cancelled",
+                                  "interrupted",
+                                  "skipped"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string"
+                              },
+                              "sessionID": {
+                                "type": "string"
+                              },
+                              "messageID": {
+                                "type": "string"
+                              },
+                              "owner": {
+                                "type": "string"
+                              },
+                              "snapshot": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "prompt": {
+                                    "type": "string"
+                                  },
+                                  "timezone": {
+                                    "type": "string"
+                                  },
+                                  "schedule": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["once"]
+                                          },
+                                          "at": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "at"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["interval"]
+                                          },
+                                          "minutes": {
+                                            "type": "integer"
+                                          },
+                                          "anchor": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "minutes", "anchor"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["weekly"]
+                                          },
+                                          "days": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "time": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "days", "time"],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": ["monthly"]
+                                          },
+                                          "day": {
+                                            "type": "integer"
+                                          },
+                                          "time": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": ["kind", "day", "time"],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "agent": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "object",
+                                    "properties": {
+                                      "providerID": {
+                                        "type": "string"
+                                      },
+                                      "modelID": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["providerID", "modelID"],
+                                    "additionalProperties": false
+                                  },
+                                  "variant": {
+                                    "type": "string"
+                                  },
+                                  "sessionID": {
+                                    "type": "string"
+                                  },
+                                  "timeoutMinutes": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "prompt",
+                                  "timezone",
+                                  "schedule",
+                                  "agent",
+                                  "model",
+                                  "timeoutMinutes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "missedCount": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              },
+                              "missedThrough": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "directory",
+                              "id",
+                              "taskID",
+                              "taskVersion",
+                              "scheduledAt",
+                              "createdAt",
+                              "status",
+                              "messageID",
+                              "owner",
+                              "snapshot"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "serverTime": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["tasks", "runs", "serverTime"],
+                      "additionalProperties": false
+                    },
+                    "result": {},
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["state"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "管理当前项目的定时任务",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientID": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "create",
+                          "list",
+                          "get",
+                          "update",
+                          "pause",
+                          "resume",
+                          "delete",
+                          "run_now",
+                          "runs",
+                          "get_run",
+                          "cancel_run",
+                          "preview"
+                        ]
+                      },
+                      "taskID": {
+                        "type": "string"
+                      },
+                      "runID": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer"
+                      },
+                      "key": {
+                        "type": "string"
+                      },
+                      "definition": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "prompt": {
+                            "type": "string"
+                          },
+                          "timezone": {
+                            "type": "string"
+                          },
+                          "schedule": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": ["once"]
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["kind", "at"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": ["interval"]
+                                  },
+                                  "minutes": {
+                                    "type": "integer"
+                                  },
+                                  "anchor": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["kind", "minutes", "anchor"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": ["weekly"]
+                                  },
+                                  "days": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "time": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["kind", "days", "time"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": ["monthly"]
+                                  },
+                                  "day": {
+                                    "type": "integer"
+                                  },
+                                  "time": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["kind", "day", "time"],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "agent": {
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "object",
+                            "properties": {
+                              "providerID": {
+                                "type": "string"
+                              },
+                              "modelID": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["providerID", "modelID"],
+                            "additionalProperties": false
+                          },
+                          "variant": {
+                            "type": "string"
+                          },
+                          "sessionID": {
+                            "type": "string"
+                          },
+                          "timeoutMinutes": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": ["name", "prompt", "timezone", "schedule", "agent", "model", "timeoutMinutes"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": ["action"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["clientID", "command"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createChipMateClient } from \"@chipmate/sdk\"\n\nconst client = createChipMateClient()\nawait client.scheduledTask.command({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/commit-message": {
       "post": {
         "tags": ["commit-message"],
@@ -29822,6 +31816,12 @@
             "$ref": "#/components/schemas/EventGlobalConfigUpdated1"
           },
           {
+            "$ref": "#/components/schemas/EventScheduled_taskChanged"
+          },
+          {
+            "$ref": "#/components/schemas/EventScheduled_runChanged"
+          },
+          {
             "$ref": "#/components/schemas/EventServerInstanceDisposed"
           },
           {
@@ -33892,6 +35892,12 @@
           },
           "payload": {
             "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventScheduled_taskChanged"
+              },
+              {
+                "$ref": "#/components/schemas/EventScheduled_runChanged"
+              },
               {
                 "$ref": "#/components/schemas/EventServerInstanceDisposed"
               },
@@ -43310,10 +45316,12 @@
         "type": "object",
         "properties": {
           "providerID": {
-            "type": "string"
+            "type": "string",
+            "pattern": "\\S"
           },
           "modelID": {
-            "type": "string"
+            "type": "string",
+            "pattern": "\\S"
           },
           "variant": {
             "type": "string"
@@ -46545,6 +48553,54 @@
           }
         },
         "required": ["directory"],
+        "additionalProperties": false
+      },
+      "EventScheduled_taskChanged": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["scheduled_task.changed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "taskID": {
+                "type": "string"
+              }
+            },
+            "required": ["taskID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventScheduled_runChanged": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["scheduled_run.changed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "runID": {
+                "type": "string"
+              }
+            },
+            "required": ["runID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
       "EventServerInstanceDisposed": {
@@ -64811,6 +66867,9 @@
     },
     {
       "name": "turn-changes"
+    },
+    {
+      "name": "scheduled-task"
     },
     {
       "name": "commit-message",
